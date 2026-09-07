@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>darker-ages-uploader</title>
+<style>
+  :root {
+    --ink: #23201c;
+    --muted: #6b645c;
+    --rule: #d8d2c8;
+    --page: #faf8f5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 3rem 1.5rem 5rem;
+    background: var(--page);
+    color: var(--ink);
+    font: 400 17px/1.65 Georgia, "Iowan Old Style", serif;
+  }
+  main { max-width: 34rem; margin: 0 auto; }
+  h1 {
+    font-size: 1.9rem;
+    line-height: 1.2;
+    font-weight: 400;
+    margin: 0 0 0.4rem;
+  }
+  .sub {
+    color: var(--muted);
+    font-size: 0.95rem;
+    margin: 0 0 2.5rem;
+  }
+  h2 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin: 2.5rem 0 0.6rem;
+  }
+  p { margin: 0 0 1rem; }
+  ul { margin: 0 0 1rem; padding-left: 1.2rem; }
+  li { margin-bottom: 0.35rem; }
+  a { color: var(--ink); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  a:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+  footer {
+    margin-top: 3.5rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid var(--rule);
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>darker-ages-uploader</h1>
+  <p class="sub">A private publishing tool for the Chronicles of the Darker Ages YouTube channel.</p>
+
+  <p>This is a small personal application. It publishes videos to a single YouTube channel owned by its operator, and reads that same channel's performance data.</p>
+
+  <h2>What it does</h2>
+  <ul>
+    <li>Uploads video files to the operator's own YouTube channel</li>
+    <li>Sets the title, description, tags, thumbnail and publish schedule for those uploads</li>
+    <li>Reads view, watch time and traffic data for that channel</li>
+  </ul>
+
+  <h2>Who can use it</h2>
+  <p>Only the channel owner. The tool runs locally, has no public interface, no sign-up, and no other users. It does not access any account other than the one that authorises it.</p>
+
+  <h2>Data</h2>
+  <p>See the <a href="privacy.html">privacy policy</a> for what is accessed and stored.</p>
+
+  <h2>Contact</h2>
+  <p><a href="mailto:chroniclesofthedarkerages@gmail.com">chroniclesofthedarkerages@gmail.com</a></p>
+
+  <footer>
+    Uses YouTube API Services. Subject to the
+    <a href="https://www.youtube.com/t/terms">YouTube Terms of Service</a>
+    and the <a href="https://policies.google.com/privacy">Google Privacy Policy</a>.
+  </footer>
+</main>
+</body>
+</html>
