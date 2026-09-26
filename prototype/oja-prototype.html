@@ -1,0 +1,559 @@
+<title>Oja Seller App</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+:root{
+  --page:#E9EEEB; --frame:#1A221E;
+  --surface:#FFFFFF; --surface-2:#F3F6F4; --surface-3:#E6ECE8;
+  --ink:#15201A; --muted:#5B6961; --line:#DCE3DF;
+  --accent:#0B6B55; --accent-2:#DDEFE9; --on-accent:#FFFFFF;
+  --hold:#A56F00; --hold-bg:#FFF2D1;
+  --good:#1D7A43; --good-bg:#DFF3E6;
+  --bad:#A8322A; --bad-bg:#FBE3E0;
+  --bubble-me:#DDEFE9; --bubble-them:#F1F4F2;
+  --wa:#1FA855; --ig:#C92A74; --fb:#1B6FE0;
+  --display:"Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --body:"Figtree", "Segoe UI", system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --page:#0C110F; --frame:#000000;
+    --surface:#141A17; --surface-2:#1B2320; --surface-3:#25302B;
+    --ink:#E6EDE9; --muted:#95A49C; --line:#2A3530;
+    --accent:#3CC49E; --accent-2:#173A30; --on-accent:#052019;
+    --hold:#F2B53A; --hold-bg:#3A2D0E;
+    --good:#5BD08A; --good-bg:#15321F;
+    --bad:#F07A70; --bad-bg:#3A1A17;
+    --bubble-me:#173A30; --bubble-them:#222B27;
+    --wa:#3DD27A; --ig:#F0609F; --fb:#5B9BF5;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --page:#0C110F; --frame:#000000;
+  --surface:#141A17; --surface-2:#1B2320; --surface-3:#25302B;
+  --ink:#E6EDE9; --muted:#95A49C; --line:#2A3530;
+  --accent:#3CC49E; --accent-2:#173A30; --on-accent:#052019;
+  --hold:#F2B53A; --hold-bg:#3A2D0E;
+  --good:#5BD08A; --good-bg:#15321F;
+  --bad:#F07A70; --bad-bg:#3A1A17;
+  --bubble-me:#173A30; --bubble-them:#222B27;
+  --wa:#3DD27A; --ig:#F0609F; --fb:#5B9BF5;
+}
+*{box-sizing:border-box}
+body{background:var(--page);color:var(--ink);font:15px/1.5 var(--body);padding:32px 16px;}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible,[data-act]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:.92em}
+
+.stage{max-width:1040px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:56px;align-items:start}
+.guide{padding-top:24px;max-width:470px}
+.brand{display:flex;align-items:center;gap:10px;font:700 18px var(--display);letter-spacing:-.01em}
+.brand-mark{width:30px;height:30px;border-radius:9px;background:var(--accent);color:var(--on-accent);display:grid;place-items:center;font-size:15px}
+.guide h1{font:700 clamp(28px,3.4vw,40px)/1.08 var(--display);letter-spacing:-.025em;margin:26px 0 14px;text-wrap:balance}
+.guide p.lede{color:var(--muted);margin:0 0 28px;max-width:60ch}
+.steps{list-style:none;margin:0;padding:0;display:grid;gap:10px;counter-reset:s}
+.steps li{counter-increment:s}
+.steps button{width:100%;text-align:left;display:grid;grid-template-columns:28px 1fr;gap:12px;align-items:start;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.steps button:hover{border-color:var(--accent)}
+.steps .dot{width:28px;height:28px;border-radius:50%;border:1.5px solid var(--line);display:grid;place-items:center;font:600 13px var(--mono)}
+.steps .dot::before{content:counter(s)}
+.steps li.done .dot{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.steps li.done .dot::before{content:"✓"}
+.steps b{display:block;font-weight:600}
+.steps span.s{color:var(--muted);font-size:13.5px}
+.fine{margin-top:22px;font-size:13px;color:var(--muted);display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.linkbtn{background:none;border:0;padding:0;text-decoration:underline;text-underline-offset:3px;color:var(--ink);font-size:13px}
+
+.phone{width:400px;height:800px;background:var(--frame);border-radius:48px;padding:11px;box-shadow:0 30px 60px -30px rgba(10,30,20,.45)}
+.screen{position:relative;height:100%;border-radius:38px;overflow:hidden;background:var(--surface);display:flex;flex-direction:column}
+.status{display:flex;justify-content:space-between;padding:12px 26px 4px;font:600 13px var(--body)}
+.top{padding:6px 18px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;min-height:56px}
+.top h2{font:700 22px var(--display);letter-spacing:-.02em;margin:0;flex:1}
+.top .sub{font-size:12.5px;color:var(--muted)}
+.back{border:0;background:var(--surface-2);width:34px;height:34px;border-radius:50%;font-size:18px;line-height:1;flex:none}
+.body{flex:1;overflow-y:auto;overflow-x:hidden}
+.pad{padding:14px 16px}
+.nav{display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid var(--line);padding:6px 8px 16px;background:var(--surface)}
+.nav button{border:0;background:none;padding:8px 4px;border-radius:10px;font-size:12px;font-weight:600;color:var(--muted);display:grid;justify-items:center;gap:3px}
+.nav button svg{width:22px;height:22px}
+.nav button.on{color:var(--accent)}
+.badge{min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--accent);color:var(--on-accent);font:600 11px/18px var(--body);text-align:center}
+
+.chips{display:flex;gap:8px;padding:12px 16px 4px;overflow-x:auto}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 12px;font-size:13px;font-weight:500;white-space:nowrap}
+.chip.on{background:var(--ink);border-color:var(--ink);color:var(--surface)}
+.ch{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:2px 7px 2px 6px;border-radius:999px;background:var(--surface-2)}
+.ch i{width:7px;height:7px;border-radius:50%;display:block}
+.ch.wa i{background:var(--wa)} .ch.ig i{background:var(--ig)} .ch.fb i{background:var(--fb)}
+
+.row{display:grid;grid-template-columns:44px 1fr auto;gap:12px;align-items:center;padding:12px 16px;border:0;background:none;width:100%;text-align:left;border-bottom:1px solid var(--line)}
+.row:hover{background:var(--surface-2)}
+.av{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font:600 15px var(--body);background:var(--surface-3)}
+.row .name{font-weight:600;display:flex;gap:8px;align-items:center}
+.row .last{color:var(--muted);font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
+.row .meta{display:grid;justify-items:end;gap:5px;font-size:12px;color:var(--muted)}
+.tagline{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.tag{font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:6px;background:var(--accent-2);color:var(--accent)}
+.tag.hold{background:var(--hold-bg);color:var(--hold)}
+.tag.quiet{background:var(--surface-3);color:var(--muted)}
+
+.banner{margin:10px 12px 0;padding:10px 12px;border-radius:12px;font-size:13px;display:flex;gap:10px;align-items:flex-start;background:var(--hold-bg);color:var(--ink)}
+.banner b{color:var(--hold)}
+.banner.ok{background:var(--good-bg)} .banner.ok b{color:var(--good)}
+.msgs{display:flex;flex-direction:column;gap:8px;padding:14px 12px}
+.b{max-width:80%;padding:9px 12px;border-radius:16px;font-size:14px;line-height:1.4}
+.b small{display:block;font-size:11px;color:var(--muted);margin-top:3px;text-align:right}
+.b.them{background:var(--bubble-them);align-self:flex-start;border-bottom-left-radius:5px}
+.b.me{background:var(--bubble-me);align-self:flex-end;border-bottom-right-radius:5px}
+.sys{align-self:center;max-width:92%;font-size:12px;color:var(--muted);background:var(--surface-2);border:1px dashed var(--line);border-radius:10px;padding:7px 10px;text-align:center}
+.sys b{color:var(--ink)}
+.typing{align-self:flex-start;color:var(--muted);font-size:13px;font-style:italic;padding:4px 8px}
+
+.detect{margin:0 12px 10px;border:1.5px solid var(--accent);border-radius:14px;padding:12px;background:var(--surface)}
+.detect .k{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.detect .p{font-weight:600;margin:4px 0 2px}
+.detect .s{font-size:13px;color:var(--muted)}
+.btns{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.btn{border:0;border-radius:11px;padding:10px 14px;font-weight:600;font-size:14px;background:var(--surface-3)}
+.btn.primary{background:var(--accent);color:var(--on-accent)}
+.btn.block{width:100%;padding:13px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.composer{display:flex;gap:8px;padding:10px 12px 16px;border-top:1px solid var(--line)}
+.composer input{flex:1;border:1px solid var(--line);background:var(--surface-2);border-radius:999px;padding:10px 14px;font:inherit;font-size:14px;color:var(--ink);min-width:0}
+.composer button{border:0;background:var(--accent);color:var(--on-accent);border-radius:999px;padding:0 16px;font-weight:600}
+
+.prod{display:grid;grid-template-columns:48px 1fr auto;gap:12px;align-items:center;padding:13px 16px;border:0;border-bottom:1px solid var(--line);background:none;width:100%;text-align:left}
+.prod:hover{background:var(--surface-2)}
+.sw{width:48px;height:48px;border-radius:12px;position:relative;overflow:hidden}
+.sw::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(115deg,transparent 0 5px,rgba(255,255,255,.09) 5px 7px)}
+.prod .t{font-weight:600;font-size:14.5px}
+.prod .v{font-size:13px;color:var(--muted)}
+.prod .r{text-align:right;font-size:12.5px;color:var(--muted)}
+.prod .r b{display:block;font:700 18px var(--display);color:var(--ink)}
+.sect{font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:16px 16px 6px}
+
+.hero{display:flex;gap:14px;align-items:center;padding:16px}
+.hero .sw{width:64px;height:64px;border-radius:16px}
+.hero h3{margin:0;font:700 19px/1.2 var(--display);letter-spacing:-.01em}
+.kv{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-block:1px solid var(--line)}
+.kv div{background:var(--surface);padding:10px 12px}
+.kv span{display:block;font-size:11.5px;color:var(--muted)}
+.kv b{font:700 20px var(--display)}
+.wl{padding:0 16px}
+.wl .it{display:grid;grid-template-columns:30px 1fr auto;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+.wl .pos{font:500 12px var(--mono);color:var(--muted)}
+.card{margin:12px 16px;padding:14px;border-radius:14px;background:var(--surface-2)}
+.card h4{margin:0 0 10px;font:700 15px var(--display)}
+.field{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0}
+.field label{font-size:14px}
+.field .hint{display:block;font-size:12px;color:var(--muted)}
+.step{display:flex;align-items:center;gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+.step button{border:0;background:none;width:32px;height:32px;font-size:18px}
+.step output{min-width:24px;text-align:center;font:600 15px var(--mono)}
+.seg{display:grid;grid-template-columns:1fr 1fr;background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:3px;gap:3px}
+.seg button{border:0;background:none;border-radius:8px;padding:8px 6px;font-size:13px;font-weight:600;color:var(--muted)}
+.seg button.on{background:var(--ink);color:var(--surface)}
+.seg.three{grid-template-columns:repeat(3,1fr)}
+.plan{font-size:13.5px;color:var(--muted);margin:8px 0 0}
+.preview{background:var(--bubble-me);border-radius:16px 16px 5px 16px;padding:11px 13px;font-size:14px;line-height:1.45}
+.lock{font-weight:700;background:var(--surface);border-radius:5px;padding:0 4px;white-space:nowrap}
+.lock::after{content:"🔒";font-size:9px;margin-left:2px;vertical-align:2px}
+.note{font-size:12px;color:var(--muted);margin-top:8px}
+.cost{display:grid;grid-template-columns:1fr auto;gap:4px 12px;font-size:13.5px}
+.cost b{text-align:right}
+.cost .tot{border-top:1px solid var(--line);padding-top:6px;margin-top:4px;font-weight:600}
+
+.clock{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--surface-2);border-bottom:1px solid var(--line);font-size:13px}
+.clock b{font:700 17px var(--mono)}
+.units{display:flex;gap:6px;padding:14px 16px 4px}
+.units span{flex:1;height:34px;border-radius:9px;border:1.5px dashed var(--line);display:grid;place-items:center;font-size:12px;font-weight:600;color:var(--muted)}
+.units span.held{border:1.5px solid var(--hold);background:var(--hold-bg);color:var(--hold)}
+.units span.sold{border:1.5px solid var(--good);background:var(--good-bg);color:var(--good)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:10px 16px}
+.stats div{background:var(--surface-2);border-radius:11px;padding:9px 10px}
+.stats span{display:block;font-size:11px;color:var(--muted)}
+.stats b{font:700 16px var(--display)}
+.ent{display:grid;grid-template-columns:30px 1fr auto;gap:10px;align-items:center;padding:9px 16px;border-bottom:1px solid var(--line);font-size:14px}
+.pill{font-size:11.5px;font-weight:600;padding:3px 8px;border-radius:999px;white-space:nowrap}
+.pill.held{background:var(--hold-bg);color:var(--hold)}
+.pill.paid{background:var(--good-bg);color:var(--good)}
+.pill.expired,.pill.missed,.pill.wait{background:var(--surface-3);color:var(--muted)}
+.pill.notified{background:var(--accent-2);color:var(--accent)}
+.done-banner{margin:12px 16px;padding:12px 14px;border-radius:12px;background:var(--good-bg);font-size:13.5px}
+.done-banner b{color:var(--good)}
+.runbar{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--line);background:var(--surface)}
+.runbar .btn{flex:1}
+
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:14px 16px 4px}
+.tiles div{background:var(--surface-2);border-radius:13px;padding:12px}
+.tiles span{font-size:12px;color:var(--muted)}
+.tiles b{display:block;font:700 22px var(--display);letter-spacing:-.01em}
+.tiles em{font-style:normal;font-size:12px;color:var(--good);font-weight:600}
+.dt{width:100%;border-collapse:collapse;font-size:13.5px}
+.dt th{font-size:11px;font-weight:600;color:var(--muted);text-align:right;padding:6px 16px 6px 0}
+.dt th:first-child,.dt td:first-child{text-align:left;padding-left:16px}
+.dt td{padding:9px 16px 9px 0;border-top:1px solid var(--line);text-align:right}
+.dt td:first-child span{display:block;font-size:12px;color:var(--muted)}
+.qc{padding:11px 16px;border-top:1px solid var(--line);display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center}
+.qc .rule{grid-column:1/-1;font-size:12.5px;color:var(--muted)}
+.cl{padding:11px 16px;border-top:1px solid var(--line);font-size:13.5px}
+.cl .q{color:var(--muted);font-style:italic}
+.toast{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:9px 14px;border-radius:10px;font-size:13px;font-weight:600;white-space:nowrap;pointer-events:none}
+
+@media (max-width:880px){
+  .stage{grid-template-columns:1fr;gap:28px}
+  .guide{padding-top:0;max-width:none}
+  .phone{width:100%;max-width:420px;margin:0 auto;height:760px;border-radius:36px;padding:8px}
+  .screen{border-radius:29px}
+}
+@media (prefers-reduced-motion: no-preference){
+  .b,.sys,.detect,.ent{animation:rise .25s ease-out both}
+  @keyframes rise{from{transform:translateY(4px);opacity:.4}to{transform:none;opacity:1}}
+}
+</style>
+
+<div class="stage">
+  <section class="guide">
+    <div class="brand"><span class="brand-mark">ọ</span>Oja</div>
+    <h1>Every “is this available?” becomes a sale later.</h1>
+    <p class="lede">A seller app for Instagram and WhatsApp businesses. When a customer asks for something that’s sold out, Oja tags what they wanted, asks for their permission, and messages them when it’s back, with a real hold on a real unit.</p>
+    <ol class="steps" id="steps"></ol>
+    <div class="fine"><span>Prototype with sample data. No messages are sent.</span><button class="linkbtn" id="reset">Reset demo</button></div>
+  </section>
+  <div class="phone"><div class="screen" id="app"></div></div>
+</div>
+
+<script>
+const ICON = {
+  chats:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>',
+  restock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 8l9-4 9 4v8l-9 4-9-4z"/><path d="M3 8l9 4 9-4M12 12v8"/></svg>',
+  insights:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 20V11M12 20V4M19 20v-6"/></svg>'
+};
+const RATE = {marketing:84, utility:14};
+const SEND_AT = 650; // 10:50 AM
+const NAMES = ["Ada","Tolu","Ngozi","Kemi","Ifeoma","Zainab","Funmi","Chidinma","Bisi","Halima","Uche","Yetunde","Nkechi","Amina","Folake","Temi","Ebere","Aisha","Bukola","Ijeoma","Sade","Oge","Hauwa","Morenike","Chiamaka","Lola","Adaeze","Rukayat","Titi","Obioma","Maryam","Ronke","Nneka","Kike","Fatima","Damilola","Somto","Ireti","Ugo","Bola","Efe","Precious","Joy"];
+const CHS = ["wa","ig","wa","fb","wa","ig","wa"];
+function waitlist(n, offset){
+  const out=[];
+  for(let i=0;i<n;i++){
+    const d = 2 + Math.floor((i+offset)*24/Math.max(n,1));
+    out.push({name:NAMES[(i+offset)%NAMES.length], ch:CHS[(i+offset)%CHS.length], joined:(d<=31? d+" Aug" : (d-31)+" Sep")});
+  }
+  return out;
+}
+function fresh(){
+  return {
+    view:'chats', chatId:null, productId:'clip-brown', filter:'all', toast:null,
+    steps:{offer:false, restock:false, live:false, insights:false},
+    products:[
+      {id:'clip-brown', name:'12" Claw Clip Ponytail', variant:'Brown', short:'brown 12" claw clip ponytail', price:18500, stock:0, swatch:'#6B4226', conv:.34, lastRestock:'Aug · 5 units', waitlist:waitlist(43,0)},
+      {id:'bonnet-wine', name:'Satin Bonnet', variant:'Wine', short:'wine satin bonnet', price:6500, stock:0, swatch:'#6D1F33', conv:.41, lastRestock:'Jul · 20 units', waitlist:waitlist(11,9)},
+      {id:'wig-bone', name:'Bone Straight Wig 20"', variant:'Natural black', short:'20" bone straight wig', price:145000, stock:2, swatch:'#2B2522', conv:.22, lastRestock:'Sep · 4 units', waitlist:waitlist(5,20)},
+      {id:'clip-black', name:'12" Claw Clip Ponytail', variant:'Jet black', short:'jet black 12" claw clip ponytail', price:18500, stock:6, swatch:'#1E1E20', conv:.30, lastRestock:'Sep · 12 units', waitlist:[]}
+    ],
+    chats:[
+      {id:'amaka', name:'Amaka Obi', ch:'ig', time:'10:41', unread:1, detect:'clip-brown', phone:'0803 555 2190', igHours:23,
+        msgs:[{f:'them', t:'Hi! Do you have the 12 inch claw clip ponytail in brown?', at:'10:41'}]},
+      {id:'tunde', name:'Tunde Bakare', ch:'wa', time:'10:30', unread:2,
+        msgs:[{f:'them', t:'Good morning. How much is delivery to Ikeja?', at:'10:28'},{f:'them', t:'I want 2 of the black clip', at:'10:30'}]},
+      {id:'blessing', name:'Blessing Eze', ch:'fb', time:'09:58', unread:1, detect:'bonnet-wine', phone:'0812 440 7781',
+        msgs:[{f:'them', t:'Is the wine satin bonnet available?', at:'09:58'}]},
+      {id:'kunle', name:'Kunle Adeyemi', ch:'wa', time:'09:12', unread:0,
+        msgs:[{f:'me', t:'Total is ₦37,000 with delivery. I’ll send a Paystack link or you can transfer.', at:'09:05'},{f:'them', t:'Sent the transfer, please confirm', at:'09:12'},{f:'sys', t:'<b>Payment matched</b> · ₦37,000 from KUNLE ADEYEMI · 09:12'}]},
+      {id:'chioma', name:'Chioma Nwosu', ch:'ig', time:'Tue', unread:0, quiet:'3 days',
+        msgs:[{f:'me', t:'The 20" bone straight is ₦145,000. Should I reserve one for you?', at:'Tue'},{f:'them', t:'Let me think about it', at:'Tue'}]},
+      {id:'musa', name:'Musa Danjuma', ch:'wa', time:'Sun', unread:0, quiet:'5 days',
+        msgs:[{f:'me', t:'Here are the black clip photos you asked for.', at:'Sun'},{f:'them', t:'Okay I’ll get back to you', at:'Sun'}]}
+    ],
+    consents:[
+      {name:'Ngozi A.', ch:'wa', what:'Restock alert · Satin Bonnet (Wine)', when:'14 Sep, 4:02 PM', quote:'Yes please tell me', out:false},
+      {name:'Halima K.', ch:'wa', what:'Restock alert · 12" Claw Clip (Brown)', when:'9 Sep, 11:20 AM', quote:'YES 0706…', out:false},
+      {name:'Sade O.', ch:'wa', what:'Restock alert · 12" Claw Clip (Brown)', when:'2 Sep, 7:45 PM', quote:'yes', out:true}
+    ],
+    cfg:{units:3, mode:'hold', hold:120, perUnit:5},
+    run:null, revenue:0
+  };
+}
+let S = fresh();
+const app = document.getElementById('app');
+const naira = n => '₦' + Math.round(n).toLocaleString('en-NG');
+const fmt = m => { m = ((m % 1440)+1440)%1440; let h=Math.floor(m/60), mm=m%60, ap=h>=12?'PM':'AM'; h=h%12||12; return h+':'+String(mm).padStart(2,'0')+' '+ap; };
+const dur = m => m>=60 ? Math.floor(m/60)+'h '+(m%60? (m%60)+'m':'') : m+'m';
+const esc = s => s.replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const P = id => S.products.find(p=>p.id===id);
+const C = id => S.chats.find(c=>c.id===id);
+const initials = n => n.split(' ').map(w=>w[0]).join('').slice(0,2);
+const chName = {wa:'WhatsApp', ig:'Instagram', fb:'Facebook'};
+const chip = ch => `<span class="ch ${ch}"><i></i>${chName[ch]}</span>`;
+
+/* ---------- guide ---------- */
+const STEPS = [
+  ['offer','Offer a restock alert in a chat','Open Amaka’s Instagram chat. Oja spots the sold-out item and asks for her WhatsApp number.', ()=>{S.view='chat';S.chatId='amaka';}],
+  ['restock','Log 3 new brown clips','In Restock, add the units and review who gets messaged and what it costs.', ()=>{S.view='product';S.productId='clip-brown';}],
+  ['live','Watch the holds play out','Skip ahead. Unpaid holds expire and pass to the next person in line.', ()=>{S.view=S.run?'live':'product';S.productId='clip-brown';}],
+  ['insights','Check demand and quiet chats','See what to reorder and which chats you can still follow up on.', ()=>{S.view='insights';S.steps.insights=true;}]
+];
+function renderSteps(){
+  document.getElementById('steps').innerHTML = STEPS.map(([k,t,s],i)=>
+    `<li class="${S.steps[k]?'done':''}"><button data-step="${i}"><span class="dot" aria-hidden="true"></span><span><b>${t}</b><span class="s">${s}</span></span></button></li>`).join('');
+}
+document.getElementById('steps').addEventListener('click', e=>{
+  const b=e.target.closest('[data-step]'); if(!b) return;
+  STEPS[+b.dataset.step][3](); render(true);
+});
+document.getElementById('reset').addEventListener('click', ()=>{ S=fresh(); render(true); });
+
+/* ---------- shared chrome ---------- */
+function status(){ return `<div class="status"><span>10:4${S.run?'9':'2'}</span><span>5G ▮▮▮</span></div>`; }
+function nav(active){
+  const unread = S.chats.reduce((a,c)=>a+c.unread,0);
+  const item=(k,label,extra='')=>`<button data-act="go" data-arg="${k}" class="${active===k?'on':''}" aria-label="${label}">${ICON[k]}<span>${label}${extra}</span></button>`;
+  return `<nav class="nav">${item('chats','Chats', unread?` <span class="badge">${unread}</span>`:'')}${item('restock','Restock')}${item('insights','Insights')}</nav>`;
+}
+
+/* ---------- views ---------- */
+function vChats(){
+  let list = S.chats;
+  if(S.filter==='unread') list = list.filter(c=>c.unread);
+  if(S.filter==='quiet') list = list.filter(c=>c.quiet);
+  const f=(k,l)=>`<button class="chip ${S.filter===k?'on':''}" data-act="filter" data-arg="${k}">${l}</button>`;
+  return `${status()}<div class="top"><h2>Chats</h2><span class="sub">Lekki Hair Plug</span></div>
+  <div class="body">
+    <div class="chips">${f('all','All')}${f('unread','Unread')}${f('quiet','Quiet')}</div>
+    ${list.map(c=>{
+      const last=[...c.msgs].reverse().find(m=>m.f!=='sys');
+      const tags=[];
+      if(c.interest) tags.push(`<span class="tag">Wants: ${P(c.interest).variant} ${P(c.interest).name.replace(/Ponytail|Wig 20"/,'').trim()}</span>`);
+      else if(c.detect && !c.offered) tags.push(`<span class="tag hold">Asked about sold-out item</span>`);
+      if(c.quiet) tags.push(`<span class="tag quiet">Quiet ${c.quiet}</span>`);
+      return `<button class="row" data-act="open" data-arg="${c.id}">
+        <span class="av">${initials(c.name)}</span>
+        <span><span class="name">${c.name} ${chip(c.ch)}</span><span class="last">${last.f==='me'?'You: ':''}${last.t}</span>${tags.length?`<span class="tagline">${tags.join('')}</span>`:''}</span>
+        <span class="meta"><span>${c.time}</span>${c.unread?`<span class="badge">${c.unread}</span>`:''}</span></button>`;
+    }).join('') || '<p class="pad" style="color:var(--muted)">Nothing here.</p>'}
+  </div>${nav('chats')}`;
+}
+
+function vChat(){
+  const c=C(S.chatId); const p=c.detect?P(c.detect):null;
+  let banner='';
+  if(c.consented) banner=`<div class="banner ok"><span>✓</span><span><b>WhatsApp alerts on.</b> +234 ${c.phone.slice(1)} · consent logged ${c.consentAt}. She can reply STOP any time.</span></div>`;
+  else if(c.ch==='ig') banner=`<div class="banner"><span>⏱</span><span><b>Instagram: ${c.igHours}h left for automated replies.</b> Get her WhatsApp number to alert her after that.</span></div>`;
+  else if(c.ch==='fb') banner=`<div class="banner"><span>⏱</span><span><b>Messenger: 24h window for automated replies.</b> Ask for WhatsApp to alert her later.</span></div>`;
+  const detect = (p && !c.offered) ? `<div class="detect"><div class="k">Sold-out item detected</div>
+      <div class="p">${p.name} · ${p.variant}</div>
+      <div class="s">0 in stock · ${p.waitlist.length} people waiting · ${naira(p.price)}</div>
+      <div class="btns"><button class="btn primary" data-act="offer">Offer restock alert</button><button class="btn" data-act="dismiss">Reply myself</button></div></div>` : '';
+  const tags = c.interest ? `<div class="tagline"><span class="tag">Wants: ${P(c.interest).variant} · #${c.pos} in line</span></div>` : '';
+  return `${status()}<div class="top"><button class="back" data-act="go" data-arg="chats" aria-label="Back">‹</button>
+    <span class="av" style="width:36px;height:36px;font-size:13px">${initials(c.name)}</span>
+    <span style="flex:1"><span style="font-weight:600;display:flex;gap:6px;align-items:center">${c.name} ${chip(c.ch)}</span>${tags}</span></div>
+  <div class="body" id="chatbody">${banner}
+    <div class="msgs">${c.msgs.map(m=> m.f==='sys' ? `<div class="sys">${m.t}</div>` : `<div class="b ${m.f}">${m.t}<small>${m.at}</small></div>`).join('')}
+    ${c.typing?'<div class="typing">'+c.name.split(' ')[0]+' is typing…</div>':''}</div>
+  </div>${detect}
+  <form class="composer" data-form="send"><input id="composer-${c.id}" placeholder="Message ${c.name.split(' ')[0]}" autocomplete="off"><button type="submit">Send</button></form>`;
+}
+
+function vRestock(){
+  const waiting = S.products.filter(p=>p.waitlist.length && p.stock===0);
+  const rest = S.products.filter(p=>!(p.waitlist.length && p.stock===0));
+  const row = p=>`<button class="prod" data-act="product" data-arg="${p.id}"><span class="sw" style="background:${p.swatch}"></span>
+    <span><span class="t">${p.name}</span><br><span class="v">${p.variant} · ${p.stock} in stock</span></span>
+    <span class="r"><b>${p.waitlist.length}</b>waiting</span></button>`;
+  return `${status()}<div class="top"><h2>Restock</h2><span class="sub">${S.products.reduce((a,p)=>a+p.waitlist.length,0)} people waiting</span></div>
+  <div class="body"><div class="sect">Sold out, people waiting</div>${waiting.map(row).join('')}
+  <div class="sect">In stock</div>${rest.map(row).join('')}</div>${nav('restock')}`;
+}
+
+function planFor(p){
+  const c=S.cfg, wl=p.waitlist.length;
+  if(c.mode==='hold'){ const n=Math.min(c.units,wl); return {n, text:`Message the first ${n} on the list. Each gets one unit held for ${dur(c.hold)}. If they don’t pay, the hold passes to the next person.`}; }
+  const n=Math.min(c.units*c.perUnit, wl); return {n, text:`Message the first ${n} on the list at once (${c.perUnit} per unit). First ${c.units} to pay get one. Everyone else gets a “sold out, still on the list” note.`};
+}
+function preview(p){
+  const c=S.cfg, L=s=>`<span class="lock">${s}</span>`;
+  const head=`Hi Halima, the ${p.short} is back.`;
+  if(c.mode==='hold') return `${head} ${L(c.units)} came in and ${L(p.waitlist.length)} people are waiting. One is held for you until ${L(fmt(SEND_AT+c.hold))}. Pay ${naira(p.price)} to keep it: oja.ng/p/7Kq2`;
+  return `${head} ${L(c.units)} came in and we’re telling the first ${L(Math.min(c.units*c.perUnit,p.waitlist.length))} people on the list. First to pay gets one: oja.ng/p/7Kq2`;
+}
+function vProduct(){
+  const p=P(S.productId), c=S.cfg, plan=planFor(p);
+  const extra = c.mode==='race' ? plan.n - c.units : 0; // sold-out notices
+  const msgs = plan.n + Math.max(extra,0);
+  const stepper=(k,min,max)=>`<div class="step"><button data-act="cfg" data-arg="${k}:-1" aria-label="Fewer">−</button><output>${c[k]}</output><button data-act="cfg" data-arg="${k}:1" aria-label="More">+</button></div>`;
+  const canSend = p.waitlist.length>0 && !(S.run && S.run.productId===p.id && !S.run.done);
+  return `${status()}<div class="top"><button class="back" data-act="go" data-arg="restock" aria-label="Back">‹</button><h2 style="font-size:18px">${p.variant}</h2></div>
+  <div class="body">
+    <div class="hero"><span class="sw" style="background:${p.swatch}"></span><span><h3>${p.name}</h3><span class="v" style="color:var(--muted);font-size:13px">${p.variant} · ${naira(p.price)}</span></span></div>
+    <div class="kv"><div><span>In stock</span><b>${p.stock}</b></div><div><span>Waiting</span><b>${p.waitlist.length}</b></div><div><span>Bought last time</span><b>${Math.round(p.conv*100)}%</b></div></div>
+    ${p.waitlist.length? `<div class="sect">Next in line</div><div class="wl">${p.waitlist.slice(0,4).map((w,i)=>`<div class="it"><span class="pos">#${i+1}</span><span>${w.name} <span style="color:var(--muted);font-size:12px">since ${w.joined}</span></span>${chip('wa')}</div>`).join('')}
+      <div class="it" style="border:0;color:var(--muted);font-size:13px"><span></span><span>+ ${Math.max(p.waitlist.length-4,0)} more, all with WhatsApp consent</span><span></span></div></div>` : ''}
+    ${p.waitlist.length ? `<div class="card"><h4>Log a restock</h4>
+      <div class="field"><label>Units that came in</label>${stepper('units')}</div>
+      <div class="field" style="display:block"><div class="seg"><button data-act="mode" data-arg="hold" class="${c.mode==='hold'?'on':''}">Hold one per unit</button><button data-act="mode" data-arg="race" class="${c.mode==='race'?'on':''}">Open race</button></div></div>
+      ${c.mode==='hold' ? `<div class="field"><label>Hold length</label><div class="seg three" style="width:170px">${[60,120,240].map(m=>`<button data-act="hold" data-arg="${m}" class="${c.hold===m?'on':''}">${dur(m)}</button>`).join('')}</div></div>`
+        : `<div class="field"><label>People per unit<span class="hint">More people, faster sale, more messages</span></label>${stepper('perUnit')}</div>`}
+      <p class="plan">${plan.text}</p></div>
+    <div class="card"><h4>Message preview</h4><div class="preview">${preview(p)}</div>
+      <p class="note">🔒 Numbers come from your stock and waitlist. You can’t type them in, so every “only 3” is true.</p></div>
+    <div class="card"><h4>Estimated cost</h4><div class="cost">
+      <span>${plan.n} alert${plan.n===1?'':'s'} now</span><b class="num">${plan.n} × ₦${RATE.marketing}</b>
+      ${c.mode==='race' && extra>0 ? `<span>${extra} “sold out” notes later</span><b class="num">${extra} × ₦${RATE.marketing}</b>` : `<span>Re-offers if a hold expires</span><b class="num">₦${RATE.marketing} each</b>`}
+      <span class="tot">Up front, marketing rate</span><b class="tot num">${naira(msgs*RATE.marketing)}</b>
+      <span style="color:var(--muted)">If Meta accepts it as a utility message</span><b class="num" style="color:var(--muted)">${naira(msgs*RATE.utility)}</b></div>
+      <p class="note">Estimated from reported Nigeria WhatsApp rates for Oct 2026. Paid from your Oja wallet.</p></div>
+    <div class="pad"><button class="btn primary block" data-act="send" ${canSend?'':'disabled'}>Add ${c.units} to stock and send ${plan.n} alert${plan.n===1?'':'s'}</button></div>` : `<p class="pad" style="color:var(--muted)">No one is waiting for this one. Customers who ask for it while it’s sold out will show up here.</p>`}
+  </div>${nav('restock')}`;
+}
+
+/* ---------- restock simulation ---------- */
+const PAY_AFTER = [18, null, 55, 40, null, 25, 70, null, 35, 20, 45, 30, null, 15, 50]; // minutes to pay after being messaged, null = no reply
+function startRun(p){
+  const c=S.cfg;
+  p.stock += c.units;
+  const r={productId:p.id, mode:c.mode, units:c.units, hold:c.hold, t:0, next:0, entries:[], sold:0, msgs:0, done:false};
+  const offer = t => { const i=r.next++; const w=p.waitlist[i]; if(!w) return;
+    const pay = PAY_AFTER[i % PAY_AFTER.length];
+    r.entries.push({i, name:w.name, status: r.mode==='hold'?'held':'notified', sentAt:t, payAt: pay==null?null:t+pay, until: t+r.hold});
+    r.msgs++; };
+  r.offer = offer;
+  const n = c.mode==='hold' ? Math.min(c.units,p.waitlist.length) : Math.min(c.units*c.perUnit,p.waitlist.length);
+  for(let k=0;k<n;k++) offer(0);
+  S.run=r; S.steps.restock=true; S.view='live';
+}
+function advance(mins){
+  const r=S.run, p=P(r.productId); if(!r||r.done) return;
+  const end=r.t+mins;
+  for(let t=r.t+1;t<=end && !r.done;t++){
+    r.t=t;
+    for(const e of [...r.entries]){
+      if((e.status==='held'||e.status==='notified') && e.payAt!=null && e.payAt<=t){
+        if(r.sold<r.units){ e.status='paid'; e.paidAt=t; r.sold++; S.revenue+=p.price; p.stock--; }
+        else if(e.status==='notified'){ e.status='missed'; }
+      } else if(e.status==='held' && e.until<=t){
+        e.status='expired'; r.offer(t);
+      }
+    }
+    if(r.sold>=r.units){
+      for(const e of r.entries) if(e.status==='notified'){ e.status='missed'; r.msgs++; }
+      finish(r,p);
+    } else if(!r.entries.some(e=>e.status==='held'||e.status==='notified') && r.next>=p.waitlist.length){ finish(r,p); }
+    if(r.mode==='race' && !r.done && r.t>=240){ for(const e of r.entries) if(e.status==='notified'){ e.status='missed'; r.msgs++; } finish(r,p); }
+  }
+}
+function finish(r,p){
+  r.done=true; S.steps.live=true;
+  const paidIdx=new Set(r.entries.filter(e=>e.status==='paid').map(e=>e.i));
+  p.waitlist = p.waitlist.filter((w,i)=>!paidIdx.has(i));
+}
+function vLive(){
+  const r=S.run, p=P(r.productId);
+  const slots=[]; const held=r.entries.filter(e=>e.status==='held').length;
+  for(let k=0;k<r.units;k++) slots.push(k<r.sold?'sold':(k<r.sold+held?'held':''));
+  const pill=e=>{
+    if(e.status==='held') return `<span class="pill held">Held · ${dur(e.until-r.t)} left</span>`;
+    if(e.status==='paid') return `<span class="pill paid">Paid ${fmt(SEND_AT+e.paidAt)}</span>`;
+    if(e.status==='expired') return `<span class="pill expired">Hold ended</span>`;
+    if(e.status==='missed') return `<span class="pill missed">Sold out note sent</span>`;
+    return `<span class="pill notified">Messaged</span>`;
+  };
+  const raceMsgs = Math.min(r.units*5,43) + Math.min(r.units*5,43) - r.units;
+  return `${status()}<div class="top"><button class="back" data-act="product" data-arg="${p.id}" aria-label="Back">‹</button><span style="flex:1"><h2 style="font-size:18px">Restock live</h2><span class="sub">${p.name} · ${p.variant}</span></span></div>
+  <div class="clock"><span>Sent ${fmt(SEND_AT)}</span><span>Now <b>${fmt(SEND_AT+r.t)}</b></span></div>
+  <div class="body">
+    <div class="units">${slots.map((s,k)=>`<span class="${s}">${s==='sold'?'Sold':s==='held'?'Held':'Unit '+(k+1)}</span>`).join('')}</div>
+    <div class="stats"><div><span>Messages</span><b class="num">${r.msgs}</b></div><div><span>Cost (est.)</span><b class="num">${naira(r.msgs*RATE.marketing)}</b></div><div><span>Sales</span><b class="num">${naira(r.sold*p.price)}</b></div></div>
+    ${r.done ? `<div class="done-banner"><b>${r.sold} of ${r.units} sold in ${dur(r.t)}.</b> ${r.msgs} messages, about ${naira(r.msgs*RATE.marketing)}. ${r.mode==='hold'?`An open race to 5 people per unit would have sent about ${raceMsgs}.`:''} Buyers were removed from the waitlist; everyone else keeps their place.</div>` : ''}
+    <div class="sect">Who was messaged</div>
+    ${r.entries.map(e=>`<div class="ent"><span class="pos num" style="color:var(--muted);font-size:12px">#${e.i+1}</span><span>${e.name}</span>${pill(e)}</div>`).join('')}
+    ${r.mode==='hold' && !r.done ? `<div class="ent" style="color:var(--muted);font-size:13px"><span></span><span>#${r.next+1} onward wait. No message until a hold frees up.</span><span class="pill wait">Waiting</span></div>`:''}
+  </div>
+  <div class="runbar">${r.done ? `<button class="btn primary" data-act="go" data-arg="insights">See insights</button>` : `<button class="btn" data-act="adv" data-arg="30">+30 min</button><button class="btn primary" data-act="adv" data-arg="600">Run to the end</button>`}</div>`;
+}
+
+function vInsights(){
+  const sold = S.run? S.run.sold:0;
+  const demand = S.products.filter(p=>p.waitlist.length).map(p=>({p, n:p.waitlist.length, sug:Math.max(1,Math.round(p.waitlist.length*p.conv))}));
+  const out = S.consents.filter(c=>c.out).length;
+  const quiet = S.chats.filter(c=>c.quiet);
+  const rule = c => c.ch==='ig' ? 'Instagram: automated window closed. You can still reply yourself for 4 more days.' : 'WhatsApp: outside the 24h window. Only an approved template can go out (about ₦84), so a personal nudge won’t send.';
+  return `${status()}<div class="top"><h2>Insights</h2><span class="sub">September</span></div>
+  <div class="body">
+    <div class="tiles">
+      <div><span>Sales</span><b class="num">${naira(2410000+S.revenue)}</b><em>${S.revenue?'+'+naira(S.revenue)+' today':'this month'}</em></div>
+      <div><span>Orders</span><b class="num">${97+sold}</b></div>
+      <div><span>From restock alerts</span><b class="num">${naira(388500+S.revenue)}</b></div>
+      <div><span>Alert spend</span><b class="num">${naira(9240+(S.run?S.run.msgs*RATE.marketing:0))}</b></div>
+    </div>
+    <div class="sect">Reorder by demand</div>
+    <div style="overflow-x:auto"><table class="dt"><thead><tr><th>Item</th><th>Waiting</th><th>Bought last time</th><th>Suggest</th></tr></thead><tbody>
+      ${demand.map(d=>`<tr><td>${d.p.name.replace(' Ponytail','')}<span>${d.p.variant}</span></td><td class="num">${d.n}</td><td class="num">${Math.round(d.p.conv*100)}%</td><td class="num"><b>${d.sug}</b></td></tr>`).join('')}
+    </tbody></table></div>
+    <p class="note pad" style="margin:0;padding-top:6px">Suggested units = people waiting × share who bought at the last restock.</p>
+    <div class="sect">Quiet chats</div>
+    ${quiet.map(c=>`<div class="qc"><span><b>${c.name}</b> ${chip(c.ch)} <span style="color:var(--muted);font-size:12.5px">· quiet ${c.quiet}</span></span><button class="btn" style="padding:6px 12px;font-size:13px" data-act="open" data-arg="${c.id}">Open</button><span class="rule">${rule(c)}</span></div>`).join('')}
+    <div class="sect">Consent log</div>
+    ${S.consents.map(c=>`<div class="cl"><b>${c.name}</b> ${chip(c.ch)} ${c.out?'<span class="pill expired">Opted out</span>':''}<br>${c.what}<br><span class="q">“${c.quote}”</span> <span style="color:var(--muted);font-size:12px">· ${c.when}</span></div>`).join('')}
+    <p class="note pad" style="margin:0 0 12px">${S.consents.length} consents on record, ${out} opted out. Nobody gets an alert without one.</p>
+  </div>${nav('insights')}`;
+}
+
+/* ---------- render ---------- */
+let lastView='';
+function render(forceTop){
+  const key=S.view+(S.chatId||'')+(S.productId||'');
+  const body=app.querySelector('.body'); const keep = !forceTop && key===lastView && body ? body.scrollTop : 0;
+  const V={chats:vChats, chat:vChat, restock:vRestock, product:vProduct, live:vLive, insights:vInsights}[S.view];
+  app.innerHTML = V() + (S.toast?`<div class="toast" role="status">${S.toast}</div>`:'');
+  const nb=app.querySelector('.body');
+  if(S.view==='chat') nb.scrollTop=nb.scrollHeight; else nb.scrollTop=keep;
+  lastView=key; renderSteps();
+}
+function toast(t){ S.toast=t; render(); clearTimeout(toast.h); toast.h=setTimeout(()=>{S.toast=null; render();},1800); }
+
+function offer(){
+  const c=C(S.chatId), p=P(c.detect), first=c.name.split(' ')[0];
+  c.offered=true; c.unread=0;
+  c.msgs.push({f:'me', t:`Hi ${first}, the ${p.variant.toLowerCase()} one is sold out right now. Want a WhatsApp message the moment it’s back? Reply YES with your WhatsApp number.`, at:'10:42'});
+  c.typing=true; render();
+  setTimeout(()=>{
+    c.typing=false;
+    c.msgs.push({f:'them', t:`Yes please. ${c.phone}`, at:'10:43'});
+    render();
+    setTimeout(()=>{
+      p.waitlist.push({name:first, ch:'wa', joined:'26 Sep'});
+      c.pos=p.waitlist.length; c.interest=p.id; c.consented=true; c.consentAt='10:43 AM';
+      S.consents.unshift({name:c.name.replace(/(\w+) (\w).*/,'$1 $2.'), ch:'wa', what:`Restock alert · ${p.name.replace(' Ponytail','')} (${p.variant})`, when:'Today, 10:43 AM', quote:`Yes please. ${c.phone.slice(0,4)}…`, out:false});
+      c.msgs.push({f:'sys', t:`<b>Tagged:</b> ${p.name} · ${p.variant}<br><b>Consent logged:</b> WhatsApp restock alerts · 10:43 AM`});
+      c.msgs.push({f:'me', t:`Done. You’re #${c.pos} on the list. We’ll message you on WhatsApp when it lands. Reply STOP any time to leave the list.`, at:'10:43'});
+      c.time='10:43'; S.steps.offer=true; render();
+    },650);
+  },1100);
+}
+
+app.addEventListener('click', e=>{
+  const b=e.target.closest('[data-act]'); if(!b||b.disabled) return;
+  const a=b.dataset.act, arg=b.dataset.arg;
+  if(a==='go'){ S.view=arg; if(arg==='insights') S.steps.insights=true; render(true); }
+  else if(a==='filter'){ S.filter=arg; render(); }
+  else if(a==='open'){ S.chatId=arg; S.view='chat'; C(arg).unread = C(arg).detect && !C(arg).offered ? C(arg).unread : 0; render(true); }
+  else if(a==='offer') offer();
+  else if(a==='dismiss'){ C(S.chatId).offered=true; render(); }
+  else if(a==='product'){ S.productId=arg; S.view = (S.run && S.run.productId===arg && !S.run.done && S.view!=='live') ? 'live' : 'product'; render(true); }
+  else if(a==='cfg'){ const [k,d]=arg.split(':'); const lim={units:[1,12],perUnit:[1,10]}[k]; S.cfg[k]=Math.min(lim[1],Math.max(lim[0],S.cfg[k]+(+d))); render(); }
+  else if(a==='mode'){ S.cfg.mode=arg; render(); }
+  else if(a==='hold'){ S.cfg.hold=+arg; render(); }
+  else if(a==='send'){ startRun(P(S.productId)); render(true); toast('Alerts sent'); }
+  else if(a==='adv'){ advance(+arg); render(); }
+});
+app.addEventListener('submit', e=>{
+  e.preventDefault(); const inp=e.target.querySelector('input'); const t=inp.value.trim(); if(!t) return;
+  const c=C(S.chatId); c.msgs.push({f:'me', t:esc(t), at:'10:44'}); c.unread=0; render();
+});
+render(true);
+</script>
