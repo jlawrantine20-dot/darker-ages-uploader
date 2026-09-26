@@ -1,129 +1,179 @@
-# Oja MVP
+# Oja
 
-Backend for a WhatsApp seller tool. When a customer asks for something that's sold out,
-Oja asks whether they want an alert, records their consent, and puts them on a waitlist.
-When stock arrives, it messages the people at the front of the line with a Paystack link
-and, in hold mode, a real timed hold on a real unit. Unpaid holds pass down the line.
+A WhatsApp selling tool for small businesses, in any country. When a customer asks for
+something that's sold out, Oja asks whether they want an alert, records their consent, and
+puts them on a waitlist. When stock arrives it messages the people at the front of the line
+with a payment link and, in hold mode, a real timed hold on a real unit. Unpaid holds pass
+down the line.
 
 `Oja` is a placeholder name.
 
-## What works today
+## Works for any country
 
-- **Reading chats:** it spots "is this available?" questions in English and Pidgin
-  ("una get", "e dey") and matches them to your catalog, including the right colour or
-  variant. When it isn't sure, it stays quiet and leaves the reply to you.
-- **Consent:** a clear YES records consent with the customer's exact words and the time
-  (NDPA s.26 and GAID 2025). Hedged replies like "yes but how much?" don't count. STOP
-  revokes consent and removes the customer from every list.
-- **Restocks, two modes:**
-  - `hold`: messages one person per unit, each with a timed hold. When a hold lapses, that
-    unit goes to the next person in line.
-  - `race`: messages several people per unit at once, and the first to pay wins. Everyone
-    else gets a "sold out, you keep your place" note.
-- **Honest numbers:** every count and deadline in a message comes from live stock and
-  waitlist data. Sellers can't type them in (FCCPA s.123).
-- **Payments:**
-  - Each alert carries its own Paystack link.
-  - Payments are matched by the Paystack webhook, which checks the signature.
-  - A duplicate payment or one for less than the price is ignored.
-  - A payment that arrives after the last unit sold is flagged for refund.
-  - Oja never holds the money; it goes straight to the seller's Paystack account.
+Each shop has its own country, currency, language, time zone and payment provider. Picking a
+country fills in sensible defaults, and every one of them can be changed.
+
+- **Currency:** any currency. Prices are stored in each currency's smallest unit, so FCFA
+  (no subunit), naira (kobo) and dollars (cents) are all exact.
+- **Language:** customers are messaged in English or French. Reading chats works in
+  English, French and West/Central African Pidgin ("una get", "e dey", "c'est dispo ?",
+  "il en reste ?"). More languages are a matter of adding a translation set.
+- **Phone numbers:** any country. Local formats are read in the shop's country
+  ("6 77 12 34 56" in Cameroon, "0803 555 2190" in Nigeria).
+- **WhatsApp fees:** estimated per country from Meta's rate card, in US dollars because
+  that is how Meta bills.
+- **Payments:** the seller connects their own account, so money goes straight to them.
+  Keys are stored encrypted.
+
+| Provider | Good for | Notes |
+|---|---|---|
+| Notch Pay | Cameroon: MTN MoMo, Orange Money | No customer email needed; 2% fee |
+| Flutterwave | Most of Africa: MTN/Orange Money (XAF, XOF), M-Pesa, Ghana and Uganda mobile money, cards | Each webhook is double-checked with Flutterwave's verify API before it counts |
+| Paystack | Nigeria, Ghana, Kenya, South Africa, Côte d'Ivoire | |
+| Stripe | Cards in 40+ countries | |
+
+Defaults exist for Cameroon, Nigeria, Ghana, Kenya, South Africa, Côte d'Ivoire, Senegal,
+Gabon, Rwanda, Uganda, Tanzania, Egypt, the US, Canada, the UK, France, Belgium, Germany,
+India and Brazil. Any other country works once you enter its currency and time zone.
+
+## What it does
+
+- **Reading chats:** spots "is this available?" and matches it to your catalog, including
+  the right colour. When it isn't sure, it stays quiet and leaves the reply to you.
+- **Consent:** a clear yes ("yes", "oui", "d'accord") is recorded with the customer's exact
+  words and the time. Hedged replies ("oui mais c'est combien ?") don't count. STOP (or
+  "arrêter") removes them from every list.
+- **Restocks:**
+  - `hold`: messages one person per unit, each with a timed hold.
+  - `race`: messages several per unit, and the first to pay wins. The others get a "sold
+    out, you keep your place" note.
+- **Honest numbers:** counts, prices and deadlines in messages come from live data, never
+  from something the seller types.
+- **Payment links:**
+  - Alerts carry Oja's own link. The provider checkout is created only when the customer
+    taps it, and only if the hold still stands. Otherwise the customer sees a clear "this
+    offer has ended" page in their language.
+  - This matters because some providers' checkouts expire (Notch Pay after 3 hours) before
+    a hold does.
 - **WhatsApp rules:**
   - Plain replies go out only within 24 hours of the customer's last message.
   - After that, a message goes out only as an approved template, or it's skipped.
-  - Every outgoing message is logged with its estimated Meta charge.
-- **Dry-run mode (the default):** nothing is sent and payments are simulated, so all of
-  the above can be tested without any accounts.
+  - Payment confirmations fall back to a template automatically.
+- **Seller app:** at `/app`, mobile first.
+  - Chats, with unread counts and waitlist tags.
+  - Replies, blocked with an explanation when the 24-hour window has closed.
+  - Stock, and restocks with a live preview of the exact message and the estimated fees.
+  - A live restock view showing each hold's countdown.
+  - Insights: sales from alerts, fees, what to reorder, refunds due, and the consent log.
+  - Settings for the shop and for payments.
+- **Test mode (the default):** nothing is sent and payments are simulated. The app can load
+  a sample shop in the country you pick, and lets you message the shop as a customer.
 
 ## Run it
 
 ```bash
 npm install
-npm test            # 36 tests on an embedded Postgres; needs no accounts
-npm run simulate    # plays a full restock story in the terminal
-npm run dev         # API on :8787, dry run, data in ./.data
+npm test            # 70 tests on an embedded Postgres; no accounts needed
+npm run simulate    # a full restock story in a Cameroon shop, in French
+npm run simulate -- --country NG --lang en
+npm run dev         # server on :8787; open http://localhost:8787/app
 ```
 
-To try the API while it runs in dry-run mode:
+## Testing Flutterwave for real
+
+The automated tests run Flutterwave end to end against a faithful fake of its API: checkout
+creation, payment, webhook and verification, plus tampered, failed, duplicate and late
+payments. To check against Flutterwave's real sandbox from your own machine:
 
 ```bash
-curl -X POST localhost:8787/api/sellers -H 'content-type: application/json' \
-  -d '{"name":"Lekki Hair Plug","waPhoneNumberId":"1098765432"}'
-curl -X POST localhost:8787/api/products -H 'content-type: application/json' \
-  -d '{"sellerId":"<id>","name":"12\" Claw Clip Ponytail","variant":"Brown","priceNaira":18500}'
-# Post a customer message the way Meta would (see test/http.test.ts for the payload shape),
-# then log a restock:
-curl -X POST localhost:8787/api/products/<id>/restocks -H 'content-type: application/json' \
-  -d '{"units":3,"mode":"hold","holdMinutes":120}'
-curl -X POST localhost:8787/dev/pay/<payment_ref>   # pretend the customer paid
+FLW_SECRET_KEY=FLWSECK_TEST-xxxx npm run check:flutterwave -- --amount 100 --currency XAF --phone 237677123456
 ```
+
+It creates a real test checkout, prints the link, waits while you pay with Flutterwave's
+test details, and confirms the payment through the verify endpoint. Use test keys only.
 
 ## API
 
-The admin token is required as `Authorization: Bearer <ADMIN_TOKEN>`. In dry-run mode with
-no token set, the API is open.
+Send the admin token as `Authorization: Bearer <ADMIN_TOKEN>`. In test mode with no token
+set, the API is open.
 
 | Method | Path | What it does |
 |---|---|---|
 | GET/POST | `/webhooks/whatsapp` | Meta's verification handshake and incoming messages |
-| POST | `/webhooks/paystack` | `charge.success` events |
-| POST | `/api/sellers` | `{name, waPhoneNumberId}` |
-| POST | `/api/products` | `{sellerId, name, variant?, aliases?, priceNaira, stock?}` |
-| GET | `/api/products?sellerId=` | Products with waitlist counts |
-| GET | `/api/products/:id/waitlist` | Line in order, with each person's consent wording |
+| POST | `/webhooks/payments/:sellerId` | Payment webhooks, checked with that seller's own secret |
+| GET | `/pay/:ref` | The link in alerts. Opens a fresh checkout, or shows why the offer ended |
+| GET | `/api/markets` | Country defaults, languages, payment providers and fee estimates |
+| GET/POST | `/api/sellers` | List shops, or create one: `{name, waPhoneNumberId, country, currency?, language?, timezone?}` |
+| PATCH | `/api/sellers/:id` | Change the name, country, currency, language or time zone |
+| PUT | `/api/sellers/:id/payments` | `{provider, secretKey, webhookSecret?}`. Keys are encrypted and never returned |
+| POST | `/api/products` | `{sellerId, name, variant?, aliases?, price, stock?}`, with `price` in the shop currency |
+| GET/PATCH | `/api/products/:id` | Product, waitlist count and past restocks; or edit it |
+| GET | `/api/products/:id/waitlist` | The line in order, with each person's consent wording |
+| POST | `/api/products/:id/restocks/preview` | Who would be messaged, the exact wording and the estimated fees. Sends nothing |
 | POST | `/api/products/:id/restocks` | `{units, mode: "hold" \| "race", holdMinutes?, perUnit?}` |
-| GET | `/api/restocks/:id` | Every offer and its status (held, paid, expired, missed, refund due) |
-| GET | `/api/consents?sellerId=` | Consent log, including opt-outs |
-| GET | `/api/spend?sellerId=` | Messages sent and estimated Meta charges, by category |
-| POST | `/api/tick` | Expires holds and passes units on. The server does this every minute; call it from a cron job if you deploy to serverless |
-| POST | `/dev/pay/:ref` | Dry run only: simulate a payment |
+| GET | `/api/restocks/:id` | Every offer and its status |
+| GET | `/api/chats`, `/api/chats/:id` | Inbox, and one conversation |
+| POST | `/api/chats/:id/reply` | Replies, only inside WhatsApp's 24-hour window |
+| GET | `/api/insights`, `/api/consents` | Sales, fees, demand, refunds due; the consent log |
+| POST | `/api/tick` | Expires holds and passes units on. The server does this every minute |
 
 ## Going live
 
-1. **Database:** create a Supabase project and set `DATABASE_URL` to its pooled
-   connection string. Migrations run automatically when the server starts.
-2. **WhatsApp:**
-   1. Create a Meta app with the WhatsApp product and add the seller's number. Coexistence
-      lets the seller keep using the WhatsApp Business app on the same number.
-   2. Set `WA_TOKEN` (a permanent system-user token) and `WA_APP_SECRET`.
-   3. Set the webhook to `https://<your host>/webhooks/whatsapp` with your
-      `WA_VERIFY_TOKEN`, and subscribe to `messages`.
-   4. Register the seller with the number's `phone_number_id`.
-3. **Templates:** submit the five templates below in WhatsApp Manager and wait for
-   approval.
-4. **Paystack:** set `PAYSTACK_SECRET_KEY`, then set the webhook URL to
-   `https://<your host>/webhooks/paystack`. Paystack needs an email for every payment, so
-   buyers get `<whatsapp number>@PAYSTACK_EMAIL_DOMAIN`. Use a domain you own.
-5. Set `DRY_RUN=false` and `ADMIN_TOKEN`. The server refuses to start live if any of
-   these are missing.
+1. **Database:** set `DATABASE_URL`, for example to a Supabase pooled connection string.
+2. **Secrets:** set `APP_SECRET` to a long random value, and `ADMIN_TOKEN`.
+3. **WhatsApp:**
+   1. Create a Meta app with WhatsApp, and add the seller's number. Coexistence lets the
+      seller keep using the WhatsApp Business app on the same number.
+   2. Set `WA_TOKEN` and `WA_APP_SECRET`.
+   3. Set the webhook to `https://<host>/webhooks/whatsapp`, and subscribe to `messages`.
+   4. Add a payment method in Meta Business Manager. Without one, Meta stops delivering
+      service messages beyond the free tier from 1 October 2026.
+4. **Templates:** submit the templates below in each language your shops use (en, fr).
+5. **Payments:** in the seller app, go to Settings › Get paid. Pick the provider, paste the
+   keys, and paste the webhook URL it shows into the provider's dashboard.
+6. Set `DRY_RUN=false`. The server refuses to start live if any required setting is
+   missing.
 
-### WhatsApp templates to submit
+### WhatsApp templates
 
-Meta sets each template's category when it reviews it, and that decides the price
-(reported Nigeria rates from October 2026: about ₦84 marketing, about ₦14 utility).
-Restock alerts will probably be classed as marketing. The alert templates end with a
-sentence because Meta rejects templates that start or end with a variable.
+Meta decides each template's category when it reviews it, and that decides the price.
+Restock alerts will probably be classed as marketing (Cameroon and the rest of "Rest of
+Africa": about $0.0225 a message; Nigeria: about $0.0516). Templates can't start or end
+with a variable.
 
-| Name | Suggested category | Body |
-|---|---|---|
-| `restock_hold_v1` | Marketing | Hi {{1}}, the {{2}} is back. {{3}} came in and {{4}} people are waiting. One is held for you until {{5}}. Pay {{6}} to keep it: {{7}} Reply STOP to leave the list. |
-| `restock_race_v1` | Marketing | Hi {{1}}, the {{2}} is back. {{3}} came in and we're telling the first {{4}} people on the list. First to pay {{5}} gets one: {{6}} Reply STOP to leave the list. |
-| `restock_sold_out_v1` | Utility | Sorry {{1}}, the {{2}} sold out before you got one. You're still on the list for the next restock. |
-| `payment_received_v1` | Utility | Payment received, thank you. Your {{1}} is yours. We'll message you about delivery. |
-| `payment_refund_v1` | Utility | We received your payment, but the last {{1}} sold a moment earlier. We're refunding you in full and you keep your place on the list. |
+| Name | Category | English | French |
+|---|---|---|---|
+| `restock_hold_v1` | Marketing | Hi {{1}}, the {{2}} is back. {{3}} came in and the waiting list has {{4}}. One is held for you until {{5}}. Pay {{6}} to keep it: {{7}} Reply STOP to leave the list. | Bonjour {{1}}, l'article « {{2}} » est de retour. Arrivage : {{3}} pièce(s), liste d'attente : {{4}} personne(s). Une pièce vous est réservée jusqu'à {{5}}. Payez {{6}} pour la garder : {{7}} Répondez STOP pour quitter la liste. |
+| `restock_race_v1` | Marketing | Hi {{1}}, the {{2}} is back. {{3}} came in and we're telling the first {{4}} on the list. First to pay {{5}} gets one: {{6}} Reply STOP to leave the list. | Bonjour {{1}}, l'article « {{2}} » est de retour. Arrivage : {{3}} pièce(s). Nous prévenons les {{4}} premières personnes de la liste. Le premier à payer {{5}} l'obtient : {{6}} Répondez STOP pour quitter la liste. |
+| `restock_sold_out_v1` | Utility | Sorry {{1}}, the {{2}} sold out before you got one. You're still on the list for the next restock. | Désolé {{1}}, l'article « {{2}} » a été vendu avant votre paiement. Vous gardez votre place sur la liste pour le prochain arrivage. |
+| `payment_received_v1` | Utility | Payment received, thank you. Your {{1}} is yours. We'll message you about delivery. | Paiement reçu, merci ! L'article « {{1}} » est à vous. Nous vous écrirons pour la livraison. |
+| `payment_refund_v1` | Utility | We received your payment, but the last {{1}} sold a moment earlier. We're refunding you in full and you keep your place on the list. | Nous avons reçu votre paiement, mais le dernier article « {{1}} » venait d'être vendu. Nous vous remboursons intégralement et vous gardez votre place sur la liste. |
+
+## Legal notes to check before launch
+
+This is not legal advice; have a local lawyer review the points for each country you launch
+in.
+
+- **Consent:** every alert is based on recorded, express, prior consent, and every message
+  offers STOP. That matches what Nigeria's NDPA, Cameroon's Law 2024/017 and GDPR-style
+  laws require for marketing.
+- **Cameroon:**
+  - Law 2024/017 makes "profiling" a criminal offence (Art. 65), and requires prior
+    authorisation from the data protection Authority. Get a lawyer's view on whether
+    waitlist tags count as profiling.
+  - Law 2011/012 (Art. 13) requires consumer information in French and English. Consider
+    bilingual templates for Cameroonian shops.
+- **Scarcity claims:** counts come from live data only, because false scarcity breaches
+  consumer law in Nigeria (FCCPA s.123), Cameroon (Law 2011/012 Art. 8), the EU and the UK.
 
 ## Not built yet
 
-- **Seller app:** the clickable prototype shows the planned screens. This backend is the
-  API those screens would use.
-- **Instagram and Facebook DMs:** these need Meta app review. Their automated-reply window
-  is 24 hours, so the plan is to ask for a WhatsApp number inside that window.
-  `findNgPhone` already pulls the number out of a reply.
-- **Smarter reading of chats:** an LLM classifier for messages the rule-based matcher
-  misses, and photo-to-product matching.
-- **Seller accounts:** proper logins for each seller (today there is one admin token), and
-  a wallet that shows the message cost before each send.
-- **Automatic refunds:** a late payment is flagged for refund, but the refund isn't sent
-  through Paystack's refund API yet.
-- **Tracking which ad produced a sale:** Click-to-WhatsApp ads, referral links, and past
-  customer win-back.
+- **Instagram, Facebook and TikTok DMs:** the data model and inbox are already
+  channel-aware, but these need Meta app review and TikTok Business Messaging API access.
+- **Bilingual messages:** French and English in the same message.
+- **More languages:** a translation set per language, plus an LLM classifier for messages
+  the rule-based matcher misses.
+- **Seller accounts:** proper logins for each seller; today there is one admin token.
+- **Other providers:** CinetPay and CamPay.
+- **Automatic refunds:** late payments are flagged for refund, but the refund isn't sent
+  through the provider's refund API yet.

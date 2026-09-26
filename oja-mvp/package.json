@@ -11,12 +11,14 @@
     "start": "tsx src/server.ts",
     "simulate": "tsx scripts/simulate.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:flutterwave": "tsx scripts/flutterwave-sandbox.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",
     "@hono/node-server": "^2.1.1",
     "hono": "^4.13.9",
+    "libphonenumber-js": "^1.13.14",
     "pg": "^8.23.0"
   },
   "devDependencies": {

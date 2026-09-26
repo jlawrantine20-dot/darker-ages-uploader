@@ -16,6 +16,8 @@ export interface Db extends Q {
 /** Postgres over the network (Supabase or any Postgres). */
 export async function postgresDb(connectionString: string): Promise<Db> {
   const { default: pg } = await import('pg');
+  // Return bigint columns (prices, fees) as numbers, like the embedded database does. Safe below 2^53.
+  pg.types.setTypeParser(20, (v: string) => Number(v));
   const pool = new pg.Pool({ connectionString });
   return {
     async query(sql, params) {

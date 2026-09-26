@@ -1,10 +1,11 @@
 import type { InboundText } from '../channels/whatsapp.js';
-import { copy, firstName, productLabel } from '../domain/copy.js';
+import { copyFor, firstName, productLabel } from '../domain/copy.js';
 import { asksAvailability, detectProduct, isConsentYes, isStop } from '../domain/intent.js';
 import { CONSENT_PROMPT_TTL_MS } from '../domain/windows.js';
 import type { Q } from '../db.js';
 import type { Ctx, DispatchResult, Outbound, Recipient } from './context.js';
 import { dispatch } from './outbound.js';
+import { money, type Seller } from './sellers.js';
 
 export type InboundAction = 'unknown_seller' | 'stopped' | 'joined' | 'already_waiting' | 'offered' | 'in_stock' | 'unhandled';
 
@@ -23,7 +24,7 @@ interface ProductRow {
   name: string;
   variant: string;
   aliases: string[];
-  price_kobo: number;
+  price_minor: number;
   stock: number;
 }
 
@@ -42,18 +43,17 @@ export async function waitlistPosition(q: Q, interestId: string): Promise<number
   const [row] = await q.query<{ pos: number }>(
     `select count(*)::int as pos from interests o, interests me
       where me.id = $1 and o.product_id = me.product_id and o.status = 'waiting'
-        and (o.created_at, o.id) <= (me.created_at, me.id)`,
+        and (o.created_at, o.seq) <= (me.created_at, me.seq)`,
     [interestId],
   );
   return row.pos;
 }
 
 export async function handleInbound(ctx: Ctx, msg: InboundText): Promise<{ action: InboundAction; sent: DispatchResult[] }> {
-  const [seller] = await ctx.db.query<{ id: string; name: string; wa_phone_number_id: string }>(
-    'select id, name, wa_phone_number_id from sellers where wa_phone_number_id = $1',
-    [msg.phoneNumberId],
-  );
+  const [seller] = await ctx.db.query<Seller>('select * from sellers where wa_phone_number_id = $1', [msg.phoneNumberId]);
   if (!seller) return { action: 'unknown_seller', sent: [] };
+  const t = copyFor(seller.language);
+  const lang = seller.language;
 
   const { action, outs } = await ctx.db.tx(async (q) => {
     const [contact] = await q.query<ContactRow>(
@@ -69,14 +69,17 @@ export async function handleInbound(ctx: Ctx, msg: InboundText): Promise<{ actio
        values ($1, $2, 'in', 'text', $3, $4, $5)`,
       [seller.id, contact.id, msg.text, msg.providerId, msg.at],
     );
-    const to: Recipient = { sellerId: seller.id, from: seller.wa_phone_number_id, contactId: contact.id, to: contact.wa_id, lastInboundAt: contact.last_inbound_at };
+    const to: Recipient = {
+      sellerId: seller.id, from: seller.wa_phone_number_id, contactId: contact.id, to: contact.wa_id,
+      lastInboundAt: contact.last_inbound_at, country: seller.country, language: seller.language,
+    };
     const reply = (body: string): Outbound[] => [{ ...to, kind: 'text', body }];
 
     if (isStop(msg.text)) {
       await q.query('update consents set revoked_at = $2 where contact_id = $1 and revoked_at is null', [contact.id, msg.at]);
       await q.query(`update interests set status = 'removed' where contact_id = $1 and status = 'waiting'`, [contact.id]);
       await q.query('update contacts set awaiting_consent_product_id = null, awaiting_consent_at = null where id = $1', [contact.id]);
-      return { action: 'stopped' as const, outs: reply(copy.stopped(seller.name)) };
+      return { action: 'stopped' as const, outs: reply(t.stopped(seller.name)) };
     }
 
     const promptLive =
@@ -86,13 +89,13 @@ export async function handleInbound(ctx: Ctx, msg: InboundText): Promise<{ actio
     if (promptLive && isConsentYes(msg.text)) {
       const [product] = await q.query<ProductRow>('select * from products where id = $1', [contact.awaiting_consent_product_id]);
       await q.query('update contacts set awaiting_consent_product_id = null, awaiting_consent_at = null where id = $1', [contact.id]);
-      const label = productLabel(product);
+      const label = productLabel(product, lang);
       const [existing] = await q.query<{ id: string }>(
         `select id from interests where product_id = $1 and contact_id = $2 and status = 'waiting'`,
         [product.id, contact.id],
       );
       if (existing) {
-        return { action: 'already_waiting' as const, outs: reply(copy.alreadyWaiting(await waitlistPosition(q, existing.id), label)) };
+        return { action: 'already_waiting' as const, outs: reply(t.alreadyWaiting(await waitlistPosition(q, existing.id), label)) };
       }
       const [consent] = await q.query<{ id: string }>(
         `insert into consents (seller_id, contact_id, channel, purpose, product_id, quote, granted_at)
@@ -104,20 +107,20 @@ export async function handleInbound(ctx: Ctx, msg: InboundText): Promise<{ actio
          values ($1, $2, $3, $4, $5) returning id`,
         [seller.id, product.id, contact.id, consent.id, msg.at],
       );
-      return { action: 'joined' as const, outs: reply(copy.joined(await waitlistPosition(q, interest.id), label)) };
+      return { action: 'joined' as const, outs: reply(t.joined(await waitlistPosition(q, interest.id), label)) };
     }
 
     if (asksAvailability(msg.text) || msg.text.includes('?')) {
       const catalog = await q.query<ProductRow>('select * from products where seller_id = $1', [seller.id]);
       const product = detectProduct(msg.text, catalog);
       if (product) {
-        const label = productLabel(product);
+        const label = productLabel(product, lang);
         const free = await freeStock(q, product.id);
         if (free > 0) {
-          return { action: 'in_stock' as const, outs: reply(copy.inStock(firstName(contact.name), label, product.price_kobo, free)) };
+          return { action: 'in_stock' as const, outs: reply(t.inStock(firstName(contact.name, lang), label, money(seller, product.price_minor), free)) };
         }
         await q.query('update contacts set awaiting_consent_product_id = $2, awaiting_consent_at = $3 where id = $1', [contact.id, product.id, msg.at]);
-        return { action: 'offered' as const, outs: reply(copy.offerAlert(firstName(contact.name), label)) };
+        return { action: 'offered' as const, outs: reply(t.offerAlert(firstName(contact.name, lang), label)) };
       }
     }
     return { action: 'unhandled' as const, outs: [] as Outbound[] };

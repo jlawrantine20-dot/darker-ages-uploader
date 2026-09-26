@@ -1,92 +1,119 @@
 /**
  * Plays a full restock story against an in-memory database with nothing sent:
- * customers ask about a sold-out clip, opt in, stock arrives, holds expire and pass
- * down the line, people pay. Run with: npm run simulate
+ * customers ask about a sold-out item, opt in, stock arrives, holds expire and pass
+ * down the line, people pay. Run with: npm run simulate [-- --country NG --lang en]
  */
 import { DryRunChannel, type InboundText } from '../src/channels/whatsapp.js';
-import { clockTime, naira } from '../src/domain/copy.js';
+import { clockTime } from '../src/domain/copy.js';
 import { loadConfig } from '../src/config.js';
 import { embeddedDb, migrate } from '../src/db.js';
-import { dryRunPayments } from '../src/payments/paystack.js';
+import { marketFor } from '../src/domain/markets.js';
+import { formatMoney, formatUsdMicros, toMinor } from '../src/domain/money.js';
 import { handleInbound } from '../src/services/inbound.js';
 import { handlePayment, startRestock, tick } from '../src/services/restock.js';
+
+const arg = (name: string, fallback: string) => {
+  const i = process.argv.indexOf(`--${name}`);
+  return i > 0 ? process.argv[i + 1] : fallback;
+};
+const country = arg('country', 'CM').toUpperCase();
+const m = marketFor(country);
+if (!m) throw new Error(`No defaults for ${country}. Try CM, NG, KE, GH, US, FR.`);
+const lang = arg('lang', m.language) as 'en' | 'fr';
+const fr = lang === 'fr';
 
 const PHONE_ID = '1098765432';
 const start = new Date('2026-10-05T09:00:00Z');
 let now = new Date('2026-10-01T15:00:00Z');
 const config = loadConfig({ DRY_RUN: 'true', PUBLIC_URL: 'https://oja.test' });
 const names = new Map<string, string>();
-const channel = new DryRunChannel((m) => {
-  const who = names.get(m.to) ?? m.to;
-  const text = m.body ?? `[template ${m.template?.name}] ${m.template?.params.join(' | ')}`;
-  console.log(`   ${clockTime(now, config.timezone).padStart(8)}  Oja → ${who}: ${text}`);
+const at = () => clockTime(now, m.timezone, lang).padStart(8);
+const channel = new DryRunChannel((msg) => {
+  const who = names.get(msg.to) ?? msg.to;
+  const text = msg.body ?? `[template ${msg.template?.name} · ${msg.template?.language}] ${msg.template?.params.join(' | ')}`;
+  console.log(`   ${at()}  Oja → ${who}: ${text}`);
 });
 const db = await embeddedDb();
 await migrate(db);
-const ctx = { db, channel, payments: dryRunPayments(config.publicUrl), config };
+const ctx = { db, channel, config };
 
-const [seller] = await db.query<{ id: string }>(`insert into sellers (name, wa_phone_number_id) values ('Lekki Hair Plug', $1) returning id`, [PHONE_ID]);
-const [brown] = await db.query<{ id: string }>(
-  `insert into products (seller_id, name, variant, price_kobo, stock) values ($1, '12" Claw Clip Ponytail', 'Brown', 1850000, 0) returning id`,
-  [seller.id],
+const price = toMinor(country === 'CM' ? 15000 : country === 'NG' ? 18500 : 25, m.currency);
+const [seller] = await db.query<{ id: string }>(
+  `insert into sellers (name, wa_phone_number_id, country, currency, language, timezone) values ('Hair Plug', $1, $2, $3, $4, $5) returning id`,
+  [PHONE_ID, country, m.currency, lang, m.timezone],
 );
+const [brown] = await db.query<{ id: string }>(
+  `insert into products (seller_id, name, variant, price_minor, stock) values ($1, 'Claw Clip Ponytail', $2, $3, 0) returning id`,
+  [seller.id, fr ? 'Marron' : 'Brown', price],
+);
+const money = (minor: number) => formatMoney(minor, m.currency, lang, country);
+console.log(`Shop in ${m.name}, messaging customers in ${fr ? 'French' : 'English'}, prices in ${m.currency}.`);
 
+const cc = { CM: '2376770000', NG: '2348030000', KE: '2547120000', GH: '2332440000', US: '1415555', FR: '336120000' }[country] ?? '2376770000';
 let n = 0;
 async function say(num: string, name: string, text: string) {
   names.set(num, name.split(' ')[0]);
-  console.log(`   ${clockTime(now, config.timezone).padStart(8)}  ${name.split(' ')[0]}: ${text}`);
+  console.log(`   ${at()}  ${name.split(' ')[0]}: ${text}`);
   const msg: InboundText = { phoneNumberId: PHONE_ID, from: num, name, text, providerId: `wamid.${++n}`, at: now };
   await handleInbound(ctx, msg);
 }
 const step = (title: string) => console.log(`\n── ${title}`);
-const minutes = (m: number) => (now = new Date(now.getTime() + m * 60_000));
+const minutes = (x: number) => (now = new Date(now.getTime() + x * 60_000));
 
-step('Tuesday: customers ask about a sold-out item');
-const buyers = [
-  ['2348035552190', 'Amaka Obi', 'Hi! Do you have the 12 inch claw clip ponytail in brown?', 'Yes please'],
-  ['2348124407781', 'Halima Musa', 'una get the brown claw clip?', 'yes'],
-  ['2347069001234', 'Kemi Ade', 'Is the brown claw clip ponytail available', 'yes but how much?'],
-  ['2349032218765', 'Ngozi Eze', 'do you still have brown claw clip ponytail', 'ok'],
-  ['2348170045566', 'Tolu Bello', 'brown claw clip ponytail in stock?', 'YES'],
-] as const;
-for (const [num, name, ask, reply] of buyers) {
-  await say(num, name, ask);
+step('Customers ask about a sold-out item');
+const buyers = fr
+  ? [
+      ['Nadège Mballa', 'Bonsoir, vous avez encore la claw clip ponytail marron ?', "Oui d'accord"],
+      ['Brice Nkotto', 'la claw clip ponytail marron est dispo ?', 'oui'],
+      ['Carine Fouda', 'Il en reste, la claw clip ponytail marron ?', "oui mais c'est combien ?"],
+      ['Aïcha Bello', 'y a encore la claw clip ponytail marron?', 'ok'],
+      ['Junior Tchoupo', 'claw clip ponytail marron disponible ?', 'OUI'],
+    ]
+  : [
+      ['Amaka Obi', 'Hi! Do you have the claw clip ponytail in brown?', 'Yes please'],
+      ['Halima Musa', 'una get the brown claw clip ponytail?', 'yes'],
+      ['Kemi Ade', 'Is the brown claw clip ponytail available', 'yes but how much?'],
+      ['Ngozi Eze', 'do you still have brown claw clip ponytail', 'ok'],
+      ['Tolu Bello', 'brown claw clip ponytail in stock?', 'YES'],
+    ];
+const nums = buyers.map((_, i) => `${cc}${String(i + 11).padStart(2, '0')}`);
+for (const [i, [name, ask, reply]] of buyers.entries()) {
+  await say(nums[i], name, ask);
   minutes(1);
-  await say(num, name, reply);
+  await say(nums[i], name, reply);
   minutes(37);
 }
-console.log('   (Kemi hedged, so she was not added. Nobody is messaged without a clear yes.)');
+console.log(`   (${buyers[2][0].split(' ')[0]} hedged, so they were not added. Nobody is messaged without a clear yes.)`);
 minutes(20);
-await say('2348170045566', 'Tolu Bello', 'STOP');
+await say(nums[4], buyers[4][0], 'STOP');
 
-step('Monday 10:00 AM: 2 brown clips arrive. Hold one each for 2 hours.');
+step('Monday 10:00: 2 units arrive. Hold one each for 2 hours.');
 now = start;
 const r = await startRestock(ctx, { productId: brown.id, units: 2, mode: 'hold', holdMinutes: 120 }, now);
 console.log(`   ${r.offered} alerts sent, ${r.waiting} people waiting.`);
 
-const pay = async (who: string) => {
+const pay = async (idx: number) => {
   const [o] = await db.query<{ payment_ref: string }>(
     `select o.payment_ref from offers o join interests i on i.id = o.interest_id join contacts c on c.id = i.contact_id
-      where c.name = $1 order by o.sent_at desc limit 1`,
-    [who],
+      where c.wa_id = $1 order by o.sent_at desc limit 1`,
+    [nums[idx]],
   );
-  console.log(`   ${clockTime(now, config.timezone).padStart(8)}  ${who.split(' ')[0]} pays the Paystack link`);
-  await handlePayment(ctx, { reference: o.payment_ref, amountKobo: 1850000 }, now);
+  console.log(`   ${at()}  ${buyers[idx][0].split(' ')[0]} pays ${money(price)} through the payment link`);
+  await handlePayment(ctx, { reference: o.payment_ref, amountMinor: price }, now);
 };
 
-step('Amaka pays after 18 minutes. Halima does not answer.');
+step(`${buyers[0][0].split(' ')[0]} pays after 18 minutes. ${buyers[1][0].split(' ')[0]} does not answer.`);
 minutes(18);
-await pay('Amaka Obi');
+await pay(0);
 
-step('12:01 PM: Halima’s hold lapses and passes to the next person in line');
+step(`12:01: ${buyers[1][0].split(' ')[0]}'s hold lapses and passes to the next person in line`);
 now = new Date(start.getTime() + 121 * 60_000);
 await tick(ctx, now);
 minutes(25);
-await pay('Ngozi Eze');
+await pay(3);
 
 step('Result');
-const [spend] = await db.query<{ n: number; kobo: number }>(`select count(*)::int as n, sum(cost_kobo)::int as kobo from messages where direction = 'out'`);
+const [spend] = await db.query<{ n: number; micros: number }>(`select count(*)::int as n, sum(cost_usd_micros)::int as micros from messages where direction = 'out'`);
 const [{ stock }] = await db.query<{ stock: number }>('select stock from products where id = $1', [brown.id]);
-console.log(`   2 of 2 sold for ${naira(2 * 1850000)}. ${spend.n} messages, about ${naira(spend.kobo)} in Meta fees (estimate). Stock left: ${stock}.`);
-console.log('   Halima keeps her place for the next restock. Tolu opted out and was never messaged.');
+console.log(`   2 of 2 sold for ${money(2 * price)}. ${spend.n} messages, about ${formatUsdMicros(spend.micros)} in Meta fees (estimate). Stock left: ${stock}.`);
 await db.close();

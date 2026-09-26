@@ -1,13 +1,14 @@
 import type { Config } from '../config.js';
 import type { Db } from '../db.js';
 import type { Channel } from '../channels/whatsapp.js';
-import type { Payments } from '../payments/paystack.js';
+import type { makeProvider } from '../payments/providers.js';
 
 export interface Ctx {
   db: Db;
   channel: Channel;
-  payments: Payments;
   config: Config;
+  /** Swappable in tests; defaults to the real providers. */
+  providerFactory?: typeof makeProvider;
 }
 
 export interface Recipient {
@@ -18,6 +19,9 @@ export interface Recipient {
   /** Customer's WhatsApp id. */
   to: string;
   lastInboundAt: Date | null;
+  /** Seller's country and language decide the fee estimate and template language. */
+  country: string;
+  language: string;
 }
 
 export type TemplateKey = 'hold' | 'race' | 'soldOut' | 'paid' | 'refund';
@@ -43,6 +47,6 @@ export interface DispatchResult {
   to: string;
   status: 'sent' | 'window_closed' | 'failed';
   body: string;
-  costKobo: number;
+  costUsdMicros: number;
   error?: string;
 }

@@ -1,23 +1,25 @@
+import { findPhoneNumbersInText, parsePhoneNumberFromString, type CountryCode } from 'libphonenumber-js';
+
 /**
- * Normalise a Nigerian phone number to WhatsApp id form: 234 + 10 digits, no '+'.
- * Accepts 0803 555 2190, +234 803 555 2190, 234-803-555-2190, 8035552190.
- * Returns null for anything that is not a Nigerian mobile number.
+ * Normalise a phone number to WhatsApp id form: country code + number, digits only, no '+'.
+ * Local numbers are read in the shop's country: "6 77 12 34 56" in CM → 237677123456,
+ * "0803 555 2190" in NG → 2348035552190. International numbers work from anywhere.
  */
-export function normalizeNgPhone(raw: string): string | null {
-  let d = raw.replace(/[^\d]/g, '');
-  if (d.startsWith('2340')) d = '234' + d.slice(4);
-  if (d.startsWith('234')) d = d.slice(3);
-  else if (d.startsWith('0')) d = d.slice(1);
-  if (!/^[789][01]\d{8}$/.test(d)) return null;
-  return '234' + d;
+export function normalizePhone(raw: string, defaultCountry: string): string | null {
+  const cleaned = raw.trim().replace(/^00/, '+');
+  const n = parsePhoneNumberFromString(cleaned, defaultCountry.toUpperCase() as CountryCode);
+  if (!n || !n.isValid()) return null;
+  return n.number.replace('+', '');
 }
 
-/** Find the first Nigerian mobile number written anywhere in a message. */
-export function findNgPhone(text: string): string | null {
-  const candidates = text.match(/\+?\d[\d\s-]{8,16}\d/g) ?? [];
-  for (const c of candidates) {
-    const n = normalizeNgPhone(c);
-    if (n) return n;
-  }
-  return null;
+/** First valid phone number written anywhere in a message, read in the shop's country. */
+export function findPhone(text: string, defaultCountry: string): string | null {
+  const hit = findPhoneNumbersInText(text, defaultCountry.toUpperCase() as CountryCode).find((h) => h.number.isValid());
+  return hit ? hit.number.number.replace('+', '') : null;
+}
+
+/** "+237 6 77 12 34 56" style, for showing a WhatsApp id to a seller. */
+export function formatPhone(waId: string): string {
+  const n = parsePhoneNumberFromString('+' + waId);
+  return n ? n.formatInternational() : '+' + waId;
 }

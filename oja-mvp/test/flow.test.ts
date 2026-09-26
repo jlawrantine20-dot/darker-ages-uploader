@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { formatMoney } from '../src/domain/money.js';
 import { handleInbound } from '../src/services/inbound.js';
 import { dispatch } from '../src/services/outbound.js';
 import { handlePayment, startRestock, tick } from '../src/services/restock.js';
@@ -9,6 +10,8 @@ afterEach(async () => {
   await env?.db.close();
   env = undefined as unknown as typeof env;
 });
+
+const pay = (ref: string, when: Date, amountMinor = env.clipPrice) => handlePayment(env.ctx, { reference: ref, amountMinor }, when);
 
 /** Put customers 1..n on the brown clip waitlist, in order. */
 async function fillWaitlist(n: number) {
@@ -51,11 +54,31 @@ describe('chat to waitlist', () => {
     expect(consent).toMatchObject({ quote: 'Yes please', purpose: 'restock_alert', revoked_at: null });
   });
 
-  it('says in stock with the real count when units are free', async () => {
+  it('talks to customers in French for a French-language shop', async () => {
+    env = await setup({ language: 'fr' });
+    const a = await handleInbound(env.ctx, inbound(wa(1), 'Bonsoir, vous avez encore la claw clip ponytail marron ?', T0, 'Nadège Mballa'));
+    expect(a.action).toBe('offered');
+    expect(env.channel.sent.at(-1)?.body).toBe(
+      "Bonjour Nadège, l'article « 12\" Claw Clip Ponytail marron » est en rupture de stock pour le moment. Voulez-vous un message ici dès son retour ? Répondez OUI pour être sur la liste. Vous pouvez répondre STOP à tout moment.",
+    );
+    expect((await handleInbound(env.ctx, inbound(wa(1), "Oui d'accord", at(1)))).action).toBe('joined');
+    expect(env.channel.sent.at(-1)?.body).toContain('Vous êtes n°1 sur la liste');
+
+    await handleInbound(env.ctx, inbound(wa(2), 'la claw clip ponytail noir est dispo ?', at(2), 'Paul'));
+    expect(env.channel.sent.at(-1)?.body).toBe(`Bonjour Paul, oui, l'article « 12" Claw Clip Ponytail noir » est disponible à ${formatMoney(15000, 'XAF', 'fr', 'CM')}. Il en reste 6.`);
+  });
+
+  it('says in stock with the real count and the shop currency', async () => {
     env = await setup();
     const r = await handleInbound(env.ctx, inbound(wa(1), 'una get the jet black claw clip?', T0, 'Tunde'));
     expect(r.action).toBe('in_stock');
-    expect(env.channel.sent.at(-1)?.body).toBe('Hi Tunde, yes, the jet black 12" Claw Clip Ponytail is available at ₦18,500. We have 6 left.');
+    expect(env.channel.sent.at(-1)?.body).toBe('Hi Tunde, yes, the jet black 12" Claw Clip Ponytail is available at FCFA\u00a015,000. We have 6 left.');
+  });
+
+  it('uses the right currency for a shop in another country', async () => {
+    env = await setup({ country: 'NG', clipPrice: 18500 });
+    await handleInbound(env.ctx, inbound('2348035552190', 'una get the jet black claw clip?', T0, 'Tunde'));
+    expect(env.channel.sent.at(-1)?.body).toContain('available at ₦18,500');
   });
 
   it('does not treat a hedged reply as consent, or a yes after the prompt has lapsed', async () => {
@@ -75,11 +98,19 @@ describe('chat to waitlist', () => {
     expect(env.channel.sent.at(-1)?.body).toContain('already on the list');
   });
 
+  it('keeps people who join in the same second in arrival order', async () => {
+    env = await setup();
+    for (let i = 1; i <= 5; i++) {
+      await handleInbound(env.ctx, inbound(wa(i), 'una get the brown claw clip?', T0, `P${i}`));
+      await handleInbound(env.ctx, inbound(wa(i), 'yes', T0));
+      expect(env.channel.sent.at(-1)?.body).toContain(`You're #${i} on the list`);
+    }
+  });
+
   it('STOP revokes consent and removes them from every list', async () => {
     env = await setup();
     await fillWaitlist(2);
-    const r = await handleInbound(env.ctx, inbound(wa(1), 'STOP', at(0)));
-    expect(r.action).toBe('stopped');
+    expect((await handleInbound(env.ctx, inbound(wa(1), 'STOP', at(0)))).action).toBe('stopped');
     const s = await startRestock(env.ctx, { productId: env.brown, units: 1, mode: 'hold' }, at(10));
     expect(env.channel.sent.filter((m) => m.kind === 'template').map((m) => m.to)).toEqual([wa(2)]);
     expect(s.waiting).toBe(1);
@@ -100,10 +131,14 @@ describe('restock in hold mode', () => {
     expect(s.offered).toBe(3);
     const alerts = env.channel.sent.filter((m) => m.kind === 'template');
     expect(alerts.map((m) => m.to)).toEqual([wa(1), wa(2), wa(3)]);
-    // Live numbers only: 3 units, 6 waiting, hold ends 12:00 PM Lagos time.
-    expect(alerts[0].template).toMatchObject({ name: 'restock_hold_v1', params: ['Buyer1', 'brown 12" Claw Clip Ponytail', '3', '6', '12:00 PM', '₦18,500', expect.stringMatching(/^https:\/\/oja\.test\/pay\/oja_/)] });
+    // Live numbers only: 3 units, 6 waiting, hold ends 12:00 PM in Douala.
+    expect(alerts[0].template).toMatchObject({
+      name: 'restock_hold_v1',
+      language: 'en',
+      params: ['Buyer1', 'brown 12" Claw Clip Ponytail', '3', '6', '12:00 PM', 'FCFA\u00a015,000', expect.stringMatching(/^https:\/\/oja\.test\/pay\/oja_/)],
+    });
 
-    expect((await handlePayment(env.ctx, { reference: await refFor(wa(1)), amountKobo: 1850000 }, at(18))).outcome).toBe('paid');
+    expect((await pay(await refFor(wa(1)), at(18))).outcome).toBe('paid');
     await tick(env.ctx, at(60));
     expect(await offerStatuses()).toMatchObject({ [wa(1)]: 'paid', [wa(2)]: 'held', [wa(3)]: 'held' });
 
@@ -113,11 +148,23 @@ describe('restock in hold mode', () => {
     expect(await offerStatuses()).toMatchObject({ [wa(2)]: 'expired', [wa(3)]: 'expired', [wa(4)]: 'held', [wa(5)]: 'held' });
     expect(env.channel.sent.map((m) => m.to)).toEqual([wa(4), wa(5)]);
 
-    await handlePayment(env.ctx, { reference: await refFor(wa(4)), amountKobo: 1850000 }, at(130));
-    await handlePayment(env.ctx, { reference: await refFor(wa(5)), amountKobo: 1850000 }, at(140));
+    await pay(await refFor(wa(4)), at(130));
+    await pay(await refFor(wa(5)), at(140));
     expect(await stock(env.brown)).toBe(0);
     const [r] = await env.db.query<{ closed_at: Date | null }>('select closed_at from restocks');
     expect(r.closed_at).not.toBeNull();
+  });
+
+  it('sends French templates for a French-language shop', async () => {
+    env = await setup({ language: 'fr' });
+    await handleInbound(env.ctx, inbound(wa(1), 'vous avez la claw clip ponytail marron ?', at(-10), 'Nadège'));
+    await handleInbound(env.ctx, inbound(wa(1), 'oui', at(-9)));
+    env.channel.sent.length = 0;
+    await startRestock(env.ctx, { productId: env.brown, units: 2, mode: 'hold', holdMinutes: 90 }, T0);
+    expect(env.channel.sent[0].template).toMatchObject({
+      language: 'fr',
+      params: ['Nadège', '12" Claw Clip Ponytail marron', '2', '1', '11:30', formatMoney(15000, 'XAF', 'fr', 'CM'), expect.any(String)],
+    });
   });
 
   it('keeps unclaimed units as free stock once the line runs out', async () => {
@@ -130,15 +177,16 @@ describe('restock in hold mode', () => {
     expect(r.closed_at).not.toBeNull();
   });
 
-  it('ignores duplicate and short payments', async () => {
+  it('ignores duplicate, short and wrong-currency payments', async () => {
     env = await setup();
     await fillWaitlist(1);
     await startRestock(env.ctx, { productId: env.brown, units: 1, mode: 'hold' }, T0);
     const ref = await refFor(wa(1));
-    expect((await handlePayment(env.ctx, { reference: ref, amountKobo: 100000 }, at(5))).outcome).toBe('underpaid');
-    expect((await handlePayment(env.ctx, { reference: ref, amountKobo: 1850000 }, at(6))).outcome).toBe('paid');
-    expect((await handlePayment(env.ctx, { reference: ref, amountKobo: 1850000 }, at(7))).outcome).toBe('duplicate');
-    expect((await handlePayment(env.ctx, { reference: 'oja_nope', amountKobo: 1850000 }, at(8))).outcome).toBe('unknown');
+    expect((await pay(ref, at(5), 1000)).outcome).toBe('underpaid');
+    expect((await handlePayment(env.ctx, { reference: ref, amountMinor: env.clipPrice, currency: 'USD' }, at(5))).outcome).toBe('underpaid');
+    expect((await pay(ref, at(6))).outcome).toBe('paid');
+    expect((await pay(ref, at(7))).outcome).toBe('duplicate');
+    expect((await pay('oja_nope', at(8))).outcome).toBe('unknown');
     expect(await stock(env.brown)).toBe(0);
   });
 
@@ -155,16 +203,15 @@ describe('restock in race mode', () => {
     await fillWaitlist(6);
     const s = await startRestock(env.ctx, { productId: env.brown, units: 2, mode: 'race', perUnit: 2 }, T0);
     expect(s.offered).toBe(4);
-    expect(env.channel.sent[0].template?.params).toEqual(['Buyer1', 'brown 12" Claw Clip Ponytail', '2', '4', '₦18,500', expect.any(String)]);
+    expect(env.channel.sent[0].template?.params).toEqual(['Buyer1', 'brown 12" Claw Clip Ponytail', '2', '4', 'FCFA\u00a015,000', expect.any(String)]);
 
-    await handlePayment(env.ctx, { reference: await refFor(wa(3)), amountKobo: 1850000 }, at(10));
+    await pay(await refFor(wa(3)), at(10));
     env.channel.sent.length = 0;
-    await handlePayment(env.ctx, { reference: await refFor(wa(1)), amountKobo: 1850000 }, at(12));
+    await pay(await refFor(wa(1)), at(12));
     expect(env.channel.sent.filter((m) => m.kind === 'template').map((m) => m.to).sort()).toEqual([wa(2), wa(4)]);
     expect(env.channel.sent.find((m) => m.to === wa(2))?.template?.name).toBe('restock_sold_out_v1');
 
-    // Customer 2 pays anyway: no unit left, so it is flagged for refund.
-    expect((await handlePayment(env.ctx, { reference: await refFor(wa(2)), amountKobo: 1850000 }, at(13))).outcome).toBe('refund_due');
+    expect((await pay(await refFor(wa(2)), at(13))).outcome).toBe('refund_due');
     const [{ n }] = await env.db.query<{ n: number }>(`select count(*)::int as n from offers where refund_due`);
     expect(n).toBe(1);
     expect(await stock(env.brown)).toBe(0);
@@ -181,27 +228,27 @@ describe('sending rules', () => {
     const later = at(60 * 24 * 4);
     await startRestock(env.ctx, { productId: env.brown, units: 1, mode: 'hold' }, later);
     env.channel.sent.length = 0;
-    await handlePayment(env.ctx, { reference: await refFor(wa(1)), amountKobo: 1850000 }, new Date(later.getTime() + 600_000));
+    await pay(await refFor(wa(1)), new Date(later.getTime() + 600_000));
     expect(env.channel.sent).toEqual([
       expect.objectContaining({ kind: 'template', template: expect.objectContaining({ name: 'payment_received_v1', params: ['brown 12" Claw Clip Ponytail'] }) }),
     ]);
   });
 
-  it('refuses free-form text outside the 24h window and logs costs for what is sent', async () => {
+  it('refuses free-form text outside the 24h window and logs estimated USD fees for the shop country', async () => {
     env = await setup();
     await fillWaitlist(1);
     const [c] = await env.db.query<{ id: string; seller_id: string; last_inbound_at: Date }>('select * from contacts');
-    const base = { sellerId: c.seller_id, from: '1098765432', contactId: c.id, to: wa(1), lastInboundAt: c.last_inbound_at };
+    const base = { sellerId: c.seller_id, from: '1098765432', contactId: c.id, to: wa(1), lastInboundAt: c.last_inbound_at, country: 'CM', language: 'en' };
     const [late] = await dispatch(env.ctx, [{ ...base, kind: 'text', body: 'Still interested?' }], at(60 * 30));
     expect(late.status).toBe('window_closed');
 
     await startRestock(env.ctx, { productId: env.brown, units: 1, mode: 'hold' }, at(60 * 30));
-    const spend = await env.db.query<{ category: string; cost_kobo: number }>(
-      `select category, sum(cost_kobo)::int as cost_kobo from messages where direction = 'out' group by category order by category`,
+    const spend = await env.db.query<{ category: string; cost: string }>(
+      `select category, sum(cost_usd_micros)::text as cost from messages where direction = 'out' group by category order by category`,
     );
     expect(spend).toEqual([
-      { category: 'marketing', cost_kobo: 8400 },
-      { category: 'service', cost_kobo: 0 },
+      { category: 'marketing', cost: '22500' },
+      { category: 'service', cost: '0' },
     ]);
   });
 });

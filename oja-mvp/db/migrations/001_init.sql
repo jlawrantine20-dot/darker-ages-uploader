@@ -1,10 +1,20 @@
--- Oja MVP schema. Money is stored in kobo (1 naira = 100 kobo).
+-- Oja schema. Prices are stored in the currency's smallest unit (e.g. kobo for NGN,
+-- cents for USD, whole francs for XAF, which has no subunit). Meta message costs are
+-- estimates in millionths of a US dollar, because Meta bills WhatsApp in USD.
 
 create table if not exists sellers (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   -- WhatsApp Cloud API phone number id; routes inbound webhooks to a seller.
   wa_phone_number_id text unique,
+  country text not null,                -- ISO 3166-1 alpha-2, e.g. CM, NG, KE, US
+  currency text not null,               -- ISO 4217, e.g. XAF, NGN, KES, USD
+  language text not null default 'en',  -- language customers are messaged in: en, fr
+  timezone text not null,               -- IANA, e.g. Africa/Douala
+  -- test | paystack | flutterwave | stripe | notchpay. Money goes to the seller's own account.
+  payment_provider text not null default 'test',
+  payment_secret_enc text,              -- encrypted API secret key
+  payment_webhook_secret_enc text,      -- encrypted webhook signing secret, where the provider uses one
   created_at timestamptz not null default now()
 );
 
@@ -13,9 +23,9 @@ create table if not exists products (
   seller_id uuid not null references sellers(id) on delete cascade,
   name text not null,
   variant text not null default '',
-  -- Extra words customers use for this item, e.g. {'ponytail extension'}.
+  -- Extra words customers use for this item, e.g. {'ponytail extension', 'mèche'}.
   aliases text[] not null default '{}',
-  price_kobo integer not null check (price_kobo >= 0),
+  price_minor bigint not null check (price_minor >= 0),
   stock integer not null default 0 check (stock >= 0),
   created_at timestamptz not null default now()
 );
@@ -23,12 +33,15 @@ create table if not exists products (
 create table if not exists contacts (
   id uuid primary key default gen_random_uuid(),
   seller_id uuid not null references sellers(id) on delete cascade,
-  -- WhatsApp id: international digits without '+', e.g. 2348035552190.
+  channel text not null default 'whatsapp' check (channel in ('whatsapp', 'instagram', 'facebook', 'tiktok')),
+  -- WhatsApp id: international digits without '+', e.g. 237677123456.
   wa_id text not null,
   name text,
   -- Opens WhatsApp's 24-hour customer service window.
   last_inbound_at timestamptz,
-  -- Set when we have asked "want an alert when it's back?" and await YES.
+  -- When the seller last opened the chat; newer inbound messages count as unread.
+  seller_read_at timestamptz,
+  -- Set when we have asked "want an alert when it's back?" and await a yes.
   awaiting_consent_product_id uuid references products(id) on delete set null,
   awaiting_consent_at timestamptz,
   created_at timestamptz not null default now(),
@@ -37,19 +50,23 @@ create table if not exists contacts (
 
 create table if not exists messages (
   id uuid primary key default gen_random_uuid(),
+  -- Arrival order; timestamps can tie when a reply is logged in the same instant.
+  seq bigint generated always as identity,
   seller_id uuid not null references sellers(id) on delete cascade,
   contact_id uuid not null references contacts(id) on delete cascade,
+  channel text not null default 'whatsapp' check (channel in ('whatsapp', 'instagram', 'facebook', 'tiktok')),
   direction text not null check (direction in ('in', 'out')),
   kind text not null check (kind in ('text', 'template')),
   template text,
   category text check (category in ('service', 'utility', 'marketing')),
   body text not null,
-  cost_kobo integer not null default 0,
+  cost_usd_micros bigint not null default 0,
   provider_id text,
   created_at timestamptz not null default now()
 );
+create index if not exists messages_contact on messages (contact_id, created_at, seq);
 
--- Express consent record (NDPA 2023 s.26, GAID 2025): who, what for, their words, when.
+-- Consent record: who agreed, to what, in their own words, and when.
 create table if not exists consents (
   id uuid primary key default gen_random_uuid(),
   seller_id uuid not null references sellers(id) on delete cascade,
@@ -62,9 +79,10 @@ create table if not exists consents (
   revoked_at timestamptz
 );
 
--- The waitlist. Order is created_at; position is computed, never stored.
+-- The waitlist. Order is (created_at, seq); position is computed, never stored.
 create table if not exists interests (
   id uuid primary key default gen_random_uuid(),
+  seq bigint generated always as identity,
   seller_id uuid not null references sellers(id) on delete cascade,
   product_id uuid not null references products(id) on delete cascade,
   contact_id uuid not null references contacts(id) on delete cascade,
@@ -74,7 +92,7 @@ create table if not exists interests (
 );
 create unique index if not exists interests_one_waiting
   on interests (product_id, contact_id) where status = 'waiting';
-create index if not exists interests_queue on interests (product_id, status, created_at);
+create index if not exists interests_queue on interests (product_id, status, created_at, seq);
 
 create table if not exists restocks (
   id uuid primary key default gen_random_uuid(),
