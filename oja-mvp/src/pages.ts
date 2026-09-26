@@ -34,18 +34,25 @@ const TEXT = {
 };
 
 export type PageText = (typeof TEXT)['en'];
-export const pageText = (lang: string): PageText => TEXT[lang as 'en' | 'fr'] ?? TEXT.en;
+
+/** Page wording in the shop's language. Bilingual shops get French, then English, one per line. */
+export function pageText(lang: string): PageText {
+  if (lang !== 'fr+en') return TEXT[lang as 'en' | 'fr'] ?? TEXT.en;
+  const both = {} as PageText;
+  for (const k of Object.keys(TEXT.en) as (keyof PageText)[]) both[k] = k === 'testPay' ? `${TEXT.fr[k]} / ${TEXT.en[k]}` : `${TEXT.fr[k]}\n${TEXT.en[k]}`;
+  return both;
+}
 
 export function page(lang: string, title: string, body: string, extra = ''): string {
-  return `<!doctype html><html lang="${esc(lang)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(title)}</title><style>
+  return `<!doctype html><html lang="${esc(lang === 'fr+en' ? 'fr' : lang)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(title.split('\n')[0])}</title><style>
 :root{color-scheme:light dark;--bg:#F3F6F4;--card:#fff;--ink:#15201A;--muted:#5B6961;--accent:#0B6B55;--on:#fff}
 @media (prefers-color-scheme:dark){:root{--bg:#0C110F;--card:#141A17;--ink:#E6EDE9;--muted:#95A49C;--accent:#3CC49E;--on:#052019}}
 body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif;padding:16px}
 main{max-width:420px;width:100%;background:var(--card);border-radius:16px;padding:24px}
 h1{font-size:22px;margin:0 0 8px}p{color:var(--muted);margin:0 0 16px}
 button{width:100%;padding:14px;border:0;border-radius:12px;background:var(--accent);color:var(--on);font:600 16px system-ui,sans-serif;cursor:pointer}
-</style></head><body><main><h1>${esc(title)}</h1><p>${esc(body)}</p>${extra}</main></body></html>`;
+</style></head><body><main><h1>${title.split('\n').map(esc).join('<br>')}</h1>${body.split('\n').map((p) => `<p>${esc(p)}</p>`).join('')}${extra}</main></body></html>`;
 }
 
 export const escapeHtml = esc;

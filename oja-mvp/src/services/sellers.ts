@@ -2,6 +2,7 @@ import { decryptSecret, encryptSecret } from '../crypto.js';
 import type { Q } from '../db.js';
 import { LANGS, type Lang, type Provider, isCurrency, isTimezone, marketFor } from '../domain/markets.js';
 import { formatMoney } from '../domain/money.js';
+import { parts, type Fmt } from '../domain/copy.js';
 import { PROVIDER_INFO, makeProvider, type PaymentProvider } from '../payments/providers.js';
 import type { Ctx } from './context.js';
 import { InputError } from './errors.js';
@@ -29,7 +30,8 @@ export async function getSeller(q: Q, id: string): Promise<Seller | null> {
   return (await q.query<Seller>('select * from sellers where id = $1', [id]))[0] ?? null;
 }
 
-export const money = (s: Pick<Seller, 'currency' | 'language' | 'country'>, minor: number) => formatMoney(minor, s.currency, s.language, s.country);
+export const money = (s: Pick<Seller, 'currency' | 'language' | 'country'>, minor: number) => formatMoney(minor, s.currency, parts(s.language)[0], s.country);
+export const fmt = (s: Seller): Fmt => ({ currency: s.currency, country: s.country, timezone: s.timezone });
 
 export interface SellerInput {
   name?: string;

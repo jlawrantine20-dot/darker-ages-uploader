@@ -10,12 +10,15 @@ let TZ = 'UTC';
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const exponent = (cur) => new Intl.NumberFormat('en', { style: 'currency', currency: cur }).resolvedOptions().maximumFractionDigits;
 const toMajor = (minor) => (minor ?? 0) / 10 ** exponent(S.seller?.currency ?? 'USD');
+const LANG_NAMES = { en: 'English', fr: 'French', 'fr+en': 'French and English (both in every message)' };
+/** The first language of the shop, used for names, prices and times in the app. */
+const baseLang = () => ((S.seller?.language ?? 'en').startsWith('fr') ? 'fr' : 'en');
 /** A price in the shop's currency and language: "15 000 FCFA", "FCFA 15,000", "₦18,500". */
 function money(minor) {
   const cur = S.seller?.currency ?? 'USD';
   const major = toMajor(minor);
   const opts = { style: 'currency', currency: cur, minimumFractionDigits: Number.isInteger(major) ? 0 : undefined };
-  try { return new Intl.NumberFormat(`${S.seller?.language ?? 'en'}-${S.seller?.country ?? 'US'}`, opts).format(major); }
+  try { return new Intl.NumberFormat(`${baseLang()}-${S.seller?.country ?? 'US'}`, opts).format(major); }
   catch { return new Intl.NumberFormat('en', opts).format(major); }
 }
 /** Meta fees are billed in USD. */
@@ -25,7 +28,8 @@ const phone = (wa) => (wa ? '+' + esc(wa) : '');
 const chName = { whatsapp: 'WhatsApp', instagram: 'Instagram', facebook: 'Facebook', tiktok: 'TikTok' };
 const chip = (ch) => `<span class="ch ${esc(ch)}"><i></i>${chName[ch] ?? esc(ch)}</span>`;
 /** "Brown Claw Clip" in English, "Claw Clip marron" in French, following the shop's language. */
-const label = (p) => esc(S.seller?.language === 'fr' ? [p.name, (p.variant ?? '').toLowerCase()].filter(Boolean).join(' ') : [p.variant, p.name].filter(Boolean).join(' '));
+const variantFor = (v) => { const [a, b] = (v ?? '').split('/').map((x) => x.trim()); return baseLang() === 'fr' ? a : (b || a); };
+const label = (p) => esc(baseLang() === 'fr' ? [p.name, (variantFor(p.variant) ?? '').toLowerCase()].filter(Boolean).join(' ') : [variantFor(p.variant), p.name].filter(Boolean).join(' '));
 function when(iso) {
   if (!iso) return '';
   const d = new Date(iso);
@@ -117,7 +121,7 @@ views.setup = async (_p, msg) => {
   const def = mk.countries.some((c) => c.code === guess) ? guess : 'CM';
   main.innerHTML = `
     ${sellers.length ? `<div class="sect">Choose a shop</div>${sellers.map((s) => `<a class="row" href="#/chats" data-pick="${esc(s.id)}">
-      <span class="av">${initials(s.name)}</span><span><span class="name"><span class="n">${esc(s.name)}</span></span><span class="last">${esc(s.country)} · ${esc(s.currency)} · ${s.language === 'fr' ? 'French' : 'English'}</span></span><span></span></a>`).join('')}` : ''}
+      <span class="av">${initials(s.name)}</span><span><span class="name"><span class="n">${esc(s.name)}</span></span><span class="last">${esc(s.country)} · ${esc(s.currency)} · ${LANG_NAMES[s.language] ?? s.language}</span></span><span></span></a>`).join('')}` : ''}
     <div class="sect">${sellers.length ? 'Or add another shop' : 'Add your shop'}</div>
     <form class="form" data-form="seller">
       <label>Shop name<input id="s-name" required placeholder="Douala Hair Plug"></label>
@@ -137,7 +141,7 @@ function shopFields(mk, cur) {
   const other = m ? '' : `<option value="${esc(cur.country)}" selected>${esc(cur.country)}</option>`;
   return `<label>Country<select id="s-country" data-country>${known}${other}<option value="__other">Another country…</option></select></label>
     <label id="s-other-wrap" hidden>Country code<input id="s-other" maxlength="2" placeholder="Two letters, like PH"></label>
-    <label>Talk to customers in<select id="s-lang">${mk.languages.map((l) => `<option value="${l}" ${l === (cur.language ?? m?.language) ? 'selected' : ''}>${l === 'fr' ? 'French' : 'English'}</option>`).join('')}</select></label>
+    <label>Talk to customers in<select id="s-lang">${mk.languages.map((l) => `<option value="${l}" ${l === (cur.language ?? m?.language) ? 'selected' : ''}>${LANG_NAMES[l] ?? l}</option>`).join('')}</select></label>
     <label>Currency<input id="s-currency" maxlength="3" value="${esc(cur.currency ?? m?.currency ?? '')}" required><span class="hint">Three letters, like XAF, NGN or USD.</span></label>
     <label>Time zone<input id="s-tz" value="${esc(cur.timezone ?? m?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone)}" required><span class="hint">Like Africa/Douala. Hold deadlines are shown in this time.</span></label>`;
 }
@@ -239,7 +243,7 @@ views.newProduct = async () => {
   setNav('stock');
   main.innerHTML = `<form class="form" data-form="product">
     <label>Name<input id="p-name" required placeholder='12" Claw Clip Ponytail'></label>
-    <label>Colour or variant<input id="p-variant" placeholder="Brown"><span class="hint">Oja uses this to tell variants apart in chats. Leave empty if there's only one.</span></label>
+    <label>Colour or variant<input id="p-variant" placeholder="${S.seller.language === 'fr+en' ? 'Marron / Brown' : 'Brown'}"><span class="hint">Oja uses this to tell variants apart in chats. Leave empty if there's only one.${S.seller.language === 'fr+en' ? ' Write both languages as “Marron / Brown” so each half of a message reads naturally.' : ''}</span></label>
     <label>Price (${esc(S.seller.currency)})<input id="p-price" type="number" min="0" step="any" required></label>
     <label>In stock now<input id="p-stock" type="number" min="0" step="1" value="0"></label>
     <label>Other words customers use<input id="p-aliases" placeholder="ponytail extension, claw ponytail"><span class="hint">Separate with commas.</span></label>
@@ -566,14 +570,15 @@ const outcomeText = {
 async function loadDemo() {
   const form = $('form[data-form="seller"]');
   const shop = shopValues(form);
-  const fr = shop.language === 'fr';
+  const fr = shop.language !== 'en';
   const s = await api('/api/sellers', { method: 'POST', body: { name: $('#s-name', form).value.trim() || (fr ? 'Douala Hair Plug' : 'Hair Plug'), waPhoneNumberId: 'demo-' + Date.now(), ...shop } });
   set('oja.seller', s.id); setSeller(s);
   // Sample prices in the shop's currency: [clip, bonnet, wig]
   const prices = { XAF: [15000, 5000, 85000], XOF: [15000, 5000, 85000], NGN: [18500, 6500, 145000], GHS: [250, 90, 1800], KES: [2500, 900, 18000], ZAR: [350, 120, 2400] }[s.currency] ?? [25, 9, 180];
   const add = (name, variant, price, stock, aliases = []) => api('/api/products', { method: 'POST', body: { sellerId: s.id, name, variant, price, stock, aliases } });
-  await add('Claw Clip Ponytail', fr ? 'Marron' : 'Brown', prices[0], 0, ['ponytail']);
-  await add('Claw Clip Ponytail', fr ? 'Noir' : 'Jet black', prices[0], 6, ['ponytail']);
+  const both = shop.language === 'fr+en';
+  await add('Claw Clip Ponytail', both ? 'Marron / Brown' : fr ? 'Marron' : 'Brown', prices[0], 0, ['ponytail']);
+  await add('Claw Clip Ponytail', both ? 'Noir / Black' : fr ? 'Noir' : 'Jet black', prices[0], 6, ['ponytail']);
   await add(fr ? 'Bonnet satin' : 'Satin Bonnet', fr ? 'Bordeaux' : 'Wine', prices[1], 0, fr ? ['bonnet en soie'] : ['silk bonnet']);
   await add(fr ? 'Perruque lisse 20 pouces' : 'Bone Straight Wig 20"', fr ? 'Noir naturel' : 'Natural black', prices[2], 2, fr ? ['perruque'] : ['bone straight']);
   const chat = async (name, ...texts) => { const from = samplePhone(); for (const text of texts) await api('/dev/inbound', { method: 'POST', body: { sellerId: s.id, from, name, text } }); };

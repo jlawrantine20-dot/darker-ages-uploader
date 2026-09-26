@@ -6,7 +6,8 @@
  * send will cost; Meta changes them, so check the current card before relying on them.
  */
 
-export type Lang = 'en' | 'fr';
+/** 'fr+en' sends every message in French, then English (required for consumer information in Cameroon). */
+export type Lang = 'en' | 'fr' | 'fr+en';
 export type Provider = 'test' | 'paystack' | 'flutterwave' | 'stripe' | 'notchpay';
 
 export interface Rates {
@@ -42,7 +43,7 @@ export const RATE_GROUPS: Record<string, Rates> = {
 };
 
 export const MARKETS: Record<string, Market> = {
-  CM: { name: 'Cameroon', currency: 'XAF', timezone: 'Africa/Douala', language: 'fr', providers: ['notchpay', 'flutterwave'], rateGroup: 'Rest of Africa' },
+  CM: { name: 'Cameroon', currency: 'XAF', timezone: 'Africa/Douala', language: 'fr+en', providers: ['notchpay', 'flutterwave'], rateGroup: 'Rest of Africa' },
   NG: { name: 'Nigeria', currency: 'NGN', timezone: 'Africa/Lagos', language: 'en', providers: ['paystack', 'flutterwave'], rateGroup: 'Nigeria' },
   GH: { name: 'Ghana', currency: 'GHS', timezone: 'Africa/Accra', language: 'en', providers: ['paystack', 'flutterwave'], rateGroup: 'Rest of Africa' },
   KE: { name: 'Kenya', currency: 'KES', timezone: 'Africa/Nairobi', language: 'en', providers: ['paystack', 'flutterwave'], rateGroup: 'Rest of Africa' },
@@ -64,7 +65,7 @@ export const MARKETS: Record<string, Market> = {
   BR: { name: 'Brazil', currency: 'BRL', timezone: 'America/Sao_Paulo', language: 'en', providers: ['stripe'], rateGroup: 'Brazil' },
 };
 
-export const LANGS: Lang[] = ['en', 'fr'];
+export const LANGS: Lang[] = ['en', 'fr', 'fr+en'];
 
 /** Defaults for a country we have no entry for: the seller fills in currency and time zone. */
 export function marketFor(country: string): Market | null {

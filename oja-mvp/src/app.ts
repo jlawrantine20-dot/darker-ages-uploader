@@ -14,10 +14,9 @@ import { handleInbound } from './services/inbound.js';
 import { dispatch } from './services/outbound.js';
 import { baseRef, handlePayment, previewRestock, startRestock, tick } from './services/restock.js';
 import { escapeHtml, page, pageText } from './pages.js';
-import { formatMoney } from './domain/money.js';
 import { normalizePhone } from './domain/phone.js';
 import { productLabel } from './domain/copy.js';
-import { getSeller, providerFor, publicSeller, resolveSellerInput, setPaymentProvider, type Seller } from './services/sellers.js';
+import { getSeller, money, providerFor, publicSeller, resolveSellerInput, setPaymentProvider, type Seller } from './services/sellers.js';
 
 export function createApp(ctx: Ctx, clock: () => Date = () => new Date()) {
   const app = new Hono();
@@ -122,7 +121,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date()) {
       const seller = (await getSeller(db, o.seller_id))!;
       const t = pageText(seller.language);
       const label = productLabel({ name: o.name, variant: o.variant }, seller.language);
-      const amount = formatMoney(Number(o.price_minor), seller.currency, seller.language, seller.country);
+      const amount = money(seller, Number(o.price_minor));
       return c.html(page(seller.language, t.testTitle, `${seller.name} · ${label} · ${amount}. ${t.testBody}`,
         `<form method="post"><button>${escapeHtml(t.testPay)} ${escapeHtml(amount)}</button></form>`));
     });

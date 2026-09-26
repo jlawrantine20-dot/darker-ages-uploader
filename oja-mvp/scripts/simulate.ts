@@ -19,8 +19,8 @@ const arg = (name: string, fallback: string) => {
 const country = arg('country', 'CM').toUpperCase();
 const m = marketFor(country);
 if (!m) throw new Error(`No defaults for ${country}. Try CM, NG, KE, GH, US, FR.`);
-const lang = arg('lang', m.language) as 'en' | 'fr';
-const fr = lang === 'fr';
+const lang = arg('lang', m.language) as 'en' | 'fr' | 'fr+en';
+const fr = lang !== 'en';
 
 const PHONE_ID = '1098765432';
 const start = new Date('2026-10-05T09:00:00Z');
@@ -44,10 +44,10 @@ const [seller] = await db.query<{ id: string }>(
 );
 const [brown] = await db.query<{ id: string }>(
   `insert into products (seller_id, name, variant, price_minor, stock) values ($1, 'Claw Clip Ponytail', $2, $3, 0) returning id`,
-  [seller.id, fr ? 'Marron' : 'Brown', price],
+  [seller.id, lang === 'fr+en' ? 'Marron / Brown' : fr ? 'Marron' : 'Brown', price],
 );
 const money = (minor: number) => formatMoney(minor, m.currency, lang, country);
-console.log(`Shop in ${m.name}, messaging customers in ${fr ? 'French' : 'English'}, prices in ${m.currency}.`);
+console.log(`Shop in ${m.name}, messaging customers in ${{ en: 'English', fr: 'French', 'fr+en': 'French and English' }[lang]}, prices in ${m.currency}.`);
 
 const cc = { CM: '2376770000', NG: '2348030000', KE: '2547120000', GH: '2332440000', US: '1415555', FR: '336120000' }[country] ?? '2376770000';
 let n = 0;

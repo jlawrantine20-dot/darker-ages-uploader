@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clockTime, copyFor, productLabel } from '../src/domain/copy.js';
+import { clockTime, productLabel, say, slots, templateFor } from '../src/domain/copy.js';
 import { asksAvailability, detectProduct, isConsentYes, isStop } from '../src/domain/intent.js';
 import { isCurrency, isTimezone, marketFor, ratesFor } from '../src/domain/markets.js';
 import { currencyExponent, formatMoney, formatUsdMicros, toMinor } from '../src/domain/money.js';
@@ -53,7 +53,7 @@ describe('money, in any currency', () => {
   });
 
   it('has sensible defaults per country and falls back for others', () => {
-    expect(marketFor('cm')).toMatchObject({ currency: 'XAF', timezone: 'Africa/Douala', language: 'fr' });
+    expect(marketFor('cm')).toMatchObject({ currency: 'XAF', timezone: 'Africa/Douala', language: 'fr+en' });
     expect(ratesFor('CM')).toEqual(ratesFor('KE'));
     expect(ratesFor('ZZ')).toEqual(ratesFor('XX'));
     expect(isCurrency('XAF')).toBe(true);
@@ -81,6 +81,18 @@ describe('reading customer messages', () => {
     expect(detectProduct('le tissage marron est dispo?', catalog)?.id).toBe('meche');
   });
 
+  it('accepts either spelling of a bilingual variant', () => {
+    const cat = [
+      { id: 'b', name: 'Claw Clip', variant: 'Marron / Brown', aliases: [] },
+      { id: 'k', name: 'Claw Clip', variant: 'Noir / Black', aliases: [] },
+    ];
+    expect(detectProduct('vous avez la claw clip marron ?', cat)?.id).toBe('b');
+    expect(detectProduct('una get the brown claw clip?', cat)?.id).toBe('b');
+    expect(detectProduct('black claw clip dey?', cat)?.id).toBe('k');
+    expect(productLabel({ name: 'Claw Clip', variant: 'Marron / Brown' }, 'fr')).toBe('Claw Clip marron');
+    expect(productLabel({ name: 'Claw Clip', variant: 'Marron / Brown' }, 'en')).toBe('brown Claw Clip');
+  });
+
   it('stays quiet when unsure', () => {
     expect(detectProduct('do you have the claw clip?', catalog)).toBeNull();
     expect(detectProduct('how much is delivery?', catalog)).toBeNull();
@@ -102,8 +114,27 @@ describe('wording and time', () => {
   it('writes product names naturally per language', () => {
     expect(productLabel({ name: '12" Claw Clip Ponytail', variant: 'Brown' }, 'en')).toBe('brown 12" Claw Clip Ponytail');
     expect(productLabel({ name: 'Mèche brésilienne', variant: 'Marron' }, 'fr')).toBe('Mèche brésilienne marron');
-    expect(copyFor('fr').joined(3, 'Mèche brésilienne marron')).toContain('Vous êtes n°3 sur la liste');
-    expect(copyFor('xx')).toBe(copyFor('en'));
+    const f = { currency: 'XAF', country: 'CM', timezone: 'Africa/Douala' };
+    const meche = { name: 'Mèche brésilienne', variant: 'Marron' };
+    expect(say('fr', 'joined', { product: meche, position: 3 }, f)).toContain('Vous êtes n°3 sur la liste');
+    expect(say('xx', 'joined', { product: meche, position: 3 }, f)).toContain("You're #3 on the list");
+  });
+
+  it('writes bilingual messages with each half formatted in its own language', () => {
+    const f = { currency: 'XAF', country: 'CM', timezone: 'Africa/Douala' };
+    const facts = { name: 'Nadège Mballa', product: { name: 'Claw Clip', variant: 'Brown' }, priceMinor: 15000, units: 3, waiting: 8, until: new Date('2026-10-05T11:00:00Z'), url: 'https://oja.test/pay/x' };
+    const [french, english] = say('fr+en', 'hold', facts, f).split('\n\n');
+    expect(french).toBe("Bonjour Nadège, l'article « Claw Clip brown » est de retour. Arrivage : 3 pièce(s), liste d'attente : 8 personne(s). Une pièce vous est réservée jusqu'à 12:00. Payez 15\u202f000\u00a0FCFA pour la garder : https://oja.test/pay/x Répondez STOP pour quitter la liste.");
+    expect(english).toBe('Hi Nadège, the brown Claw Clip is back. 3 came in and the waiting list has 8. One is held for you until 12:00 PM. Pay FCFA\u00a015,000 to keep it: https://oja.test/pay/x Reply STOP to leave the list.');
+    // Template slots: the 7 French values, then the 7 English ones.
+    expect(slots('fr+en', 'hold', facts, f)).toEqual([
+      'Nadège', 'Claw Clip brown', '3', '8', '12:00', '15\u202f000\u00a0FCFA', 'https://oja.test/pay/x',
+      'Nadège', 'brown Claw Clip', '3', '8', '12:00 PM', 'FCFA\u00a015,000', 'https://oja.test/pay/x',
+    ]);
+    expect(slots('en', 'hold', facts, f)).toHaveLength(7);
+    expect(say('fr+en', 'offerAlert', { product: facts.product }, f)).toMatch(/^Bonjour cher client, .+\n\nHi there, /s);
+    expect(templateFor('restock_hold_v1', 'fr+en')).toEqual({ name: 'restock_hold_v1_bilingual', language: 'fr' });
+    expect(templateFor('restock_hold_v1', 'en')).toEqual({ name: 'restock_hold_v1', language: 'en' });
   });
 
   it('formats time in the shop time zone and language', () => {

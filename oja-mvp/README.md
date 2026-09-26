@@ -15,7 +15,9 @@ country fills in sensible defaults, and every one of them can be changed.
 
 - **Currency:** any currency. Prices are stored in each currency's smallest unit, so FCFA
   (no subunit), naira (kobo) and dollars (cents) are all exact.
-- **Language:** customers are messaged in English or French. Reading chats works in
+- **Language:** customers are messaged in English, French, or **both** (French first,
+  then English, in every message). Cameroon shops default to both, because Law 2011/012
+  (Art. 13) asks for consumer information in French and English. Reading chats works in
   English, French and West/Central African Pidgin ("una get", "e dey", "c'est dispo ?",
   "il en reste ?"). More languages are a matter of adding a translation set.
 - **Phone numbers:** any country. Local formats are read in the shop's country
@@ -73,8 +75,8 @@ India and Brazil. Any other country works once you enter its currency and time z
 
 ```bash
 npm install
-npm test            # 70 tests on an embedded Postgres; no accounts needed
-npm run simulate    # a full restock story in a Cameroon shop, in French
+npm test            # 74 tests on an embedded Postgres; no accounts needed
+npm run simulate    # a full restock story in a Cameroon shop, in French and English
 npm run simulate -- --country NG --lang en
 npm run dev         # server on :8787; open http://localhost:8787/app
 ```
@@ -128,7 +130,8 @@ set, the API is open.
    3. Set the webhook to `https://<host>/webhooks/whatsapp`, and subscribe to `messages`.
    4. Add a payment method in Meta Business Manager. Without one, Meta stops delivering
       service messages beyond the free tier from 1 October 2026.
-4. **Templates:** submit the templates below in each language your shops use (en, fr).
+4. **Templates:** submit the templates below in each language your shops use (`en`, `fr`),
+   plus the bilingual set if any shop uses French and English.
 5. **Payments:** in the seller app, go to Settings › Get paid. Pick the provider, paste the
    keys, and paste the webhook URL it shows into the provider's dashboard.
 6. Set `DRY_RUN=false`. The server refuses to start live if any required setting is
@@ -149,6 +152,25 @@ with a variable.
 | `payment_received_v1` | Utility | Payment received, thank you. Your {{1}} is yours. We'll message you about delivery. | Paiement reçu, merci ! L'article « {{1}} » est à vous. Nous vous écrirons pour la livraison. |
 | `payment_refund_v1` | Utility | We received your payment, but the last {{1}} sold a moment earlier. We're refunding you in full and you keep your place on the list. | Nous avons reçu votre paiement, mais le dernier article « {{1}} » venait d'être vendu. Nous vous remboursons intégralement et vous gardez votre place sur la liste. |
 
+### Bilingual templates (French and English)
+
+For shops set to "French and English". Register each under the same base name with the
+suffix `_bilingual`, in language `fr`. The French half uses slots 1–7 and the English half
+8–14, because names, prices and times are written differently in each language: "Claw Clip
+marron · 15 000 FCFA · 12:00" versus "brown Claw Clip · FCFA 15,000 · 12:00 PM". For the
+same reason, write variants in both languages, like `Marron / Brown`. Customers can use
+either word, and each half of the message picks its own.
+
+| Name | Body |
+|---|---|
+| `restock_hold_v1_bilingual` | Bonjour {{1}}, l'article « {{2}} » est de retour. Arrivage : {{3}} pièce(s), liste d'attente : {{4}} personne(s). Une pièce vous est réservée jusqu'à {{5}}. Payez {{6}} pour la garder : {{7}} Répondez STOP pour quitter la liste.<br><br>Hi {{8}}, the {{9}} is back. {{10}} came in and the waiting list has {{11}}. One is held for you until {{12}}. Pay {{13}} to keep it: {{14}} Reply STOP to leave the list. |
+| `restock_race_v1_bilingual` | Bonjour {{1}}, l'article « {{2}} » est de retour. Arrivage : {{3}} pièce(s). Nous prévenons les {{4}} premières personnes de la liste. Le premier à payer {{5}} l'obtient : {{6}} Répondez STOP pour quitter la liste.<br><br>Hi {{7}}, the {{8}} is back. {{9}} came in and we're telling the first {{10}} on the list. First to pay {{11}} gets one: {{12}} Reply STOP to leave the list. |
+| `restock_sold_out_v1_bilingual` | Désolé {{1}}, l'article « {{2}} » a été vendu avant votre paiement. Vous gardez votre place sur la liste pour le prochain arrivage.<br><br>Sorry {{3}}, the {{4}} sold out before you got one. You're still on the list for the next restock. |
+| `payment_received_v1_bilingual` | Paiement reçu, merci ! L'article « {{1}} » est à vous. Nous vous écrirons pour la livraison.<br><br>Payment received, thank you. Your {{2}} is yours. We'll message you about delivery. |
+| `payment_refund_v1_bilingual` | Nous avons reçu votre paiement, mais le dernier article « {{1}} » venait d'être vendu. Nous vous remboursons intégralement et vous gardez votre place sur la liste.<br><br>We received your payment, but the last {{2}} sold a moment earlier. We're refunding you in full and you keep your place on the list. |
+
+A bilingual message is one WhatsApp message, so it costs the same as a single-language one.
+
 ## Legal notes to check before launch
 
 This is not legal advice; have a local lawyer review the points for each country you launch
@@ -161,8 +183,8 @@ in.
   - Law 2024/017 makes "profiling" a criminal offence (Art. 65), and requires prior
     authorisation from the data protection Authority. Get a lawyer's view on whether
     waitlist tags count as profiling.
-  - Law 2011/012 (Art. 13) requires consumer information in French and English. Consider
-    bilingual templates for Cameroonian shops.
+  - Law 2011/012 (Art. 13) requires consumer information in French and English, which the
+    "French and English" language setting covers.
 - **Scarcity claims:** counts come from live data only, because false scarcity breaches
   consumer law in Nigeria (FCCPA s.123), Cameroon (Law 2011/012 Art. 8), the EU and the UK.
 
@@ -170,7 +192,6 @@ in.
 
 - **Instagram, Facebook and TikTok DMs:** the data model and inbox are already
   channel-aware, but these need Meta app review and TikTok Business Messaging API access.
-- **Bilingual messages:** French and English in the same message.
 - **More languages:** a translation set per language, plus an LLM classifier for messages
   the rule-based matcher misses.
 - **Seller accounts:** proper logins for each seller; today there is one admin token.

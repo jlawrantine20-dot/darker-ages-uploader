@@ -1,5 +1,6 @@
 import { ratesFor, usdMicros } from '../domain/markets.js';
 import { whatsappWindowOpen } from '../domain/windows.js';
+import { templateFor } from '../domain/copy.js';
 import type { Ctx, DispatchResult, Outbound } from './context.js';
 
 /** Estimated Meta charge for one message, in millionths of a USD. Meta prices by the customer's country; we use the shop's. */
@@ -32,11 +33,11 @@ export async function dispatch(ctx: Ctx, outs: Outbound[], now: Date): Promise<D
       const sent =
         o.kind === 'text'
           ? await ctx.channel.sendText(o.from, o.to, o.body)
-          : await ctx.channel.sendTemplate(o.from, o.to, { name: templates[o.template], language: o.language, params: o.params });
+          : await ctx.channel.sendTemplate(o.from, o.to, { ...templateFor(templates[o.template], o.language), params: o.params });
       await ctx.db.query(
         `insert into messages (seller_id, contact_id, direction, kind, template, category, body, cost_usd_micros, provider_id, created_at)
          values ($1, $2, 'out', $3, $4, $5, $6, $7, $8, $9)`,
-        [o.sellerId, o.contactId, o.kind, o.kind === 'template' ? templates[o.template] : null, category, body, cost, sent.providerId, now],
+        [o.sellerId, o.contactId, o.kind, o.kind === 'template' ? templateFor(templates[o.template], o.language).name : null, category, body, cost, sent.providerId, now],
       );
       results.push({ to: o.to, status: 'sent', body, costUsdMicros: cost });
     } catch (err) {

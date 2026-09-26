@@ -158,13 +158,19 @@ describe('HTTP API', () => {
     expect(await paid.text()).toContain('Test payment received');
     expect((await app.request(`/pay/${second.payment_ref}`)).status).toBe(410);
     expect((await app.request('/pay/oja_nothing')).status).toBe(404);
+
+    // A bilingual shop explains an ended offer in both languages.
+    await env.db.query(`update sellers set language = 'fr+en'`);
+    const both = await (await app.request(`/pay/${first.payment_ref}`)).text();
+    expect(both).toContain('Cette offre est terminée<br>This offer has ended');
+    expect(both).toContain("<p>La réservation a expiré et l&#39;article est passé à la personne suivante. Vous gardez votre place sur la liste pour le prochain arrivage.</p><p>The hold on this item ran out");
   });
 
   it('creates shops with defaults from the country, for any country', async () => {
     env = await setup();
     const app = createApp(env.ctx);
     const post = (body: unknown) => app.request('/api/sellers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    expect(await (await post({ name: 'Yaoundé Wigs', waPhoneNumberId: 'a', country: 'CM' })).json()).toMatchObject({ currency: 'XAF', language: 'fr', timezone: 'Africa/Douala' });
+    expect(await (await post({ name: 'Yaoundé Wigs', waPhoneNumberId: 'a', country: 'CM' })).json()).toMatchObject({ currency: 'XAF', language: 'fr+en', timezone: 'Africa/Douala' });
     expect(await (await post({ name: 'Brooklyn Braids', waPhoneNumberId: 'b', country: 'us', timezone: 'America/Chicago' })).json()).toMatchObject({ country: 'US', currency: 'USD', timezone: 'America/Chicago' });
     // A country without defaults works once currency and time zone are given.
     expect((await post({ name: 'Manila Shop', waPhoneNumberId: 'c', country: 'PH' })).status).toBe(400);

@@ -57,8 +57,11 @@ export function detectProduct<T extends CatalogItem>(text: string, catalog: T[])
   const scored = catalog.map((item) => {
     const nameWords = new Set([...tokens(item.name), ...item.aliases.flatMap(tokens)]);
     const nameHits = [...nameWords].filter((w) => words.has(w)).length;
-    const variantWords = tokens(item.variant);
-    const variantHit = variantWords.length > 0 && variantWords.every((w) => words.has(w));
+    // "Marron / Brown": either spelling counts.
+    const variantHit = item.variant.split('/').some((alt) => {
+      const vw = tokens(alt);
+      return vw.length > 0 && vw.every((w) => words.has(w));
+    });
     return { item, nameHits, variantHit, score: nameHits + (variantHit ? 2 : 0) };
   });
   const viable = scored.filter((s) => s.nameHits >= 2 || (s.nameHits >= 1 && s.variantHit));

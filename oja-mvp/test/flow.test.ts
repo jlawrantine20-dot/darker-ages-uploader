@@ -68,6 +68,18 @@ describe('chat to waitlist', () => {
     expect(env.channel.sent.at(-1)?.body).toBe(`Bonjour Paul, oui, l'article « 12" Claw Clip Ponytail noir » est disponible à ${formatMoney(15000, 'XAF', 'fr', 'CM')}. Il en reste 6.`);
   });
 
+  it('answers in French and English for a bilingual shop, and accepts a yes in either', async () => {
+    env = await setup({ language: 'fr+en' });
+    await handleInbound(env.ctx, inbound(wa(1), 'vous avez la claw clip ponytail brown ?', T0, 'Nadège'));
+    const [french, english] = env.channel.sent.at(-1)!.body!.split('\n\n');
+    expect(french).toContain("Bonjour Nadège, l'article « 12\" Claw Clip Ponytail brown » est en rupture de stock");
+    expect(english).toContain('Hi Nadège, the brown 12" Claw Clip Ponytail is sold out');
+    expect((await handleInbound(env.ctx, inbound(wa(1), 'yes', at(1)))).action).toBe('joined');
+    await handleInbound(env.ctx, inbound(wa(2), 'una get the brown claw clip ponytail?', at(2), 'Paul'));
+    expect((await handleInbound(env.ctx, inbound(wa(2), 'oui', at(3)))).action).toBe('joined');
+    expect(env.channel.sent.at(-1)?.body).toMatch(/^C'est noté\. Vous êtes n°2 .+\n\nDone\. You're #2 /s);
+  });
+
   it('says in stock with the real count and the shop currency', async () => {
     env = await setup();
     const r = await handleInbound(env.ctx, inbound(wa(1), 'una get the jet black claw clip?', T0, 'Tunde'));
@@ -165,6 +177,22 @@ describe('restock in hold mode', () => {
       language: 'fr',
       params: ['Nadège', '12" Claw Clip Ponytail marron', '2', '1', '11:30', formatMoney(15000, 'XAF', 'fr', 'CM'), expect.any(String)],
     });
+  });
+
+  it('sends bilingual templates with French then English slot values', async () => {
+    env = await setup({ language: 'fr+en' });
+    await handleInbound(env.ctx, inbound(wa(1), 'una get the brown claw clip ponytail?', at(-10), 'Nadège'));
+    await handleInbound(env.ctx, inbound(wa(1), 'oui', at(-9)));
+    env.channel.sent.length = 0;
+    await startRestock(env.ctx, { productId: env.brown, units: 2, mode: 'hold', holdMinutes: 90 }, T0);
+    const t = env.channel.sent[0].template!;
+    expect(t).toMatchObject({ name: 'restock_hold_v1_bilingual', language: 'fr' });
+    expect(t.params.slice(0, 7)).toEqual(['Nadège', '12" Claw Clip Ponytail brown', '2', '1', '11:30', formatMoney(15000, 'XAF', 'fr', 'CM'), expect.any(String)]);
+    expect(t.params.slice(7)).toEqual(['Nadège', 'brown 12" Claw Clip Ponytail', '2', '1', '11:30 AM', 'FCFA\u00a015,000', t.params[6]]);
+    const [log] = await env.db.query<{ template: string; body: string }>(`select template, body from messages where kind = 'template'`);
+    expect(log.template).toBe('restock_hold_v1_bilingual');
+    expect(log.body).toContain('Arrivage : 2 pièce(s)');
+    expect(log.body).toContain('2 came in');
   });
 
   it('keeps unclaimed units as free stock once the line runs out', async () => {

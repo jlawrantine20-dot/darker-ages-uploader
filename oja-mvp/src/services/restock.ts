@@ -1,11 +1,11 @@
 import { randomBytes } from 'node:crypto';
-import { clockTime, copyFor, firstName, params, productLabel } from '../domain/copy.js';
+import { say, slots, type Facts } from '../domain/copy.js';
 import type { Q } from '../db.js';
 import type { PaymentEvent } from '../payments/providers.js';
 import type { Ctx, DispatchResult, Outbound, Recipient } from './context.js';
 import { InputError } from './errors.js';
 import { dispatch, messageCost } from './outbound.js';
-import { money, type Seller } from './sellers.js';
+import { fmt, type Seller } from './sellers.js';
 
 export { InputError } from './errors.js';
 
@@ -141,21 +141,14 @@ async function announce(
   waiting: number,
 ): Promise<Outbound[]> {
   const { restock, product, seller } = loaded;
-  const t = copyFor(seller.language);
-  const label = productLabel(product, seller.language);
-  const price = money(seller, product.price_minor);
+  const f = fmt(seller);
   const outs: Outbound[] = [];
   for (const o of offers) {
     const url = payLink(ctx, o.payment_ref);
     await ctx.db.query('update offers set payment_url = $2 where id = $1', [o.offer_id, url]);
-    const first = firstName(o.name, seller.language);
-    if (restock.mode === 'hold') {
-      const a = { first, label, units: restock.units, waiting, until: clockTime(o.expires_at!, seller.timezone, seller.language), price, url };
-      outs.push({ ...recipient(seller, o), kind: 'template', template: 'hold', category: 'marketing', params: params.hold(a), preview: t.holdPreview(a) });
-    } else {
-      const a = { first, label, units: restock.units, told: offers.length, price, url };
-      outs.push({ ...recipient(seller, o), kind: 'template', template: 'race', category: 'marketing', params: params.race(a), preview: t.racePreview(a) });
-    }
+    const facts: Facts = { name: o.name, product, priceMinor: product.price_minor, units: restock.units, waiting, told: offers.length, until: o.expires_at ?? undefined, url };
+    const key = restock.mode === 'hold' ? 'hold' : 'race';
+    outs.push({ ...recipient(seller, o), kind: 'template', template: key, category: 'marketing', params: slots(seller.language, key, facts, f), preview: say(seller.language, key, facts, f) });
   }
   return outs;
 }
@@ -185,15 +178,9 @@ export async function previewRestock(ctx: Ctx, input: RestockInput, now: Date) {
   );
   const toMessage = Math.min(v.limit, waiting);
   const soldOutNotes = v.mode === 'race' ? Math.max(0, toMessage - v.units) : 0;
-  const t = copyFor(seller.language);
-  const first = firstName(next?.name, seller.language);
-  const label = productLabel(product, seller.language);
-  const price = money(seller, product.price_minor);
   const url = `${ctx.config.publicUrl.replace(/\/$/, '')}/pay/…`;
-  const preview =
-    v.mode === 'hold'
-      ? t.holdPreview({ first, label, units: v.units, waiting, until: clockTime(new Date(now.getTime() + v.holdMinutes * 60_000), seller.timezone, seller.language), price, url })
-      : t.racePreview({ first, label, units: v.units, told: toMessage, price, url });
+  const until = new Date(now.getTime() + v.holdMinutes * 60_000);
+  const preview = say(seller.language, v.mode, { name: next?.name, product, priceMinor: product.price_minor, units: v.units, waiting, told: toMessage, until, url }, fmt(seller));
   const marketing = messageCost(ctx, seller.country, 'marketing');
   const utility = messageCost(ctx, seller.country, 'utility');
   return {
@@ -273,7 +260,7 @@ export async function handlePayment(ctx: Ctx, rawEvent: PaymentEvent, now: Date)
     // Lock the restock first so two payments for the last unit cannot both win.
     const loaded = (await load(q, ref.restock_id, true))!;
     const { restock, product, seller } = loaded;
-    const t = copyFor(seller.language);
+    const f = fmt(seller);
     const [offer] = await q.query<{ id: string; status: string; interest_id: string } & CandidateRow>(
       `select o.id, o.status, o.interest_id, c.id as contact_id, c.wa_id, c.name, c.last_inbound_at
          from offers o join interests i on i.id = o.interest_id join contacts c on c.id = i.contact_id
@@ -281,7 +268,6 @@ export async function handlePayment(ctx: Ctx, rawEvent: PaymentEvent, now: Date)
       [event.reference],
     );
     const to = recipient(seller, offer);
-    const label = productLabel(product, seller.language);
     if (offer.status === 'paid') return { outcome: 'duplicate' as const, outs: [] };
     if (event.amountMinor < product.price_minor || (event.currency && event.currency.toUpperCase() !== seller.currency)) {
       return { outcome: 'underpaid' as const, outs: [] };
@@ -295,8 +281,8 @@ export async function handlePayment(ctx: Ctx, rawEvent: PaymentEvent, now: Date)
       return {
         outcome: 'refund_due' as const,
         outs: [{
-          ...to, kind: 'text' as const, body: t.paidTooLate(label),
-          fallback: { template: 'refund' as const, category: 'utility' as const, params: params.label(label), preview: t.paidTooLate(label) },
+          ...to, kind: 'text' as const, body: say(seller.language, 'refund', { product }, f),
+          fallback: { template: 'refund' as const, category: 'utility' as const, params: slots(seller.language, 'refund', { product }, f), preview: say(seller.language, 'refund', { product }, f) },
         }],
       };
     }
@@ -305,8 +291,8 @@ export async function handlePayment(ctx: Ctx, rawEvent: PaymentEvent, now: Date)
     await q.query(`update interests set status = 'bought' where id = $1`, [offer.interest_id]);
     await q.query('update products set stock = stock - 1 where id = $1', [product.id]);
     const outs: Outbound[] = [{
-      ...to, kind: 'text', body: t.paid(label),
-      fallback: { template: 'paid', category: 'utility', params: params.label(label), preview: t.paid(label) },
+      ...to, kind: 'text', body: say(seller.language, 'paid', { product }, f),
+      fallback: { template: 'paid', category: 'utility', params: slots(seller.language, 'paid', { product }, f), preview: say(seller.language, 'paid', { product }, f) },
     }];
 
     if (c.paid + 1 >= restock.units) {
@@ -318,8 +304,8 @@ export async function handlePayment(ctx: Ctx, rawEvent: PaymentEvent, now: Date)
         [restock.id],
       );
       for (const l of losers) {
-        const a = { first: firstName(l.name, seller.language), label };
-        outs.push({ ...recipient(seller, l), kind: 'template', template: 'soldOut', category: 'utility', params: params.soldOut(a), preview: t.soldOutPreview(a) });
+        const facts = { name: l.name, product };
+        outs.push({ ...recipient(seller, l), kind: 'template', template: 'soldOut', category: 'utility', params: slots(seller.language, 'soldOut', facts, f), preview: say(seller.language, 'soldOut', facts, f) });
       }
     }
     return { outcome: 'paid' as const, outs };
