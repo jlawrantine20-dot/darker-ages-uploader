@@ -24,7 +24,7 @@ const waPayload = (from: string, text: string, name = 'Amaka Obi') => ({
 });
 
 const liveConfig = () => loadConfig({
-  DRY_RUN: 'false', WA_TOKEN: 't', WA_APP_SECRET: 'app-secret', WA_VERIFY_TOKEN: 'v', ADMIN_TOKEN: 'admin', APP_SECRET: 'k', PUBLIC_URL: 'https://oja.test',
+  DRY_RUN: 'false', WA_TOKEN: 't', WA_APP_SECRET: 'app-secret', WA_VERIFY_TOKEN: 'v', ADMIN_TOKEN: 'admin', APP_SECRET: 'k', PLATFORM_WA_PHONE_ID: 'platform', PUBLIC_URL: 'https://oja.test',
 });
 
 describe('WhatsApp webhook plumbing', () => {

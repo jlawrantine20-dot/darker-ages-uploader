@@ -8,6 +8,8 @@ export interface TemplateMessage {
   name: string;
   language: string;
   params: string[];
+  /** Parameter for the template's first URL button, e.g. the copy-code button of a sign-in template. */
+  buttonParams?: string[];
 }
 
 /** Outbound WhatsApp. `from` is the seller's Cloud API phone number id. */
@@ -67,7 +69,12 @@ export function whatsappCloud(opts: { token: string; apiVersion: string; fetchFn
         template: {
           name: t.name,
           language: { code: t.language },
-          components: [{ type: 'body', parameters: t.params.map((text) => ({ type: 'text', text })) }],
+          components: [
+            { type: 'body', parameters: t.params.map((text) => ({ type: 'text', text })) },
+            ...(t.buttonParams?.length
+              ? [{ type: 'button', sub_type: 'url', index: '0', parameters: t.buttonParams.map((text) => ({ type: 'text', text })) }]
+              : []),
+          ],
         },
       }),
   };

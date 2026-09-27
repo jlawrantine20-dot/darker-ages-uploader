@@ -38,6 +38,28 @@ Defaults exist for Cameroon, Nigeria, Ghana, Kenya, South Africa, Côte d'Ivoire
 Gabon, Rwanda, Uganda, Tanzania, Egypt, the US, Canada, the UK, France, Belgium, Germany,
 India and Brazil. Any other country works once you enter its currency and time zone.
 
+## Accounts
+
+- **Sign in:** sellers sign in with their WhatsApp number and a 6-digit code sent to it
+  on WhatsApp. There are no passwords, and it works in any country.
+- **Codes:**
+  - A code expires after 10 minutes and works only once.
+  - 5 wrong guesses lock it.
+  - A number can request at most 5 codes an hour.
+- **Sessions:** last 30 days and can be signed out. The database stores only hashes of
+  codes and sessions.
+- **Isolation:** each seller sees only the shops they belong to. Every chat, product,
+  restock, insight, consent record and payment setting is checked against the signed-in
+  person. Another shop's data answers "not found", so ids reveal nothing.
+- **Teams:** whoever creates a shop is its owner. Owners add people by WhatsApp number:
+  - **staff** handle chats, stock and restocks
+  - **owners** also manage payments, shop details and the team
+
+  A shop always keeps at least one owner.
+- **Operator access:** the `ADMIN_TOKEN` is for you, the operator, and sees every shop. In
+  test mode with no admin token set, requests without credentials are also treated as the
+  operator, so local testing stays quick.
+
 ## What it does
 
 - **Reading chats:** spots "is this available?" and matches it to your catalog, including
@@ -75,7 +97,7 @@ India and Brazil. Any other country works once you enter its currency and time z
 
 ```bash
 npm install
-npm test            # 74 tests on an embedded Postgres; no accounts needed
+npm test            # 82 tests on an embedded Postgres; no accounts needed
 npm run simulate    # a full restock story in a Cameroon shop, in French and English
 npm run simulate -- --country NG --lang en
 npm run dev         # server on :8787; open http://localhost:8787/app
@@ -96,15 +118,19 @@ test details, and confirms the payment through the verify endpoint. Use test key
 
 ## API
 
-Send the admin token as `Authorization: Bearer <ADMIN_TOKEN>`. In test mode with no token
-set, the API is open.
+Send a session token from `/auth/verify`, or the operator's admin token, as
+`Authorization: Bearer <token>`. List endpoints need `?sellerId=` unless you are the
+operator.
 
 | Method | Path | What it does |
 |---|---|---|
 | GET/POST | `/webhooks/whatsapp` | Meta's verification handshake and incoming messages |
 | POST | `/webhooks/payments/:sellerId` | Payment webhooks, checked with that seller's own secret |
 | GET | `/pay/:ref` | The link in alerts. Opens a fresh checkout, or shows why the offer ended |
-| GET | `/api/markets` | Country defaults, languages, payment providers and fee estimates |
+| POST | `/auth/start`, `/auth/verify`, `/auth/logout` | Sign in: `{phone, country}` sends a code; `{phone, country, code}` returns a session token |
+| GET | `/api/me` | Who is signed in |
+| GET/POST/DELETE | `/api/sellers/:id/members` | The shop's team. Adding and removing needs an owner: `{phone, role: "owner" \| "staff"}` |
+| GET | `/markets`, `/api/markets` | Country defaults, languages, payment providers and fee estimates |
 | GET/POST | `/api/sellers` | List shops, or create one: `{name, waPhoneNumberId, country, currency?, language?, timezone?}` |
 | PATCH | `/api/sellers/:id` | Change the name, country, currency, language or time zone |
 | PUT | `/api/sellers/:id/payments` | `{provider, secretKey, webhookSecret?}`. Keys are encrypted and never returned |
@@ -123,18 +149,21 @@ set, the API is open.
 
 1. **Database:** set `DATABASE_URL`, for example to a Supabase pooled connection string.
 2. **Secrets:** set `APP_SECRET` to a long random value, and `ADMIN_TOKEN`.
-3. **WhatsApp:**
+3. **Sign-in number:** set `PLATFORM_WA_PHONE_ID` to Oja's own WhatsApp number, which
+   sends sign-in codes. Then submit an **authentication** template named `login_code_v1`
+   with a copy-code button. Meta supplies the wording for authentication templates.
+4. **WhatsApp:**
    1. Create a Meta app with WhatsApp, and add the seller's number. Coexistence lets the
       seller keep using the WhatsApp Business app on the same number.
    2. Set `WA_TOKEN` and `WA_APP_SECRET`.
    3. Set the webhook to `https://<host>/webhooks/whatsapp`, and subscribe to `messages`.
    4. Add a payment method in Meta Business Manager. Without one, Meta stops delivering
       service messages beyond the free tier from 1 October 2026.
-4. **Templates:** submit the templates below in each language your shops use (`en`, `fr`),
+5. **Templates:** submit the templates below in each language your shops use (`en`, `fr`),
    plus the bilingual set if any shop uses French and English.
-5. **Payments:** in the seller app, go to Settings › Get paid. Pick the provider, paste the
+6. **Payments:** in the seller app, go to Settings › Get paid. Pick the provider, paste the
    keys, and paste the webhook URL it shows into the provider's dashboard.
-6. Set `DRY_RUN=false`. The server refuses to start live if any required setting is
+7. Set `DRY_RUN=false`. The server refuses to start live if any required setting is
    missing.
 
 ### WhatsApp templates
@@ -194,7 +223,6 @@ in.
   channel-aware, but these need Meta app review and TikTok Business Messaging API access.
 - **More languages:** a translation set per language, plus an LLM classifier for messages
   the rule-based matcher misses.
-- **Seller accounts:** proper logins for each seller; today there is one admin token.
 - **Other providers:** CinetPay and CamPay.
 - **Automatic refunds:** late payments are flagged for refund, but the refund isn't sent
   through the provider's refund API yet.

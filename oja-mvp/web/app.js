@@ -77,7 +77,7 @@ async function api(path, { method = 'GET', body } = {}) {
 // ---------- app state ----------
 const S = { dryRun: false, seller: null, markets: null, chatFilter: 'all', restockForm: null, confirm: false };
 const setSeller = (s) => { S.seller = s; TZ = s?.timezone ?? 'UTC'; };
-async function markets() { return (S.markets ??= await api('/api/markets')); }
+async function markets() { return (S.markets ??= await api('/markets')); }
 const sellerId = () => get('oja.seller');
 
 // ---------- chrome ----------
@@ -102,20 +102,36 @@ function setNav(active, unread = 0) {
 // ---------- views ----------
 const views = {};
 
-views.setup = async (_p, msg) => {
-  header('Oja', { sub: 'Set up your shop' });
+/** Sign in with a WhatsApp number: step 1 asks for the number, step 2 for the code. */
+views.login = async (_p, msg) => {
+  header('Oja', { sub: 'Sign in with WhatsApp' });
   setNav(null);
-  let sellers = null;
-  let needToken = false;
-  try { sellers = await api('/api/sellers'); } catch (e) { if (e.status === 401) needToken = true; else throw e; }
-  if (needToken) {
-    main.innerHTML = `<form class="form" data-form="token">
-      <p style="margin:0">Enter the admin token set on your Oja server (<code>ADMIN_TOKEN</code>).</p>
+  const mk = await markets();
+  const guess = (Intl.DateTimeFormat().resolvedOptions().locale.split('-')[1] ?? '').toUpperCase();
+  const country = S.login?.country ?? (mk.countries.some((c) => c.code === guess) ? guess : 'CM');
+  if (S.login?.sent) {
+    main.innerHTML = `<form class="form" data-form="login-code">
+      <p style="margin:0">We sent a 6-digit code to <b>${esc(S.login.phone)}</b> on WhatsApp.</p>
+      ${S.login.devCode ? `<div class="banner" style="margin:0"><b>Test mode.</b> Nothing is sent, so here is your code: <b>${esc(S.login.devCode)}</b></div>` : ''}
       ${msg ? `<p class="err">${esc(msg)}</p>` : ''}
-      <label>Admin token<input id="token" type="password" autocomplete="current-password" required></label>
-      <button class="btn primary block">Continue</button></form>`;
+      <label>Code<input id="l-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required value="${esc(S.login.devCode ?? '')}"></label>
+      <button class="btn primary block">Sign in</button>
+      <button type="button" class="btn block" data-act="login-back">Use a different number</button></form>`;
     return;
   }
+  main.innerHTML = `<form class="form" data-form="login-phone">
+    <p style="margin:0">Enter your WhatsApp number. We'll send you a code to sign in. No password needed.</p>
+    ${msg ? `<p class="err">${esc(msg)}</p>` : ''}
+    <label>Country<select id="l-country">${mk.countries.map((c) => `<option value="${c.code}" ${c.code === country ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
+      <span class="hint">Only used to read a local number. International numbers with + work from anywhere.</span></label>
+    <label>WhatsApp number<input id="l-phone" type="tel" autocomplete="tel" required value="${esc(S.login?.phone ?? '')}" placeholder="6 77 12 34 56"></label>
+    <button class="btn primary block">Send code</button></form>`;
+};
+
+views.setup = async () => {
+  header('Oja', { sub: 'Your shops' });
+  setNav(null);
+  const sellers = await api('/api/sellers');
   const mk = await markets();
   const guess = (Intl.DateTimeFormat().resolvedOptions().locale.split('-')[1] ?? '').toUpperCase();
   const def = mk.countries.some((c) => c.code === guess) ? guess : 'CM';
@@ -370,10 +386,22 @@ views.settings = async () => {
   const order = [...new Set([s.payment_provider, ...suggested, 'flutterwave', 'notchpay', 'paystack', 'stripe', 'test'])];
   const connected = (on) => (on ? '<span class="pill paid">Connected</span>' : '<span class="pill expired">Not connected yet</span>');
   const chRow = (ch, title, note, on) => `<div class="line"><span class="pos"><span class="ch ${ch}" style="padding:4px"><i></i></span></span><span>${title}<span class="q">${note}</span></span>${connected(on)}</div>`;
+  const owner = s.role === 'owner';
+  const [members, me] = await Promise.all([api(`/api/sellers/${s.id}/members`), api('/api/me')]);
+  const team = `<div class="sect">Team</div>
+    ${members.map((mb) => `<div class="line"><span class="pos">${mb.role === 'owner' ? '★' : '·'}</span>
+      <span>${esc(mb.name ?? '+' + mb.wa_id)}${me.user?.id === mb.user_id ? ' (you)' : ''}<span class="q">+${esc(mb.wa_id)} · ${mb.role === 'owner' ? 'Owner: everything' : 'Staff: chats, stock and restocks'}</span></span>
+      ${owner && me.user?.id !== mb.user_id ? `<button class="btn sm" data-remove-member="${esc(mb.user_id)}">Remove</button>` : '<span></span>'}</div>`).join('')}
+    ${owner ? `<form class="form" data-form="member">
+      <label>Add someone by WhatsApp number<input id="m-phone" type="tel" required placeholder="${esc(samplePhone())}"><span class="hint">They sign in with this number. Local numbers are read as ${esc(m?.name ?? s.country)}.</span></label>
+      <label>Role<select id="m-role"><option value="staff">Staff: chats, stock and restocks</option><option value="owner">Owner: also payments and the team</option></select></label>
+      <p class="err" hidden></p>
+      <button class="btn block">Add to team</button></form>` : ''}`;
   main.innerHTML = `
     ${S.dryRun ? '<div class="banner"><b>Test mode.</b> Nothing is sent to WhatsApp and payments are simulated. Set DRY_RUN=false on the server to go live.</div>' : ''}
-    <div class="sect">Get paid</div>
-    <form class="form" data-form="payments" style="padding-top:4px">
+    ${owner ? '' : '<div class="banner">You are <b>staff</b> in this shop. The owner manages payments, shop details and the team.</div>'}
+    <div class="sect"${owner ? '' : ' hidden'}>Get paid</div>
+    <form class="form" data-form="payments" style="padding-top:4px"${owner ? '' : ' hidden'}>
       <label>Payment provider<select id="pay-provider" data-provider>${order.map((k) => `<option value="${k}" ${k === s.payment_provider ? 'selected' : ''}>${esc(mk.providers[k].label)}${suggested.includes(k) ? ' · suggested' : ''}</option>`).join('')}</select>
         <span class="hint">Money goes straight to your own account. Oja never holds it.</span></label>
       <div id="pay-keys">${payKeyFields(mk, s.payment_provider)}</div>
@@ -381,13 +409,14 @@ views.settings = async () => {
       <p class="err" hidden></p>
       <button class="btn block">Save payment settings</button>
     </form>
-    <div class="sect">Shop</div>
-    <form class="form" data-form="shop" style="padding-top:4px">
+    <div class="sect"${owner ? '' : ' hidden'}>Shop</div>
+    <form class="form" data-form="shop" style="padding-top:4px"${owner ? '' : ' hidden'}>
       <label>Shop name<input id="s-name" value="${esc(s.name)}" required></label>
       ${shopFields(mk, s)}
       <p class="err" hidden></p>
       <button class="btn block">Save shop</button>
     </form>
+    ${team}
     <div class="sect">Channels</div>
     ${chRow('whatsapp', 'WhatsApp', `Number id ${esc(s.wa_phone_number_id)}`, true)}
     ${chRow('instagram', 'Instagram DMs', 'Needs Meta app review for Instagram messaging', false)}
@@ -407,19 +436,20 @@ document.addEventListener('change', async (e) => {
 
 // ---------- router ----------
 const routes = [
-  [/^#\/setup$/, 'setup'], [/^#\/chats$/, 'chats'], [/^#\/chat\/([\w-]+)$/, 'chat'], [/^#\/products$/, 'products'],
+  [/^#\/login$/, 'login'], [/^#\/setup$/, 'setup'], [/^#\/chats$/, 'chats'], [/^#\/chat\/([\w-]+)$/, 'chat'], [/^#\/products$/, 'products'],
   [/^#\/products\/new$/, 'newProduct'], [/^#\/product\/([\w-]+)$/, 'product'], [/^#\/restock\/([\w-]+)$/, 'restock'],
   [/^#\/insights$/, 'insights'], [/^#\/settings$/, 'settings'],
 ];
 async function route(quiet = false) {
   let hash = location.hash || '#/chats';
-  if (!sellerId() && hash !== '#/setup') hash = '#/setup';
+  if (!get('oja.token')) hash = '#/login';
+  else if (hash === '#/login' || (!sellerId() && hash !== '#/setup')) hash = '#/setup';
   const match = routes.map(([re, name]) => [hash.match(re), name]).find(([m]) => m);
   const [m, name] = match ?? [[], 'chats'];
   const key = `${name}:${m.slice(1).join('/')}`;
   if (!quiet) { S.confirm = false; }
   try {
-    if (sellerId() && !S.seller && name !== 'setup') {
+    if (sellerId() && !S.seller && name !== 'setup' && name !== 'login') {
       setSeller((await api('/api/sellers')).find((s) => s.id === sellerId()) ?? null);
       if (!S.seller) { set('oja.seller', null); location.hash = '#/setup'; return; }
     }
@@ -427,7 +457,8 @@ async function route(quiet = false) {
     main.dataset.view = key;
     if (!quiet) { if (name !== 'chat') window.scrollTo(0, 0); main.focus({ preventScroll: true }); }
   } catch (e) {
-    if (e.status === 401) { if (name !== 'setup') { location.hash = '#/setup'; } else { await views.setup([], 'That token was not accepted.'); } return; }
+    if (e.status === 401) { set('oja.token', null); set('oja.seller', null); setSeller(null); S.login = null; await views.login([], 'Please sign in again.'); return; }
+    if (e.status === 404 && name !== 'setup' && sellerId() && !S.seller) { set('oja.seller', null); location.hash = '#/setup'; return; }
     if (!quiet) main.innerHTML = `<p class="empty">${esc(e.message)}</p>`;
   }
 }
@@ -436,15 +467,20 @@ window.addEventListener('hashchange', () => route());
 // Keep chats, waitlists and running restocks fresh without interrupting typing.
 setInterval(() => {
   const busy = document.activeElement?.matches('input, textarea, select') || S.confirm;
-  if (!busy && document.visibilityState === 'visible' && sellerId() && !/setup|new/.test(location.hash)) route(true);
+  if (!busy && document.visibilityState === 'visible' && sellerId() && get('oja.token') && !/setup|new|login/.test(location.hash)) route(true);
 }, 5000);
 
 // ---------- actions ----------
 document.addEventListener('click', async (e) => {
-  const t = e.target.closest('[data-pick],[data-filter],[data-cfg],[data-mode],[data-hold],[data-act],[data-pay]');
+  const t = e.target.closest('[data-pick],[data-filter],[data-cfg],[data-mode],[data-hold],[data-act],[data-pay],[data-remove-member]');
   if (!t) return;
   if (t.dataset.pick) { set('oja.seller', t.dataset.pick); setSeller(null); return; }
   if (t.dataset.filter) { S.chatFilter = t.dataset.filter; return route(true); }
+  if (t.dataset.removeMember) {
+    try { await api(`/api/sellers/${sellerId()}/members/${t.dataset.removeMember}`, { method: 'DELETE' }); toast('Removed from the team'); }
+    catch (err) { toast(err.message); }
+    return route(true);
+  }
   const f = S.restockForm;
   if (t.dataset.cfg) {
     const [k, d] = t.dataset.cfg.split(':');
@@ -478,7 +514,11 @@ document.addEventListener('click', async (e) => {
       return;
     }
     if (act === 'tick') { await api('/api/tick', { method: 'POST' }); toast('Holds checked'); return route(true); }
-    if (act === 'signout') { set('oja.token', null); set('oja.seller', null); setSeller(null); location.hash = '#/setup'; return; }
+    if (act === 'signout') {
+      try { await api('/auth/logout', { method: 'POST' }); } catch { /* already signed out */ }
+      set('oja.token', null); set('oja.seller', null); setSeller(null); S.login = null; location.hash = '#/login'; return route();
+    }
+    if (act === 'login-back') { S.login = { country: S.login?.country, phone: S.login?.phone }; return views.login(); }
     if (act === 'demo') { t.disabled = true; t.textContent = 'Loading…'; await loadDemo(); return; }
   } catch (err) {
     toast(err.message);
@@ -494,9 +534,23 @@ document.addEventListener('submit', async (e) => {
   if (btn) btn.disabled = true;
   try {
     switch (form.dataset.form) {
-      case 'token':
-        set('oja.token', val('token'));
+      case 'login-phone': {
+        S.login = { country: val('l-country'), phone: val('l-phone') };
+        const r = await api('/auth/start', { method: 'POST', body: { phone: S.login.phone, country: S.login.country } });
+        S.login = { ...S.login, sent: true, devCode: r.devCode };
+        return views.login();
+      }
+      case 'login-code': {
+        const r = await api('/auth/verify', { method: 'POST', body: { phone: S.login.phone, country: S.login.country, code: val('l-code') } });
+        set('oja.token', r.token);
+        S.login = null;
+        location.hash = '#/setup';
         return route();
+      }
+      case 'member':
+        await api(`/api/sellers/${sellerId()}/members`, { method: 'POST', body: { phone: val('m-phone'), role: val('m-role') } });
+        toast('Added to the team. They can sign in with that number now.');
+        return route(true);
       case 'seller': {
         const s = await api('/api/sellers', { method: 'POST', body: { name: val('s-name'), waPhoneNumberId: val('s-phone'), ...shopValues(form) } });
         set('oja.seller', s.id); setSeller(s);
@@ -551,6 +605,7 @@ document.addEventListener('submit', async (e) => {
       }
     }
   } catch (err) {
+    if (form.dataset.form === 'login-phone' || form.dataset.form === 'login-code') { if (btn) btn.disabled = false; return views.login([], err.message); }
     const box = $('.err', form);
     if (box) { box.textContent = err.message; box.hidden = false; } else toast(err.message);
   } finally {

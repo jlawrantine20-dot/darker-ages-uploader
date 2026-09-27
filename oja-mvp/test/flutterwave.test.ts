@@ -60,7 +60,7 @@ async function liveShop(opts: { country?: string; clipPrice?: number } = {}) {
   env = await setup(opts);
   const fw = fakeFlutterwave();
   env.ctx.config = loadConfig({
-    DRY_RUN: 'false', WA_TOKEN: 't', WA_APP_SECRET: 'a', WA_VERIFY_TOKEN: 'v', ADMIN_TOKEN: 'admin', APP_SECRET: 'k', PUBLIC_URL: 'https://oja.test',
+    DRY_RUN: 'false', WA_TOKEN: 't', WA_APP_SECRET: 'a', WA_VERIFY_TOKEN: 'v', ADMIN_TOKEN: 'admin', APP_SECRET: 'k', PLATFORM_WA_PHONE_ID: 'platform', PUBLIC_URL: 'https://oja.test',
   });
   env.ctx.providerFactory = (name, o) => makeProvider(name, { ...o, fetchFn: fw.fetchFn });
   await env.db.query(`update sellers set payment_provider = 'flutterwave', payment_secret_enc = $1, payment_webhook_secret_enc = $2`, [

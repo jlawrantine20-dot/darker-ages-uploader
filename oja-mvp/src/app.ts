@@ -16,19 +16,30 @@ import { baseRef, handlePayment, previewRestock, startRestock, tick } from './se
 import { escapeHtml, page, pageText } from './pages.js';
 import { normalizePhone } from './domain/phone.js';
 import { productLabel } from './domain/copy.js';
+import { AuthError, ForbiddenError, addMember, logout, removeMember, requireRole, shopOf, startLogin, verifyLogin, viewerFor, type Role, type Viewer } from './services/auth.js';
 import { getSeller, money, providerFor, publicSeller, resolveSellerInput, setPaymentProvider, type Seller } from './services/sellers.js';
 
 export function createApp(ctx: Ctx, clock: () => Date = () => new Date()) {
-  const app = new Hono();
+  const app = new Hono<{ Variables: { viewer: Viewer } }>();
   const { config, db } = ctx;
 
   app.onError((err, c) => {
     if (err instanceof InputError) return c.json({ error: err.message }, 400);
+    if (err instanceof AuthError) return c.json({ error: err.message }, err.message.startsWith('Too many') ? 429 : 400);
+    if (err instanceof ForbiddenError) return c.json({ error: err.message === 'Not found.' ? 'Not found.' : err.message }, err.message === 'Not found.' ? 404 : 403);
     console.error(err);
     return c.json({ error: 'Something went wrong on our side.' }, 500);
   });
 
   app.get('/health', (c) => c.json({ ok: true, dryRun: config.dryRun }));
+
+  /** Country defaults, languages and payment providers. Public: the sign-in screen needs the country list. */
+  const marketsBody = () => ({
+    countries: Object.entries(MARKETS).map(([code, m]) => ({ code, ...m, rates: ratesFor(code) })),
+    languages: LANGS,
+    providers: PROVIDER_INFO,
+    rateGroups: RATE_GROUPS,
+  });
 
   // ---- WhatsApp Cloud API webhook ----
   app.get('/webhooks/whatsapp', (c) => {
@@ -135,15 +146,47 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date()) {
     });
   }
 
-  // ---- Seller API ----
-  const admin = async (c: Context, next: Next) => {
-    const allowOpen = config.dryRun && !config.adminToken;
-    if (!allowOpen && c.req.header('authorization') !== `Bearer ${config.adminToken}`) {
-      return c.json({ error: 'Send the admin token as "Authorization: Bearer <token>".' }, 401);
-    }
+  // ---- Sign in with a WhatsApp number and a one-time code ----
+  app.post('/auth/start', async (c) => {
+    const b = await c.req.json<{ phone: string; country: string }>();
+    const r = await startLogin(ctx, b.phone, b.country, clock());
+    return c.json({ sent: true, ...(r.devCode ? { devCode: r.devCode } : {}) });
+  });
+  app.post('/auth/verify', async (c) => {
+    const b = await c.req.json<{ phone: string; country: string; code: string }>();
+    const { token, user } = await verifyLogin(ctx, b.phone, b.country, b.code, clock());
+    return c.json({ token, user });
+  });
+  app.post('/auth/logout', async (c) => {
+    await logout(ctx, c.req.header('authorization'), clock());
+    return c.json({ ok: true });
+  });
+
+  // ---- Seller API: signed-in sellers see only their own shops; the admin token sees all ----
+  const resolveViewer = async (c: Context<{ Variables: { viewer: Viewer } }>, next: Next) => {
+    const header = c.req.header('authorization');
+    let viewer = await viewerFor(ctx, header, clock());
+    // Test mode with no admin token configured stays open to callers that send no credentials.
+    if (!viewer && !header && config.dryRun && !config.adminToken) viewer = { kind: 'admin' };
+    if (!viewer) return c.json({ error: 'Sign in again.' }, 401);
+    c.set('viewer', viewer);
     await next();
   };
-  app.use('/api/*', admin);
+  app.use('/api/*', resolveViewer);
+  // Test-mode helpers exist only in test mode; on a live server /dev/* is simply not found.
+  if (config.dryRun) app.use('/dev/*', resolveViewer);
+
+  type C = Context<{ Variables: { viewer: Viewer } }>;
+  const guard = (c: C, sellerId: string | null | undefined, need: Role = 'staff') => requireRole(db, c.get('viewer'), sellerId, need);
+  const guardOf = async (c: C, kind: 'product' | 'restock' | 'chat', id: string, need: Role = 'staff') => guard(c, await shopOf(db, kind, id), need);
+  /** The ?sellerId of a list request, checked. The admin may leave it out to see everything. */
+  const scoped = async (c: C) => {
+    const id = c.req.query('sellerId') || null;
+    if (c.get('viewer').kind === 'admin' && !id) return null;
+    if (!id) throw new InputError('sellerId is required');
+    await guard(c, id);
+    return id;
+  };
 
   const sellerOr404 = async (id: string) => {
     const s = await getSeller(db, id);
@@ -151,29 +194,69 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date()) {
     return s;
   };
 
-  app.get('/api/markets', (c) =>
-    c.json({
-      countries: Object.entries(MARKETS).map(([code, m]) => ({ code, ...m, rates: ratesFor(code) })),
-      languages: LANGS,
-      providers: PROVIDER_INFO,
-      rateGroups: RATE_GROUPS,
-    }),
-  );
+  app.get('/api/me', async (c) => {
+    const v = c.get('viewer');
+    if (v.kind === 'admin') return c.json({ admin: true, user: null });
+    const [user] = await db.query('select id, wa_id, name from users where id = $1', [v.userId]);
+    return c.json({ admin: false, user });
+  });
 
-  app.get('/api/sellers', async (c) => c.json((await db.query<Seller>('select * from sellers order by created_at')).map(publicSeller)));
+  app.get('/api/sellers/:id/members', async (c) => {
+    await guard(c, c.req.param('id'));
+    return c.json(await db.query(
+      `select u.id as user_id, u.wa_id, u.name, m.role, m.created_at from shop_members m join users u on u.id = m.user_id
+        where m.seller_id = $1 order by m.role, m.created_at`,
+      [c.req.param('id')],
+    ));
+  });
+
+  app.post('/api/sellers/:id/members', async (c) => {
+    await guard(c, c.req.param('id'), 'owner');
+    const s = await sellerOr404(c.req.param('id'));
+    const b = await c.req.json<{ phone: string; role: Role }>();
+    return c.json(await addMember(db, s.id, b.phone, s.country, b.role ?? 'staff'), 201);
+  });
+
+  app.delete('/api/sellers/:id/members/:userId', async (c) => {
+    await guard(c, c.req.param('id'), 'owner');
+    await removeMember(db, c.req.param('id'), c.req.param('userId'));
+    return c.json({ ok: true });
+  });
+
+  app.get('/markets', (c) => c.json(marketsBody()));
+  app.get('/api/markets', (c) => c.json(marketsBody()));
+
+
+  app.get('/api/sellers', async (c) => {
+    const v = c.get('viewer');
+    const rows = v.kind === 'admin'
+      ? await db.query<Seller & { role: string }>(`select *, 'owner' as role from sellers order by created_at`)
+      : await db.query<Seller & { role: string }>(
+          'select s.*, m.role from sellers s join shop_members m on m.seller_id = s.id where m.user_id = $1 order by s.created_at',
+          [v.userId],
+        );
+    return c.json(rows.map((r) => ({ ...publicSeller(r), role: r.role })));
+  });
 
   app.post('/api/sellers', async (c) => {
     const b = await c.req.json<{ name: string; waPhoneNumberId: string; country: string; currency?: string; language?: string; timezone?: string }>();
     if (!b.waPhoneNumberId?.trim()) throw new InputError('Add the WhatsApp phone number id from Meta.');
     const v = resolveSellerInput(b);
-    const [row] = await db.query<Seller>(
-      'insert into sellers (name, wa_phone_number_id, country, currency, language, timezone) values ($1, $2, $3, $4, $5, $6) returning *',
-      [v.name, b.waPhoneNumberId.trim(), v.country, v.currency, v.language, v.timezone],
-    );
-    return c.json(publicSeller(row), 201);
+    const viewer = c.get('viewer');
+    const row = await db.tx(async (q) => {
+      const [s] = await q.query<Seller>(
+        'insert into sellers (name, wa_phone_number_id, country, currency, language, timezone) values ($1, $2, $3, $4, $5, $6) returning *',
+        [v.name, b.waPhoneNumberId.trim(), v.country, v.currency, v.language, v.timezone],
+      );
+      // Whoever creates a shop owns it.
+      if (viewer.kind === 'user') await q.query(`insert into shop_members (seller_id, user_id, role) values ($1, $2, 'owner')`, [s.id, viewer.userId]);
+      return s;
+    });
+    return c.json({ ...publicSeller(row), role: 'owner' }, 201);
   });
 
   app.patch('/api/sellers/:id', async (c) => {
+    await guard(c, c.req.param('id'), 'owner');
     const current = await sellerOr404(c.req.param('id'));
     const v = resolveSellerInput(await c.req.json(), current);
     const [row] = await db.query<Seller>(
@@ -184,6 +267,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date()) {
   });
 
   app.put('/api/sellers/:id/payments', async (c) => {
+    await guard(c, c.req.param('id'), 'owner');
     const s = await sellerOr404(c.req.param('id'));
     await setPaymentProvider(ctx, s.id, await c.req.json());
     return c.json({ ...publicSeller((await getSeller(db, s.id))!), webhookUrl: `${config.publicUrl.replace(/\/$/, '')}/webhooks/payments/${s.id}` });
@@ -192,6 +276,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date()) {
   app.post('/api/products', async (c) => {
     const b = await c.req.json<{ sellerId: string; name: string; variant?: string; aliases?: string[]; price: number; stock?: number }>();
     if (!b.sellerId || !b.name?.trim() || !(b.price >= 0)) throw new InputError('sellerId, name and price are required');
+    await guard(c, b.sellerId);
     const s = await sellerOr404(b.sellerId);
     const [row] = await db.query(
       'insert into products (seller_id, name, variant, aliases, price_minor, stock) values ($1, $2, $3, $4, $5, $6) returning *',
@@ -201,16 +286,18 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date()) {
   });
 
   app.get('/api/products', async (c) => {
+    const sellerId = await scoped(c);
     const rows = await db.query(
       `select p.*, (select count(*)::int from interests i join consents k on k.id = i.consent_id and k.revoked_at is null
                      where i.product_id = p.id and i.status = 'waiting') as waiting
          from products p where ($1::uuid is null or p.seller_id = $1) order by waiting desc, p.name, p.variant`,
-      [c.req.query('sellerId') ?? null],
+      [sellerId],
     );
     return c.json(rows);
   });
 
   app.get('/api/products/:id', async (c) => {
+    await guardOf(c, 'product', c.req.param('id'));
     const [product] = await db.query(
       `select p.*, (select count(*)::int from interests i join consents k on k.id = i.consent_id and k.revoked_at is null
                      where i.product_id = p.id and i.status = 'waiting') as waiting
@@ -228,6 +315,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date()) {
   });
 
   app.patch('/api/products/:id', async (c) => {
+    await guardOf(c, 'product', c.req.param('id'));
     const b = await c.req.json<{ stock?: number; price?: number; aliases?: string[]; name?: string; variant?: string }>();
     if (b.stock !== undefined && !(Number.isInteger(b.stock) && b.stock >= 0)) throw new InputError('stock must be a whole number, 0 or more');
     if (b.price !== undefined && !(b.price >= 0)) throw new InputError('price must be 0 or more');
@@ -246,6 +334,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date()) {
   });
 
   app.get('/api/products/:id/waitlist', async (c) => {
+    await guardOf(c, 'product', c.req.param('id'));
     const rows = await db.query(
       `select row_number() over (order by i.created_at, i.seq)::int as position, c.name, c.wa_id, i.created_at as joined_at, k.quote as consent_quote
          from interests i join contacts c on c.id = i.contact_id join consents k on k.id = i.consent_id
@@ -257,16 +346,19 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date()) {
   });
 
   app.post('/api/products/:id/restocks/preview', async (c) => {
+    await guardOf(c, 'product', c.req.param('id'));
     const b = await c.req.json<{ units: number; mode: 'hold' | 'race'; holdMinutes?: number; perUnit?: number }>();
     return c.json(await previewRestock(ctx, { productId: c.req.param('id'), ...b }, clock()));
   });
 
   app.post('/api/products/:id/restocks', async (c) => {
+    await guardOf(c, 'product', c.req.param('id'));
     const b = await c.req.json<{ units: number; mode: 'hold' | 'race'; holdMinutes?: number; perUnit?: number }>();
     return c.json(await startRestock(ctx, { productId: c.req.param('id'), ...b }, clock()), 201);
   });
 
   app.get('/api/restocks/:id', async (c) => {
+    await guardOf(c, 'restock', c.req.param('id'));
     const [restock] = await db.query('select * from restocks where id = $1', [c.req.param('id')]);
     if (!restock) return c.json({ error: 'No restock with that id.' }, 404);
     const offers = await db.query(
@@ -279,6 +371,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date()) {
   });
 
   app.get('/api/chats', async (c) => {
+    const sellerId = await scoped(c);
     const now = clock();
     const rows = await db.query<{ last_inbound_at: Date | null }>(
       `select c.id, c.name, c.wa_id, c.channel, c.last_inbound_at, m.body as last_body, m.direction as last_direction, m.created_at as last_at,
@@ -292,12 +385,13 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date()) {
          left join lateral (select body, direction, created_at from messages where contact_id = c.id order by created_at desc, seq desc limit 1) m on true
         where ($1::uuid is null or c.seller_id = $1)
         order by m.created_at desc nulls last`,
-      [c.req.query('sellerId') ?? null],
+      [sellerId],
     );
     return c.json(rows.map((r) => ({ ...r, window_open: whatsappWindowOpen(r.last_inbound_at, now) })));
   });
 
   app.get('/api/chats/:id', async (c) => {
+    await guardOf(c, 'chat', c.req.param('id'));
     const [contact] = await db.query<{ last_inbound_at: Date | null }>('select * from contacts where id = $1', [c.req.param('id')]);
     if (!contact) return c.json({ error: 'No chat with that id.' }, 404);
     const messages = await db.query(
@@ -317,6 +411,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date()) {
   });
 
   app.post('/api/chats/:id/reply', async (c) => {
+    await guardOf(c, 'chat', c.req.param('id'));
     const { body } = await c.req.json<{ body: string }>();
     if (!body?.trim()) throw new InputError('Type a message first.');
     if (body.length > 4096) throw new InputError('WhatsApp messages can be at most 4096 characters.');
@@ -339,17 +434,18 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date()) {
   });
 
   app.get('/api/consents', async (c) => {
+    const sellerId = await scoped(c);
     const rows = await db.query(
       `select k.purpose, k.channel, k.quote, k.granted_at, k.revoked_at, c.name, c.wa_id, p.name as product, p.variant
          from consents k join contacts c on c.id = k.contact_id left join products p on p.id = k.product_id
         where ($1::uuid is null or k.seller_id = $1) order by k.granted_at desc`,
-      [c.req.query('sellerId') ?? null],
+      [sellerId],
     );
     return c.json(rows);
   });
 
   app.get('/api/insights', async (c) => {
-    const sellerId = c.req.query('sellerId') ?? null;
+    const sellerId = await scoped(c);
     const monthStart = new Date(clock());
     monthStart.setUTCDate(1);
     monthStart.setUTCHours(0, 0, 0, 0);
@@ -384,14 +480,17 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date()) {
     return c.json({ monthStart, sales: num(sales), spend: num(spend), demand, refunds });
   });
 
-  app.post('/api/tick', async (c) => c.json({ sent: (await tick(ctx, clock())).length }));
+  app.post('/api/tick', async (c) => {
+    if (c.get('viewer').kind !== 'admin' && !config.dryRun) return c.json({ error: 'Only the operator can run this.' }, 403);
+    return c.json({ sent: (await tick(ctx, clock())).length });
+  });
 
   // ---- Test mode helpers: pretend to be a customer, or pretend a customer paid ----
   if (config.dryRun) {
     app.post('/dev/inbound', async (c) => {
       const b = await c.req.json<{ sellerId: string; from: string; name?: string; text: string }>();
-      const seller = await getSeller(db, b.sellerId);
-      if (!seller) return c.json({ error: 'No seller with that id.' }, 404);
+      await guard(c, b.sellerId);
+      const seller = (await getSeller(db, b.sellerId))!;
       if (!b.from || !b.text) throw new InputError('from and text are required');
       const from = normalizePhone(b.from, seller.country);
       if (!from) throw new InputError(`That doesn't look like a valid phone number for ${seller.country}.`);
@@ -400,11 +499,12 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date()) {
     });
 
     app.post('/dev/pay/:ref', async (c) => {
-      const [o] = await db.query<{ price_minor: string }>(
-        `select p.price_minor from offers o join restocks r on r.id = o.restock_id join products p on p.id = r.product_id where o.payment_ref = $1`,
+      const [o] = await db.query<{ price_minor: string; seller_id: string }>(
+        `select p.price_minor, p.seller_id from offers o join restocks r on r.id = o.restock_id join products p on p.id = r.product_id where o.payment_ref = $1`,
         [c.req.param('ref')],
       );
       if (!o) return c.json({ error: 'No offer with that payment reference.' }, 404);
+      await guard(c, o.seller_id);
       const r = await handlePayment(ctx, { reference: c.req.param('ref'), amountMinor: Number(o.price_minor) }, clock());
       return c.json({ outcome: r.outcome });
     });

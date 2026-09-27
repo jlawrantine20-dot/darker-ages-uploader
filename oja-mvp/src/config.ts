@@ -18,6 +18,8 @@ export interface Config {
     apiVersion: string;
     templates: { hold: string; race: string; soldOut: string; paid: string; refund: string };
   };
+  /** Oja's own WhatsApp number, which sends sign-in codes to sellers. */
+  platform: { phoneNumberId: string; loginTemplate: string; loginTemplateLanguage: string };
 }
 
 const int = (v: string | undefined, d: number) => (v === undefined || v === '' ? d : Number.parseInt(v, 10));
@@ -47,6 +49,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
         refund: env.WA_TEMPLATE_REFUND ?? 'payment_refund_v1',
       },
     },
+    platform: {
+      phoneNumberId: env.PLATFORM_WA_PHONE_ID ?? '',
+      loginTemplate: env.WA_TEMPLATE_LOGIN ?? 'login_code_v1',
+      loginTemplateLanguage: env.WA_TEMPLATE_LOGIN_LANG ?? 'en',
+    },
   };
   if (!dryRun) {
     const missing = [
@@ -55,6 +62,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       ['WA_VERIFY_TOKEN', cfg.whatsapp.verifyToken],
       ['ADMIN_TOKEN', cfg.adminToken],
       ['APP_SECRET', cfg.appSecret],
+      ['PLATFORM_WA_PHONE_ID', cfg.platform.phoneNumberId],
     ].filter(([, v]) => !v).map(([k]) => k);
     if (missing.length) throw new Error(`DRY_RUN=false needs these settings: ${missing.join(', ')}`);
   }
