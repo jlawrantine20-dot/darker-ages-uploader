@@ -48,7 +48,7 @@ describe('chat to waitlist', () => {
 
     const b = await handleInbound(env.ctx, inbound(wa(1), 'Yes please', at(1)));
     expect(b.action).toBe('joined');
-    expect(env.channel.sent.at(-1)?.body).toContain("You're #1 on the list");
+    expect(env.channel.sent.at(-1)?.body).toContain("You're on the list! You're #1 for the brown");
 
     const [consent] = await env.db.query<{ quote: string; purpose: string; revoked_at: Date | null }>('select * from consents');
     expect(consent).toMatchObject({ quote: 'Yes please', purpose: 'restock_alert', revoked_at: null });
@@ -59,38 +59,58 @@ describe('chat to waitlist', () => {
     const a = await handleInbound(env.ctx, inbound(wa(1), 'Bonsoir, vous avez encore la claw clip ponytail marron ?', T0, 'Nadège Mballa'));
     expect(a.action).toBe('offered');
     expect(env.channel.sent.at(-1)?.body).toBe(
-      "Bonjour Nadège, l'article « 12\" Claw Clip Ponytail marron » est en rupture de stock pour le moment. Voulez-vous un message ici dès son retour ? Répondez OUI pour être sur la liste. Vous pouvez répondre STOP à tout moment.",
+      'Bonjour Nadège ! Le modèle 12" Claw Clip Ponytail marron est momentanément en rupture de stock. Souhaitez-vous que nous vous prévenions ici dès son retour ? Répondez simplement OUI. (Répondez STOP à tout moment pour ne plus recevoir de messages.)',
     );
     expect((await handleInbound(env.ctx, inbound(wa(1), "Oui d'accord", at(1)))).action).toBe('joined');
-    expect(env.channel.sent.at(-1)?.body).toContain('Vous êtes n°1 sur la liste');
+    expect(env.channel.sent.at(-1)?.body).toContain("Vous êtes n°1 sur la liste d'attente");
 
     await handleInbound(env.ctx, inbound(wa(2), 'la claw clip ponytail noir est dispo ?', at(2), 'Paul'));
-    expect(env.channel.sent.at(-1)?.body).toBe(`Bonjour Paul, oui, l'article « 12" Claw Clip Ponytail noir » est disponible à ${formatMoney(15000, 'XAF', 'fr', 'CM')}. Il en reste 6.`);
+    expect(env.channel.sent.at(-1)?.body).toBe(`Bonjour Paul ! Oui, le modèle 12" Claw Clip Ponytail noir est disponible au prix de ${formatMoney(15000, 'XAF', 'fr', 'CM')}. Il nous en reste 6.`);
   });
 
-  it('answers in French and English for a bilingual shop, and accepts a yes in either', async () => {
+  it('answers each customer in the language they write in', async () => {
     env = await setup({ language: 'fr+en' });
+    // French in, French only out.
     await handleInbound(env.ctx, inbound(wa(1), 'vous avez la claw clip ponytail brown ?', T0, 'Nadège'));
-    const [french, english] = env.channel.sent.at(-1)!.body!.split('\n\n');
-    expect(french).toContain("Bonjour Nadège, l'article « 12\" Claw Clip Ponytail brown » est en rupture de stock");
-    expect(english).toContain('Hi Nadège, the brown 12" Claw Clip Ponytail is sold out');
-    expect((await handleInbound(env.ctx, inbound(wa(1), 'yes', at(1)))).action).toBe('joined');
+    expect(env.channel.sent.at(-1)!.body).toMatch(/^Bonjour Nadège ! Le modèle 12" Claw Clip Ponytail brown est momentanément en rupture de stock/);
+    expect(env.channel.sent.at(-1)!.body).not.toContain('Hi Nadège');
+    expect((await handleInbound(env.ctx, inbound(wa(1), 'oui', at(1)))).action).toBe('joined');
+    expect(env.channel.sent.at(-1)?.body).toMatch(/^C'est noté ! Vous êtes n°1 /);
+    expect(env.channel.sent.at(-1)?.body).not.toContain('Done.');
+
+    // English (or Pidgin) in, English only out, even though the shop is set to both.
     await handleInbound(env.ctx, inbound(wa(2), 'una get the brown claw clip ponytail?', at(2), 'Paul'));
-    expect((await handleInbound(env.ctx, inbound(wa(2), 'oui', at(3)))).action).toBe('joined');
-    expect(env.channel.sent.at(-1)?.body).toMatch(/^C'est noté\. Vous êtes n°2 .+\n\nDone\. You're #2 /s);
+    expect(env.channel.sent.at(-1)?.body).toMatch(/^Hi Paul, the brown 12" Claw Clip Ponytail is sold out/);
+    expect((await handleInbound(env.ctx, inbound(wa(2), 'yes', at(3)))).action).toBe('joined');
+    expect(env.channel.sent.at(-1)?.body).toMatch(/^You're on the list! You're #2 /);
+
+    // No clear language: the shop's setting (French then English) is used.
+    await handleInbound(env.ctx, inbound(wa(3), 'claw clip ponytail brown?', at(4), 'Ali'));
+    const [french, english] = env.channel.sent.at(-1)!.body!.split('\n\n');
+    expect(french).toContain('Bonjour Ali');
+    expect(english).toContain('Hi Ali');
+  });
+
+  it('remembers a customer language across short replies', async () => {
+    env = await setup({ language: 'en' });
+    await handleInbound(env.ctx, inbound(wa(1), 'Bonjour, vous avez le claw clip ponytail brown ?', T0, 'Nadège'));
+    expect(env.channel.sent.at(-1)!.body).toMatch(/^Bonjour Nadège/);
+    // "ok" says nothing about language; the reply stays in French.
+    expect((await handleInbound(env.ctx, inbound(wa(1), 'ok', at(1)))).action).toBe('joined');
+    expect(env.channel.sent.at(-1)?.body).toMatch(/^C'est noté/);
   });
 
   it('says in stock with the real count and the shop currency', async () => {
     env = await setup();
     const r = await handleInbound(env.ctx, inbound(wa(1), 'una get the jet black claw clip?', T0, 'Tunde'));
     expect(r.action).toBe('in_stock');
-    expect(env.channel.sent.at(-1)?.body).toBe('Hi Tunde, yes, the jet black 12" Claw Clip Ponytail is available at FCFA\u00a015,000. We have 6 left.');
+    expect(env.channel.sent.at(-1)?.body).toBe('Hi Tunde, yes, we have the jet black 12" Claw Clip Ponytail in stock at FCFA\u00a015,000. We\'ve got 6 left.');
   });
 
   it('uses the right currency for a shop in another country', async () => {
     env = await setup({ country: 'NG', clipPrice: 18500 });
     await handleInbound(env.ctx, inbound('2348035552190', 'una get the jet black claw clip?', T0, 'Tunde'));
-    expect(env.channel.sent.at(-1)?.body).toContain('available at ₦18,500');
+    expect(env.channel.sent.at(-1)?.body).toContain('in stock at ₦18,500');
   });
 
   it('does not treat a hedged reply as consent, or a yes after the prompt has lapsed', async () => {
@@ -115,7 +135,7 @@ describe('chat to waitlist', () => {
     for (let i = 1; i <= 5; i++) {
       await handleInbound(env.ctx, inbound(wa(i), 'una get the brown claw clip?', T0, `P${i}`));
       await handleInbound(env.ctx, inbound(wa(i), 'yes', T0));
-      expect(env.channel.sent.at(-1)?.body).toContain(`You're #${i} on the list`);
+      expect(env.channel.sent.at(-1)?.body).toContain(`You're #${i} for the`);
     }
   });
 
@@ -179,10 +199,26 @@ describe('restock in hold mode', () => {
     });
   });
 
+  it('sends restock alerts in each customer own language', async () => {
+    env = await setup({ language: 'fr+en' });
+    await handleInbound(env.ctx, inbound(wa(1), 'vous avez la claw clip ponytail brown ?', at(-10), 'Nadège'));
+    await handleInbound(env.ctx, inbound(wa(1), 'oui', at(-9)));
+    await handleInbound(env.ctx, inbound(wa(2), 'una get the brown claw clip ponytail?', at(-8), 'Paul'));
+    await handleInbound(env.ctx, inbound(wa(2), 'yes', at(-7)));
+    env.channel.sent.length = 0;
+    await startRestock(env.ctx, { productId: env.brown, units: 2, mode: 'hold', holdMinutes: 90 }, T0);
+    const [toNadege, toPaul] = env.channel.sent.map((m) => m.template!);
+    expect(toNadege).toMatchObject({ name: 'restock_hold_v1', language: 'fr' });
+    expect(toNadege.params[5]).toBe(formatMoney(15000, 'XAF', 'fr', 'CM'));
+    expect(toPaul).toMatchObject({ name: 'restock_hold_v1', language: 'en' });
+    expect(toPaul.params[5]).toBe('FCFA\u00a015,000');
+  });
+
   it('sends bilingual templates with French then English slot values', async () => {
     env = await setup({ language: 'fr+en' });
-    await handleInbound(env.ctx, inbound(wa(1), 'una get the brown claw clip ponytail?', at(-10), 'Nadège'));
-    await handleInbound(env.ctx, inbound(wa(1), 'oui', at(-9)));
+    // No clear language in either message, so the shop's bilingual setting applies.
+    await handleInbound(env.ctx, inbound(wa(1), 'claw clip ponytail brown?', at(-10), 'Nadège'));
+    await handleInbound(env.ctx, inbound(wa(1), 'ok', at(-9)));
     env.channel.sent.length = 0;
     await startRestock(env.ctx, { productId: env.brown, units: 2, mode: 'hold', holdMinutes: 90 }, T0);
     const t = env.channel.sent[0].template!;
@@ -191,8 +227,8 @@ describe('restock in hold mode', () => {
     expect(t.params.slice(7)).toEqual(['Nadège', 'brown 12" Claw Clip Ponytail', '2', '1', '11:30 AM', 'FCFA\u00a015,000', t.params[6]]);
     const [log] = await env.db.query<{ template: string; body: string }>(`select template, body from messages where kind = 'template'`);
     expect(log.template).toBe('restock_hold_v1_bilingual');
-    expect(log.body).toContain('Arrivage : 2 pièce(s)');
-    expect(log.body).toContain('2 came in');
+    expect(log.body).toContain('Arrivage : 2.');
+    expect(log.body).toContain('Units in: 2.');
   });
 
   it('keeps unclaimed units as free stock once the line runs out', async () => {

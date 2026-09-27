@@ -54,6 +54,8 @@ create table if not exists seller_app.contacts (
   created_at timestamptz not null default now(),
   unique (seller_id, wa_id)
 );
+-- The language the customer writes in (en or fr), learned from their messages.
+alter table seller_app.contacts add column if not exists language text check (language in ('en', 'fr'));
 
 create table if not exists seller_app.messages (
   id uuid primary key default gen_random_uuid(),

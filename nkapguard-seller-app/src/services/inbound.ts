@@ -1,6 +1,6 @@
 import type { InboundText } from '../channels/whatsapp.js';
 import { say } from '../domain/copy.js';
-import { asksAvailability, detectProduct, isConsentYes, isStop } from '../domain/intent.js';
+import { asksAvailability, detectLanguage, detectProduct, isConsentYes, isStop } from '../domain/intent.js';
 import { CONSENT_PROMPT_TTL_MS } from '../domain/windows.js';
 import type { Q } from '../db.js';
 import type { Ctx, DispatchResult, Outbound, Recipient } from './context.js';
@@ -17,6 +17,7 @@ interface ContactRow {
   last_inbound_at: Date | null;
   awaiting_consent_product_id: string | null;
   awaiting_consent_at: Date | null;
+  language: 'en' | 'fr' | null;
 }
 
 interface ProductRow {
@@ -52,26 +53,29 @@ export async function waitlistPosition(q: Q, interestId: string): Promise<number
 export async function handleInbound(ctx: Ctx, msg: InboundText): Promise<{ action: InboundAction; sent: DispatchResult[] }> {
   const [seller] = await ctx.db.query<Seller>('select * from sellers where wa_phone_number_id = $1', [msg.phoneNumberId]);
   if (!seller) return { action: 'unknown_seller', sent: [] };
-  const lang = seller.language;
   const f = fmt(seller);
+  // Answer in the language the customer writes in; remember it for later alerts.
+  const written = detectLanguage(msg.text);
 
   const { action, outs } = await ctx.db.tx(async (q) => {
     const [contact] = await q.query<ContactRow>(
-      `insert into contacts (seller_id, wa_id, name, last_inbound_at) values ($1, $2, $3, $4)
+      `insert into contacts (seller_id, wa_id, name, last_inbound_at, language) values ($1, $2, $3, $4, $5)
        on conflict (seller_id, wa_id) do update
          set name = coalesce(excluded.name, contacts.name),
-             last_inbound_at = greatest(contacts.last_inbound_at, excluded.last_inbound_at)
+             last_inbound_at = greatest(contacts.last_inbound_at, excluded.last_inbound_at),
+             language = coalesce(excluded.language, contacts.language)
        returning *`,
-      [seller.id, msg.from, msg.name ?? null, msg.at],
+      [seller.id, msg.from, msg.name ?? null, msg.at, written],
     );
     await q.query(
       `insert into messages (seller_id, contact_id, direction, kind, body, provider_id, created_at)
        values ($1, $2, 'in', 'text', $3, $4, $5)`,
       [seller.id, contact.id, msg.text, msg.providerId, msg.at],
     );
+    const lang = contact.language ?? seller.language;
     const to: Recipient = {
       sellerId: seller.id, from: seller.wa_phone_number_id, contactId: contact.id, to: contact.wa_id,
-      lastInboundAt: contact.last_inbound_at, country: seller.country, language: seller.language,
+      lastInboundAt: contact.last_inbound_at, country: seller.country, language: lang,
     };
     const reply = (body: string): Outbound[] => [{ ...to, kind: 'text', body }];
 

@@ -173,13 +173,16 @@ Restock alerts will probably be classed as marketing (Cameroon and the rest of "
 Africa": about $0.0225 a message; Nigeria: about $0.0516). Templates can't start or end
 with a variable.
 
+The texts below are generated from `src/domain/copy.ts` (`templateBody`), and a test checks
+that this table still matches, so submit them to Meta exactly as written.
+
 | Name | Category | English | French |
 |---|---|---|---|
-| `restock_hold_v1` | Marketing | Hi {{1}}, the {{2}} is back. {{3}} came in and the waiting list has {{4}}. One is held for you until {{5}}. Pay {{6}} to keep it: {{7}} Reply STOP to leave the list. | Bonjour {{1}}, l'article « {{2}} » est de retour. Arrivage : {{3}} pièce(s), liste d'attente : {{4}} personne(s). Une pièce vous est réservée jusqu'à {{5}}. Payez {{6}} pour la garder : {{7}} Répondez STOP pour quitter la liste. |
-| `restock_race_v1` | Marketing | Hi {{1}}, the {{2}} is back. {{3}} came in and we're telling the first {{4}} on the list. First to pay {{5}} gets one: {{6}} Reply STOP to leave the list. | Bonjour {{1}}, l'article « {{2}} » est de retour. Arrivage : {{3}} pièce(s). Nous prévenons les {{4}} premières personnes de la liste. Le premier à payer {{5}} l'obtient : {{6}} Répondez STOP pour quitter la liste. |
-| `restock_sold_out_v1` | Utility | Sorry {{1}}, the {{2}} sold out before you got one. You're still on the list for the next restock. | Désolé {{1}}, l'article « {{2}} » a été vendu avant votre paiement. Vous gardez votre place sur la liste pour le prochain arrivage. |
-| `payment_received_v1` | Utility | Payment received, thank you. Your {{1}} is yours. We'll message you about delivery. | Paiement reçu, merci ! L'article « {{1}} » est à vous. Nous vous écrirons pour la livraison. |
-| `payment_refund_v1` | Utility | We received your payment, but the last {{1}} sold a moment earlier. We're refunding you in full and you keep your place on the list. | Nous avons reçu votre paiement, mais le dernier article « {{1}} » venait d'être vendu. Nous vous remboursons intégralement et vous gardez votre place sur la liste. |
+| `restock_hold_v1` | Marketing | Hi {{1}}, good news: the {{2}} is back! Units in: {{3}}. People waiting: {{4}}. We're holding one for you until {{5}}. Pay {{6}} here to secure it: {{7}} (Reply STOP to leave the list.) | Bonjour {{1}}, bonne nouvelle : le modèle {{2}} est de retour ! Arrivage : {{3}}. Personnes en attente : {{4}}. Nous vous en réservons un jusqu'à {{5}}. Pour le garder, réglez {{6}} ici : {{7}} (Répondez STOP pour quitter la liste.) |
+| `restock_race_v1` | Marketing | Hi {{1}}, good news: the {{2}} is back! Units in: {{3}}. People notified: {{4}}. The first to pay {{5}} gets it: {{6}} (Reply STOP to leave the list.) | Bonjour {{1}}, bonne nouvelle : le modèle {{2}} est de retour ! Arrivage : {{3}}. Personnes prévenues : {{4}}. Le premier à régler {{5}} l'emporte : {{6}} (Répondez STOP pour quitter la liste.) |
+| `restock_sold_out_v1` | Utility | Sorry {{1}}, the {{2}} sold out before your payment came through. You're still on the list, and we'll let you know about the next restock. | Désolés {{1}}, le modèle {{2}} est parti avant votre paiement. Vous restez sur la liste et nous vous préviendrons au prochain arrivage. |
+| `payment_received_v1` | Utility | Payment received, thank you! The {{1}} is yours. We'll be in touch shortly about delivery. | Paiement bien reçu, merci ! Le modèle {{1}} est à vous. Nous revenons très vite vers vous pour la livraison. |
+| `payment_refund_v1` | Utility | We received your payment, but the last {{1}} sold just moments before. We're refunding you in full, and you keep your place on the list. | Nous avons bien reçu votre paiement, mais le dernier modèle {{1}} a été vendu quelques instants plus tôt. Nous vous remboursons intégralement, et vous gardez votre place sur la liste. |
 
 ### Bilingual templates (French and English)
 
@@ -190,13 +193,18 @@ marron · 15 000 FCFA · 12:00" versus "brown Claw Clip · FCFA 15,000 · 12:00 
 same reason, write variants in both languages, like `Marron / Brown`. Customers can use
 either word, and each half of the message picks its own.
 
+Each customer is answered in the language they write in: French in, French out; English or
+Pidgin in, English out. The app remembers it for later alerts and confirmations. The shop's
+setting (including "French and English") is only used until a customer's language is known,
+for example after a message like "ok" or "👍".
+
 | Name | Body |
 |---|---|
-| `restock_hold_v1_bilingual` | Bonjour {{1}}, l'article « {{2}} » est de retour. Arrivage : {{3}} pièce(s), liste d'attente : {{4}} personne(s). Une pièce vous est réservée jusqu'à {{5}}. Payez {{6}} pour la garder : {{7}} Répondez STOP pour quitter la liste.<br><br>Hi {{8}}, the {{9}} is back. {{10}} came in and the waiting list has {{11}}. One is held for you until {{12}}. Pay {{13}} to keep it: {{14}} Reply STOP to leave the list. |
-| `restock_race_v1_bilingual` | Bonjour {{1}}, l'article « {{2}} » est de retour. Arrivage : {{3}} pièce(s). Nous prévenons les {{4}} premières personnes de la liste. Le premier à payer {{5}} l'obtient : {{6}} Répondez STOP pour quitter la liste.<br><br>Hi {{7}}, the {{8}} is back. {{9}} came in and we're telling the first {{10}} on the list. First to pay {{11}} gets one: {{12}} Reply STOP to leave the list. |
-| `restock_sold_out_v1_bilingual` | Désolé {{1}}, l'article « {{2}} » a été vendu avant votre paiement. Vous gardez votre place sur la liste pour le prochain arrivage.<br><br>Sorry {{3}}, the {{4}} sold out before you got one. You're still on the list for the next restock. |
-| `payment_received_v1_bilingual` | Paiement reçu, merci ! L'article « {{1}} » est à vous. Nous vous écrirons pour la livraison.<br><br>Payment received, thank you. Your {{2}} is yours. We'll message you about delivery. |
-| `payment_refund_v1_bilingual` | Nous avons reçu votre paiement, mais le dernier article « {{1}} » venait d'être vendu. Nous vous remboursons intégralement et vous gardez votre place sur la liste.<br><br>We received your payment, but the last {{2}} sold a moment earlier. We're refunding you in full and you keep your place on the list. |
+| `restock_hold_v1_bilingual` | Bonjour {{1}}, bonne nouvelle : le modèle {{2}} est de retour ! Arrivage : {{3}}. Personnes en attente : {{4}}. Nous vous en réservons un jusqu'à {{5}}. Pour le garder, réglez {{6}} ici : {{7}} (Répondez STOP pour quitter la liste.)<br><br>Hi {{8}}, good news: the {{9}} is back! Units in: {{10}}. People waiting: {{11}}. We're holding one for you until {{12}}. Pay {{13}} here to secure it: {{14}} (Reply STOP to leave the list.) |
+| `restock_race_v1_bilingual` | Bonjour {{1}}, bonne nouvelle : le modèle {{2}} est de retour ! Arrivage : {{3}}. Personnes prévenues : {{4}}. Le premier à régler {{5}} l'emporte : {{6}} (Répondez STOP pour quitter la liste.)<br><br>Hi {{7}}, good news: the {{8}} is back! Units in: {{9}}. People notified: {{10}}. The first to pay {{11}} gets it: {{12}} (Reply STOP to leave the list.) |
+| `restock_sold_out_v1_bilingual` | Désolés {{1}}, le modèle {{2}} est parti avant votre paiement. Vous restez sur la liste et nous vous préviendrons au prochain arrivage.<br><br>Sorry {{3}}, the {{4}} sold out before your payment came through. You're still on the list, and we'll let you know about the next restock. |
+| `payment_received_v1_bilingual` | Paiement bien reçu, merci ! Le modèle {{1}} est à vous. Nous revenons très vite vers vous pour la livraison.<br><br>Payment received, thank you! The {{2}} is yours. We'll be in touch shortly about delivery. |
+| `payment_refund_v1_bilingual` | Nous avons bien reçu votre paiement, mais le dernier modèle {{1}} a été vendu quelques instants plus tôt. Nous vous remboursons intégralement, et vous gardez votre place sur la liste.<br><br>We received your payment, but the last {{2}} sold just moments before. We're refunding you in full, and you keep your place on the list. |
 
 A bilingual message is one WhatsApp message, so it costs the same as a single-language one.
 

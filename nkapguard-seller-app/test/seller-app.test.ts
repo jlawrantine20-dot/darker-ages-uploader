@@ -66,7 +66,7 @@ describe('seller app API', () => {
     env.channel.sent.length = 0;
     const pv = (await call('POST', `/api/products/${env.brown}/restocks/preview`, { units: 2, mode: 'race', perUnit: 3 })).body;
     expect(pv).toMatchObject({ waiting: 4, toMessage: 4, soldOutNotes: 2, running: false, costUsdMicros: { alerts: 4 * 22500, soldOutNotes: 2 * 4000, total: 4 * 22500 + 2 * 4000 } });
-    expect(pv.preview).toContain('Hi Buyer1, the brown 12" Claw Clip Ponytail is back. 2 came in');
+    expect(pv.preview).toContain('Hi Buyer1, good news: the brown 12" Claw Clip Ponytail is back! Units in: 2.');
     expect(env.channel.sent).toHaveLength(0);
     expect((await call('GET', `/api/products/${env.brown}`)).body.product.stock).toBe(0);
 

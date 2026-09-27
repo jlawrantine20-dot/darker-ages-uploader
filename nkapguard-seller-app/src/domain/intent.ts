@@ -44,6 +44,35 @@ const AVAILABILITY = new RegExp(
   'i',
 );
 
+// Words that mark a message as French or English. Pidgin counts as English: the English
+// copy reads naturally to Pidgin speakers. Product names are left out on purpose, since
+// French speakers often use English names ("claw clip", "bonnet").
+const FRENCH = new Set([
+  'bonjour', 'bonsoir', 'salut', 'merci', 'oui', 'ouais', 'non', 'vous', 'avez', 'tu', 'est', 'sont', 'c', 'je', 'j',
+  'voudrais', 'veux', 'combien', 'prix', 'encore', 'svp', 'stp', 'quand', 'pourquoi', 'comment', 'avec', 'mais', 'pas',
+  'le', 'la', 'les', 'des', 'du', 'une', 'un', 'moi', 'ca', 'reste', 'disponible', 'dispo', 'est-ce', 'quoi', 'votre',
+  'mon', 'ma', 'mes', 'pour', 'aussi', 'bien', 'daccord', 'accord', 'cest', 'il', 'elle', 'nous', 'coute',
+]);
+const ENGLISH = new Set([
+  'hello', 'hi', 'hey', 'good', 'morning', 'evening', 'thanks', 'thank', 'yes', 'yeah', 'no', 'you', 'have', 'is', 'it',
+  'the', 'how', 'much', 'price', 'i', 'want', 'would', 'like', 'available', 'still', 'please', 'pls', 'when', 'why',
+  'with', 'but', 'not', 'do', 'any', 'left', 'me', 'my', 'your', 'can', 'get', 'what', 'where', 'there', 'okay', 'sure',
+  'abeg', 'una', 'dey', 'wetin', 'na', 'sabi',
+]);
+
+/** The language a message is written in, or null when it gives no clear sign ("ok", "?", "👍"). */
+export function detectLanguage(text: string): 'en' | 'fr' | null {
+  const words = fold(text).replace(/["”“'’]/g, ' ').replace(/[^a-z0-9\s-]/g, ' ').split(/\s+/).filter(Boolean);
+  let fr = 0;
+  let en = 0;
+  for (const w of words) {
+    if (FRENCH.has(w)) fr++;
+    if (ENGLISH.has(w)) en++;
+  }
+  if (fr === en) return null;
+  return fr > en ? 'fr' : 'en';
+}
+
 export function asksAvailability(text: string): boolean {
   return AVAILABILITY.test(fold(text).replace(/[’']/g, ' '));
 }

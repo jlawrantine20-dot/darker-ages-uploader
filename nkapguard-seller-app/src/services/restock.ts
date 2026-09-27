@@ -44,6 +44,7 @@ interface CandidateRow {
   wa_id: string;
   name: string | null;
   last_inbound_at: Date | null;
+  language: 'en' | 'fr' | null;
 }
 interface NewOffer extends CandidateRow {
   offer_id: string;
@@ -52,14 +53,17 @@ interface NewOffer extends CandidateRow {
   expires_at: Date | null;
 }
 
-const recipient = (s: Seller, c: { contact_id: string; wa_id: string; last_inbound_at: Date | null }): Recipient => ({
+/** The customer's own language when known, otherwise the shop's. */
+const langOf = (s: Seller, c: { language?: 'en' | 'fr' | null }) => c.language ?? s.language;
+
+const recipient = (s: Seller, c: { contact_id: string; wa_id: string; last_inbound_at: Date | null; language?: 'en' | 'fr' | null }): Recipient => ({
   sellerId: s.id,
   from: s.wa_phone_number_id,
   contactId: c.contact_id,
   to: c.wa_id,
   lastInboundAt: c.last_inbound_at,
   country: s.country,
-  language: s.language,
+  language: langOf(s, c),
 });
 
 async function load(q: Q, restockId: string, lock = false) {
@@ -73,7 +77,7 @@ async function load(q: Q, restockId: string, lock = false) {
 /** Next people in line who still consent and have not had an offer from this restock. */
 function candidates(q: Q, restockId: string, productId: string, limit: number) {
   return q.query<CandidateRow>(
-    `select i.id as interest_id, c.id as contact_id, c.wa_id, c.name, c.last_inbound_at
+    `select i.id as interest_id, c.id as contact_id, c.wa_id, c.name, c.last_inbound_at, c.language
        from interests i
        join consents k on k.id = i.consent_id and k.revoked_at is null
        join contacts c on c.id = i.contact_id
@@ -148,7 +152,7 @@ async function announce(
     await ctx.db.query('update offers set payment_url = $2 where id = $1', [o.offer_id, url]);
     const facts: Facts = { name: o.name, product, priceMinor: product.price_minor, units: restock.units, waiting, told: offers.length, until: o.expires_at ?? undefined, url };
     const key = restock.mode === 'hold' ? 'hold' : 'race';
-    outs.push({ ...recipient(seller, o), kind: 'template', template: key, category: 'marketing', params: slots(seller.language, key, facts, f), preview: say(seller.language, key, facts, f) });
+    outs.push({ ...recipient(seller, o), kind: 'template', template: key, category: 'marketing', params: slots(langOf(seller, o), key, facts, f), preview: say(langOf(seller, o), key, facts, f) });
   }
   return outs;
 }
@@ -262,7 +266,7 @@ export async function handlePayment(ctx: Ctx, rawEvent: PaymentEvent, now: Date)
     const { restock, product, seller } = loaded;
     const f = fmt(seller);
     const [offer] = await q.query<{ id: string; status: string; interest_id: string } & CandidateRow>(
-      `select o.id, o.status, o.interest_id, c.id as contact_id, c.wa_id, c.name, c.last_inbound_at
+      `select o.id, o.status, o.interest_id, c.id as contact_id, c.wa_id, c.name, c.last_inbound_at, c.language
          from offers o join interests i on i.id = o.interest_id join contacts c on c.id = i.contact_id
         where o.payment_ref = $1 for update of o`,
       [event.reference],
@@ -281,8 +285,8 @@ export async function handlePayment(ctx: Ctx, rawEvent: PaymentEvent, now: Date)
       return {
         outcome: 'refund_due' as const,
         outs: [{
-          ...to, kind: 'text' as const, body: say(seller.language, 'refund', { product }, f),
-          fallback: { template: 'refund' as const, category: 'utility' as const, params: slots(seller.language, 'refund', { product }, f), preview: say(seller.language, 'refund', { product }, f) },
+          ...to, kind: 'text' as const, body: say(to.language, 'refund', { product }, f),
+          fallback: { template: 'refund' as const, category: 'utility' as const, params: slots(to.language, 'refund', { product }, f), preview: say(to.language, 'refund', { product }, f) },
         }],
       };
     }
@@ -291,8 +295,8 @@ export async function handlePayment(ctx: Ctx, rawEvent: PaymentEvent, now: Date)
     await q.query(`update interests set status = 'bought' where id = $1`, [offer.interest_id]);
     await q.query('update products set stock = stock - 1 where id = $1', [product.id]);
     const outs: Outbound[] = [{
-      ...to, kind: 'text', body: say(seller.language, 'paid', { product }, f),
-      fallback: { template: 'paid', category: 'utility', params: slots(seller.language, 'paid', { product }, f), preview: say(seller.language, 'paid', { product }, f) },
+      ...to, kind: 'text', body: say(to.language, 'paid', { product }, f),
+      fallback: { template: 'paid', category: 'utility', params: slots(to.language, 'paid', { product }, f), preview: say(to.language, 'paid', { product }, f) },
     }];
 
     if (c.paid + 1 >= restock.units) {
@@ -300,12 +304,12 @@ export async function handlePayment(ctx: Ctx, rawEvent: PaymentEvent, now: Date)
       const losers = await q.query<CandidateRow>(
         `update offers o set status = 'missed' from interests i, contacts c
           where o.restock_id = $1 and o.status = 'notified' and i.id = o.interest_id and c.id = i.contact_id
-        returning i.id as interest_id, c.id as contact_id, c.wa_id, c.name, c.last_inbound_at`,
+        returning i.id as interest_id, c.id as contact_id, c.wa_id, c.name, c.last_inbound_at, c.language`,
         [restock.id],
       );
       for (const l of losers) {
         const facts = { name: l.name, product };
-        outs.push({ ...recipient(seller, l), kind: 'template', template: 'soldOut', category: 'utility', params: slots(seller.language, 'soldOut', facts, f), preview: say(seller.language, 'soldOut', facts, f) });
+        outs.push({ ...recipient(seller, l), kind: 'template', template: 'soldOut', category: 'utility', params: slots(langOf(seller, l), 'soldOut', facts, f), preview: say(langOf(seller, l), 'soldOut', facts, f) });
       }
     }
     return { outcome: 'paid' as const, outs };

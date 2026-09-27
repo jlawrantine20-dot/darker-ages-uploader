@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { clockTime, productLabel, say, slots, templateFor } from '../src/domain/copy.js';
-import { asksAvailability, detectProduct, isConsentYes, isStop } from '../src/domain/intent.js';
+import { clockTime, productLabel, say, slots, templateBody, templateFor } from '../src/domain/copy.js';
+import { asksAvailability, detectLanguage, detectProduct, isConsentYes, isStop } from '../src/domain/intent.js';
 import { isCurrency, isTimezone, marketFor, ratesFor } from '../src/domain/markets.js';
 import { currencyExponent, formatMoney, formatUsdMicros, toMinor } from '../src/domain/money.js';
 import { findPhone, formatPhone, normalizePhone } from '../src/domain/phone.js';
@@ -116,23 +116,23 @@ describe('wording and time', () => {
     expect(productLabel({ name: 'Mèche brésilienne', variant: 'Marron' }, 'fr')).toBe('Mèche brésilienne marron');
     const f = { currency: 'XAF', country: 'CM', timezone: 'Africa/Douala' };
     const meche = { name: 'Mèche brésilienne', variant: 'Marron' };
-    expect(say('fr', 'joined', { product: meche, position: 3 }, f)).toContain('Vous êtes n°3 sur la liste');
-    expect(say('xx', 'joined', { product: meche, position: 3 }, f)).toContain("You're #3 on the list");
+    expect(say('fr', 'joined', { product: meche, position: 3 }, f)).toContain("Vous êtes n°3 sur la liste d'attente du modèle Mèche brésilienne marron");
+    expect(say('xx', 'joined', { product: meche, position: 3 }, f)).toContain("You're #3 for the marron Mèche brésilienne");
   });
 
   it('writes bilingual messages with each half formatted in its own language', () => {
     const f = { currency: 'XAF', country: 'CM', timezone: 'Africa/Douala' };
     const facts = { name: 'Nadège Mballa', product: { name: 'Claw Clip', variant: 'Brown' }, priceMinor: 15000, units: 3, waiting: 8, until: new Date('2026-10-05T11:00:00Z'), url: 'https://nkapguard.test/pay/x' };
     const [french, english] = say('fr+en', 'hold', facts, f).split('\n\n');
-    expect(french).toBe("Bonjour Nadège, l'article « Claw Clip brown » est de retour. Arrivage : 3 pièce(s), liste d'attente : 8 personne(s). Une pièce vous est réservée jusqu'à 12:00. Payez 15\u202f000\u00a0FCFA pour la garder : https://nkapguard.test/pay/x Répondez STOP pour quitter la liste.");
-    expect(english).toBe('Hi Nadège, the brown Claw Clip is back. 3 came in and the waiting list has 8. One is held for you until 12:00 PM. Pay FCFA\u00a015,000 to keep it: https://nkapguard.test/pay/x Reply STOP to leave the list.');
+    expect(french).toBe("Bonjour Nadège, bonne nouvelle : le modèle Claw Clip brown est de retour ! Arrivage : 3. Personnes en attente : 8. Nous vous en réservons un jusqu'à 12:00. Pour le garder, réglez 15\u202f000\u00a0FCFA ici : https://nkapguard.test/pay/x (Répondez STOP pour quitter la liste.)");
+    expect(english).toBe('Hi Nadège, good news: the brown Claw Clip is back! Units in: 3. People waiting: 8. We\'re holding one for you until 12:00 PM. Pay FCFA\u00a015,000 here to secure it: https://nkapguard.test/pay/x (Reply STOP to leave the list.)');
     // Template slots: the 7 French values, then the 7 English ones.
     expect(slots('fr+en', 'hold', facts, f)).toEqual([
       'Nadège', 'Claw Clip brown', '3', '8', '12:00', '15\u202f000\u00a0FCFA', 'https://nkapguard.test/pay/x',
       'Nadège', 'brown Claw Clip', '3', '8', '12:00 PM', 'FCFA\u00a015,000', 'https://nkapguard.test/pay/x',
     ]);
     expect(slots('en', 'hold', facts, f)).toHaveLength(7);
-    expect(say('fr+en', 'offerAlert', { product: facts.product }, f)).toMatch(/^Bonjour cher client, .+\n\nHi there, /s);
+    expect(say('fr+en', 'offerAlert', { product: facts.product }, f)).toMatch(/^Bonjour cher client ! .+\n\nHi there, /s);
     expect(templateFor('restock_hold_v1', 'fr+en')).toEqual({ name: 'restock_hold_v1_bilingual', language: 'fr' });
     expect(templateFor('restock_hold_v1', 'en')).toEqual({ name: 'restock_hold_v1', language: 'en' });
   });
@@ -149,5 +149,32 @@ describe('wording and time', () => {
     expect(whatsappWindowOpen(new Date('2026-10-05T00:00:01Z'), now)).toBe(true);
     expect(whatsappWindowOpen(new Date('2026-10-04T12:00:00Z'), now)).toBe(false);
     expect(whatsappWindowOpen(null, now)).toBe(false);
+  });
+});
+
+describe('detectLanguage', () => {
+  it('reads French, English and Pidgin, and gives up when there is no sign', () => {
+    expect(detectLanguage('Bonjour, vous avez le claw clip ponytail?')).toBe('fr');
+    expect(detectLanguage("c'est combien le bonnet ?")).toBe('fr');
+    expect(detectLanguage('Oui')).toBe('fr');
+    expect(detectLanguage('Do you have the jet black claw clip?')).toBe('en');
+    expect(detectLanguage('una get the brown one?')).toBe('en');
+    expect(detectLanguage('yes please')).toBe('en');
+    expect(detectLanguage('ok')).toBeNull();
+    expect(detectLanguage('claw clip ponytail brown?')).toBeNull();
+    expect(detectLanguage('👍')).toBeNull();
+  });
+});
+
+describe('WhatsApp template texts', () => {
+  it('match the README table submitted to Meta', async () => {
+    const { readFileSync } = await import('node:fs');
+    const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+    for (const key of ['hold', 'race', 'soldOut', 'paid', 'refund'] as const) {
+      expect(readme).toContain(templateBody('en', key));
+      expect(readme).toContain(templateBody('fr', key));
+      expect(readme).toContain(templateBody('fr+en', key).replace('\n\n', '<br><br>'));
+    }
+    expect(templateBody('fr+en', 'hold')).toMatch(/\{\{14\}\}/);
   });
 });

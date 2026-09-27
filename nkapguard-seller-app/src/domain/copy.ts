@@ -50,43 +50,50 @@ interface Args {
 export type Key = 'offerAlert' | 'inStock' | 'joined' | 'alreadyWaiting' | 'stopped' | 'hold' | 'race' | 'soldOut' | 'paid' | 'refund';
 type Sentences = Record<Key, (a: Args) => string> & { fallbackName: string };
 
+// Each language is written as a native speaker would text a customer, not translated line by
+// line. French uses "vous" and "le modèle …", which reads correctly whatever the product's own
+// gender. Template messages (hold, race, soldOut, paid, refund) are fixed text on Meta's side,
+// so they avoid wording that changes with a number ("1 personne" / "2 personnes").
 const en: Sentences = {
   fallbackName: 'there',
   offerAlert: (a) =>
-    `Hi ${a.first}, the ${a.label} is sold out right now. Want a message here the moment it's back? Reply YES to join the list. You can reply STOP any time.`,
-  inStock: (a) => `Hi ${a.first}, yes, the ${a.label} is available at ${a.price}. We have ${a.stock} left.`,
+    `Hi ${a.first}, the ${a.label} is sold out at the moment. Want us to message you here as soon as it's back? Just reply YES. (Reply STOP anytime to opt out.)`,
+  inStock: (a) =>
+    `Hi ${a.first}, yes, we have the ${a.label} in stock at ${a.price}. ${a.stock === 1 ? "It's the last one!" : `We've got ${a.stock} left.`}`,
   joined: (a) =>
-    `Done. You're #${a.position} on the list for the ${a.label}. We'll message you here when it lands. Reply STOP any time to leave the list.`,
-  alreadyWaiting: (a) => `You're already on the list for the ${a.label}, at #${a.position}.`,
-  stopped: (a) => `You've been removed from all of ${a.seller}'s restock lists. You won't get more alerts.`,
+    `You're on the list! You're #${a.position} for the ${a.label}, and we'll message you here as soon as it's back. Reply STOP anytime to leave the list.`,
+  alreadyWaiting: (a) => `You're already on the list for the ${a.label} (#${a.position}). We'll let you know as soon as it's back.`,
+  stopped: (a) => `Done, you won't get any more alerts from ${a.seller}. Feel free to message us anytime.`,
   hold: (a) =>
-    `Hi ${a.first}, the ${a.label} is back. ${a.units} came in and the waiting list has ${a.waiting}. One is held for you until ${a.until}. Pay ${a.price} to keep it: ${a.url} Reply STOP to leave the list.`,
+    `Hi ${a.first}, good news: the ${a.label} is back! Units in: ${a.units}. People waiting: ${a.waiting}. We're holding one for you until ${a.until}. Pay ${a.price} here to secure it: ${a.url} (Reply STOP to leave the list.)`,
   race: (a) =>
-    `Hi ${a.first}, the ${a.label} is back. ${a.units} came in and we're telling the first ${a.told} on the list. First to pay ${a.price} gets one: ${a.url} Reply STOP to leave the list.`,
-  soldOut: (a) => `Sorry ${a.first}, the ${a.label} sold out before you got one. You're still on the list for the next restock.`,
-  paid: (a) => `Payment received, thank you. Your ${a.label} is yours. We'll message you about delivery.`,
+    `Hi ${a.first}, good news: the ${a.label} is back! Units in: ${a.units}. People notified: ${a.told}. The first to pay ${a.price} gets it: ${a.url} (Reply STOP to leave the list.)`,
+  soldOut: (a) =>
+    `Sorry ${a.first}, the ${a.label} sold out before your payment came through. You're still on the list, and we'll let you know about the next restock.`,
+  paid: (a) => `Payment received, thank you! The ${a.label} is yours. We'll be in touch shortly about delivery.`,
   refund: (a) =>
-    `We received your payment, but the last ${a.label} sold a moment earlier. We're refunding you in full and you keep your place on the list.`,
+    `We received your payment, but the last ${a.label} sold just moments before. We're refunding you in full, and you keep your place on the list.`,
 };
 
 const fr: Sentences = {
   fallbackName: 'cher client',
   offerAlert: (a) =>
-    `Bonjour ${a.first}, l'article « ${a.label} » est en rupture de stock pour le moment. Voulez-vous un message ici dès son retour ? Répondez OUI pour être sur la liste. Vous pouvez répondre STOP à tout moment.`,
-  inStock: (a) => `Bonjour ${a.first}, oui, l'article « ${a.label} » est disponible à ${a.price}. Il en reste ${a.stock}.`,
+    `Bonjour ${a.first} ! Le modèle ${a.label} est momentanément en rupture de stock. Souhaitez-vous que nous vous prévenions ici dès son retour ? Répondez simplement OUI. (Répondez STOP à tout moment pour ne plus recevoir de messages.)`,
+  inStock: (a) =>
+    `Bonjour ${a.first} ! Oui, le modèle ${a.label} est disponible au prix de ${a.price}. ${a.stock === 1 ? "C'est le dernier !" : `Il nous en reste ${a.stock}.`}`,
   joined: (a) =>
-    `C'est noté. Vous êtes n°${a.position} sur la liste pour « ${a.label} ». Nous vous écrirons ici dès son arrivée. Répondez STOP à tout moment pour quitter la liste.`,
-  alreadyWaiting: (a) => `Vous êtes déjà sur la liste pour « ${a.label} », en position n°${a.position}.`,
-  stopped: (a) => `Vous avez été retiré(e) de toutes les listes d'attente de ${a.seller}. Vous ne recevrez plus d'alertes.`,
+    `C'est noté ! Vous êtes n°${a.position} sur la liste d'attente du modèle ${a.label}. Nous vous écrirons ici dès son retour. Pour quitter la liste, répondez STOP.`,
+  alreadyWaiting: (a) => `Vous êtes déjà sur la liste d'attente du modèle ${a.label} (n°${a.position}). Nous vous prévenons dès son retour.`,
+  stopped: (a) => `C'est fait : vous ne recevrez plus d'alertes de ${a.seller}. N'hésitez pas à nous écrire à tout moment.`,
   hold: (a) =>
-    `Bonjour ${a.first}, l'article « ${a.label} » est de retour. Arrivage : ${a.units} pièce(s), liste d'attente : ${a.waiting} personne(s). Une pièce vous est réservée jusqu'à ${a.until}. Payez ${a.price} pour la garder : ${a.url} Répondez STOP pour quitter la liste.`,
+    `Bonjour ${a.first}, bonne nouvelle : le modèle ${a.label} est de retour ! Arrivage : ${a.units}. Personnes en attente : ${a.waiting}. Nous vous en réservons un jusqu'à ${a.until}. Pour le garder, réglez ${a.price} ici : ${a.url} (Répondez STOP pour quitter la liste.)`,
   race: (a) =>
-    `Bonjour ${a.first}, l'article « ${a.label} » est de retour. Arrivage : ${a.units} pièce(s). Nous prévenons les ${a.told} premières personnes de la liste. Le premier à payer ${a.price} l'obtient : ${a.url} Répondez STOP pour quitter la liste.`,
+    `Bonjour ${a.first}, bonne nouvelle : le modèle ${a.label} est de retour ! Arrivage : ${a.units}. Personnes prévenues : ${a.told}. Le premier à régler ${a.price} l'emporte : ${a.url} (Répondez STOP pour quitter la liste.)`,
   soldOut: (a) =>
-    `Désolé ${a.first}, l'article « ${a.label} » a été vendu avant votre paiement. Vous gardez votre place sur la liste pour le prochain arrivage.`,
-  paid: (a) => `Paiement reçu, merci ! L'article « ${a.label} » est à vous. Nous vous écrirons pour la livraison.`,
+    `Désolés ${a.first}, le modèle ${a.label} est parti avant votre paiement. Vous restez sur la liste et nous vous préviendrons au prochain arrivage.`,
+  paid: (a) => `Paiement bien reçu, merci ! Le modèle ${a.label} est à vous. Nous revenons très vite vers vous pour la livraison.`,
   refund: (a) =>
-    `Nous avons reçu votre paiement, mais le dernier article « ${a.label} » venait d'être vendu. Nous vous remboursons intégralement et vous gardez votre place sur la liste.`,
+    `Nous avons bien reçu votre paiement, mais le dernier modèle ${a.label} a été vendu quelques instants plus tôt. Nous vous remboursons intégralement, et vous gardez votre place sur la liste.`,
 };
 
 const SENTENCES: Record<Base, Sentences> = { en, fr };
@@ -170,4 +177,20 @@ export function slots(lang: Lang | string, key: keyof typeof SLOTS, facts: Facts
 /** Template name and WhatsApp language code for a shop language. Bilingual templates are registered under French. */
 export function templateFor(baseName: string, lang: Lang | string): { name: string; language: string } {
   return lang === 'fr+en' ? { name: `${baseName}_bilingual`, language: 'fr' } : { name: baseName, language: parts(lang)[0] };
+}
+
+/**
+ * The fixed text of a WhatsApp template, with {{1}}, {{2}}… where the slot values go, exactly
+ * as it must be submitted to Meta. Bilingual templates number the English slots after the
+ * French ones. Generated from the same sentences the app sends, so the two cannot drift.
+ */
+export function templateBody(lang: Lang | string, key: keyof typeof SLOTS): string {
+  let n = 0;
+  return parts(lang)
+    .map((l) => {
+      const fields = SLOTS[key](Object.fromEntries(Object.keys(args(l, {}, { currency: 'USD', country: 'US', timezone: 'UTC' })).map((k) => [k, k])) as unknown as Args);
+      const a = Object.fromEntries(fields.map((field) => [field, `{{${++n}}}`])) as unknown as Args;
+      return SENTENCES[l][key](a);
+    })
+    .join(BILINGUAL_SEPARATOR);
 }
