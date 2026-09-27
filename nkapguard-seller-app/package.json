@@ -12,7 +12,8 @@
     "simulate": "tsx scripts/simulate.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "check:flutterwave": "tsx scripts/flutterwave-sandbox.ts"
+    "check:flutterwave": "tsx scripts/flutterwave-sandbox.ts",
+    "build:edge": "node edge/build.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",
@@ -24,6 +25,8 @@
   "devDependencies": {
     "@types/node": "^26.6.3",
     "@types/pg": "^8.23.1",
+    "esbuild": "^0.28.2",
+    "postgres": "^3.4.9",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.0.2"

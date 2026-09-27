@@ -20,6 +20,12 @@ export interface Config {
   };
   /** NKAPGUARD's own WhatsApp number, which sends sign-in codes to sellers. */
   platform: { phoneNumberId: string; loginTemplate: string; loginTemplateLanguage: string };
+  /** Where the seller app is hosted, when it is not on the API's own host. Customer pages are drawn there. */
+  appUrl: string;
+  /** Origins allowed to call the API from a browser. */
+  allowedOrigins: string[];
+  /** Test mode only: treat requests with no credentials as the operator. Off for public deployments. */
+  openTestMode: boolean;
 }
 
 const int = (v: string | undefined, d: number) => (v === undefined || v === '' ? d : Number.parseInt(v, 10));
@@ -49,6 +55,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
         refund: env.WA_TEMPLATE_REFUND ?? 'payment_refund_v1',
       },
     },
+    appUrl: env.APP_URL ?? '',
+    allowedOrigins: (env.ALLOWED_ORIGINS ?? '*').split(',').map((o) => o.trim()).filter(Boolean),
+    openTestMode: dryRun && env.OPEN_TEST_MODE !== 'false',
     platform: {
       phoneNumberId: env.PLATFORM_WA_PHONE_ID ?? '',
       loginTemplate: env.WA_TEMPLATE_LOGIN ?? 'login_code_v1',

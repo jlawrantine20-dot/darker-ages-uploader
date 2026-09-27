@@ -1,8 +1,7 @@
 import { Hono } from 'hono';
 import type { Context, Next } from 'hono';
-import { serveStatic } from '@hono/node-server/serve-static';
-import { fileURLToPath } from 'node:url';
-import { relative } from 'node:path';
+import { cors } from 'hono/cors';
+import type { MiddlewareHandler } from 'hono';
 import { parseWebhook, verifyMetaSignature } from './channels/whatsapp.js';
 import { LANGS, MARKETS, RATE_GROUPS, ratesFor } from './domain/markets.js';
 import { toMinor } from './domain/money.js';
@@ -19,7 +18,12 @@ import { productLabel } from './domain/copy.js';
 import { AuthError, ForbiddenError, addMember, logout, removeMember, requireRole, shopOf, startLogin, verifyLogin, viewerFor, type Role, type Viewer } from './services/auth.js';
 import { getSeller, money, providerFor, publicSeller, resolveSellerInput, setPaymentProvider, type Seller } from './services/sellers.js';
 
-export function createApp(ctx: Ctx, clock: () => Date = () => new Date()) {
+export interface AppOptions {
+  /** Serves the seller app's files under /app when the API and the app share one host (the Node server). */
+  webFiles?: { assets: MiddlewareHandler; index: MiddlewareHandler };
+}
+
+export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: AppOptions = {}) {
   const app = new Hono<{ Variables: { viewer: Viewer } }>();
   const { config, db } = ctx;
 
@@ -31,7 +35,23 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date()) {
     return c.json({ error: 'Something went wrong on our side.' }, 500);
   });
 
+  // The seller app may live on a different host from the API, so allow it to call in.
+  app.use('*', cors({ origin: config.allowedOrigins.includes('*') ? '*' : config.allowedOrigins, allowHeaders: ['Authorization', 'Content-Type'], allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'] }));
+
   app.get('/health', (c) => c.json({ ok: true, dryRun: config.dryRun }));
+
+  /**
+   * Show a customer a short page. When the seller app is hosted elsewhere (APP_URL), the page
+   * is drawn there, because some API hosts (Supabase) refuse to serve HTML.
+   */
+  const customerPage = (c: Context, lang: string, title: string, body: string, status: 200 | 404 | 410 | 503 = 200, test?: { ref: string; pay: string }) => {
+    if (config.appUrl) {
+      const data = encodeURIComponent(JSON.stringify({ lang, title, body, status, test }));
+      return c.redirect(`${config.appUrl.replace(/\/$/, '')}/pay.html#${data}`, 302);
+    }
+    const extra = test ? `<form method="post"><button>${escapeHtml(test.pay)}</button></form>` : '';
+    return c.html(page(lang, title, body, extra), status);
+  };
 
   /** Country defaults, languages and payment providers. Public: the sign-in screen needs the country list. */
   const marketsBody = () => ({
@@ -93,14 +113,14 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date()) {
 
   app.get('/pay/:ref', async (c) => {
     const o = await loadOffer(c.req.param('ref'));
-    if (!o) return c.html(page('en', pageText('en').ended, pageText('en').endedSold), 404);
+    if (!o) return customerPage(c, 'en', pageText('en').ended, pageText('en').endedSold, 404);
     const seller = (await getSeller(db, o.seller_id))!;
     const t = pageText(seller.language);
     const now = clock();
     const live = (o.status === 'held' && o.expires_at && o.expires_at > now) || (o.status === 'notified' && !o.closed_at);
     if (!live) {
       const why = o.status === 'paid' ? t.endedPaid : o.status === 'expired' || o.status === 'held' ? t.endedHeld : t.endedSold;
-      return c.html(page(seller.language, t.ended, why), 410);
+      return customerPage(c, seller.language, t.ended, why, 410);
     }
     try {
       const label = productLabel({ name: o.name, variant: o.variant }, seller.language);
@@ -116,13 +136,13 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date()) {
       return c.redirect(url, 302);
     } catch (err) {
       console.error(err);
-      return c.html(page(seller.language, t.unavailable, t.tryAgain), 503);
+      return customerPage(c, seller.language, t.unavailable, t.tryAgain, 503);
     }
   });
 
   app.get('/paid', (c) => {
     const t = pageText(c.req.query('lang') ?? 'en');
-    return c.html(page(c.req.query('lang') ?? 'en', t.thanks, t.thanksBody));
+    return customerPage(c, c.req.query('lang') ?? 'en', t.thanks, t.thanksBody);
   });
 
   if (config.dryRun) {
@@ -133,8 +153,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date()) {
       const t = pageText(seller.language);
       const label = productLabel({ name: o.name, variant: o.variant }, seller.language);
       const amount = money(seller, Number(o.price_minor));
-      return c.html(page(seller.language, t.testTitle, `${seller.name} · ${label} · ${amount}. ${t.testBody}`,
-        `<form method="post"><button>${escapeHtml(t.testPay)} ${escapeHtml(amount)}</button></form>`));
+      return customerPage(c, seller.language, t.testTitle, `${seller.name} · ${label} · ${amount}. ${t.testBody}`, 200, { ref: c.req.param('ref'), pay: `${t.testPay} ${amount}` });
     });
     app.post('/pay/:ref/test', async (c) => {
       const o = await loadOffer(c.req.param('ref'));
@@ -142,7 +161,11 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date()) {
       const seller = (await getSeller(db, o.seller_id))!;
       const r = await handlePayment(ctx, { reference: c.req.param('ref'), amountMinor: Number(o.price_minor) }, clock());
       const t = pageText(seller.language);
-      return c.html(page(seller.language, r.outcome === 'paid' ? t.testDone : t.ended, r.outcome === 'paid' ? t.thanksBody : t.endedSold));
+      const title = r.outcome === 'paid' ? t.testDone : t.ended;
+      const body = r.outcome === 'paid' ? t.thanksBody : t.endedSold;
+      // The hosted seller app posts here with fetch and draws the result itself.
+      if (c.req.header('accept')?.includes('application/json')) return c.json({ title, body });
+      return c.html(page(seller.language, title, body));
     });
   }
 
@@ -167,7 +190,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date()) {
     const header = c.req.header('authorization');
     let viewer = await viewerFor(ctx, header, clock());
     // Test mode with no admin token configured stays open to callers that send no credentials.
-    if (!viewer && !header && config.dryRun && !config.adminToken) viewer = { kind: 'admin' };
+    if (!viewer && !header && config.openTestMode && !config.adminToken) viewer = { kind: 'admin' };
     if (!viewer) return c.json({ error: 'Sign in again.' }, 401);
     c.set('viewer', viewer);
     await next();
@@ -510,12 +533,13 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date()) {
     });
   }
 
-  // ---- Seller web app ----
-  const webRoot = relative(process.cwd(), fileURLToPath(new URL('../web', import.meta.url))) || '.';
-  app.get('/', (c) => c.redirect('/app/'));
-  app.get('/app', (c) => c.redirect('/app/'));
-  app.use('/app/*', serveStatic({ root: webRoot, rewriteRequestPath: (p) => p.replace(/^\/app/, '') }));
-  app.get('/app/*', serveStatic({ path: `${webRoot}/index.html` }));
+  // ---- Seller web app, when served from the same host ----
+  if (opts.webFiles) {
+    app.get('/', (c) => c.redirect('/app/'));
+    app.get('/app', (c) => c.redirect('/app/'));
+    app.use('/app/*', opts.webFiles.assets);
+    app.get('/app/*', opts.webFiles.index);
+  }
 
   return app;
 }

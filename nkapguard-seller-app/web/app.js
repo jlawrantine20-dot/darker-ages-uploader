@@ -1,6 +1,8 @@
 // NKAPGUARD Seller App. Plain JavaScript modules, no build step; talks to the /api routes.
 
 const $ = (sel, root = document) => root.querySelector(sel);
+/** Where the NKAPGUARD API lives. Empty when the app and API share a host; set in config.js otherwise. */
+const API = (window.NKG_API ?? '').replace(/\/$/, '');
 const main = $('#main');
 const top = $('#top');
 const nav = $('#nav');
@@ -68,7 +70,7 @@ async function api(path, { method = 'GET', body } = {}) {
   const headers = { 'Content-Type': 'application/json' };
   const token = get('nkg.token');
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  const res = await fetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   const data = res.headers.get('content-type')?.includes('json') ? await res.json() : await res.text();
   if (!res.ok) throw new ApiError(res.status, data?.error ?? `Request failed (${res.status}).`);
   return data;

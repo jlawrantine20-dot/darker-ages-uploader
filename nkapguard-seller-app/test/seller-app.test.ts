@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
+import { nodeWebFiles } from '../src/web-files.js';
 import { at, setup, wa } from './helpers.js';
 
 let env: Awaited<ReturnType<typeof setup>>;
@@ -110,7 +111,7 @@ describe('seller app API', () => {
 
   it('serves the web app', async () => {
     env = await setup();
-    const { app } = client(() => at(0));
+    const app = createApp(env.ctx, () => at(0), { webFiles: nodeWebFiles() });
     const page = await app.request('/app/');
     expect(page.status).toBe(200);
     expect(await page.text()).toContain('<title>NKAPGUARD Seller App</title>');

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NKAPGUARD</title>
+<style>
+:root{color-scheme:light;--bg:#F3F6F4;--card:#fff;--ink:#15201A;--muted:#5B6961;--accent:#0B6B55;--on:#fff}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#0C110F;--card:#141A17;--ink:#E6EDE9;--muted:#95A49C;--accent:#3CC49E;--on:#052019}}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif;padding:16px;box-sizing:border-box}
+main{max-width:420px;width:100%;background:var(--card);border-radius:16px;padding:24px;box-sizing:border-box}
+h1{font-size:22px;margin:0 0 8px}p{color:var(--muted);margin:0 0 16px}
+button{width:100%;padding:14px;border:0;border-radius:12px;background:var(--accent);color:var(--on);font:600 16px system-ui,sans-serif;cursor:pointer}
+button:disabled{opacity:.6}
+</style>
+<script src="config.js"></script>
+</head>
+<body>
+<main id="m"><h1>NKAPGUARD</h1></main>
+<script>
+// Customer pages sent here by the API: offer ended, payment received, test checkout.
+(function () {
+  var m = document.getElementById('m');
+  function draw(title, body) {
+    m.textContent = '';
+    var h = document.createElement('h1');
+    String(title).split('\n').forEach(function (line, i) { if (i) h.appendChild(document.createElement('br')); h.appendChild(document.createTextNode(line)); });
+    m.appendChild(h);
+    String(body).split('\n').forEach(function (line) { var p = document.createElement('p'); p.textContent = line; m.appendChild(p); });
+  }
+  var data = {};
+  try { data = JSON.parse(decodeURIComponent(location.hash.slice(1))); } catch (e) { data = {}; }
+  document.documentElement.lang = data.lang === 'fr+en' ? 'fr' : (data.lang || 'en');
+  if (!data.title) { draw('NKAPGUARD', ''); return; }
+  document.title = String(data.title).split('\n')[0];
+  draw(data.title, data.body || '');
+  if (data.test && data.test.ref) {
+    var b = document.createElement('button');
+    b.textContent = data.test.pay;
+    b.onclick = function () {
+      b.disabled = true;
+      var api = (window.NKG_API || '').replace(/\/$/, '');
+      fetch(api + '/pay/' + encodeURIComponent(data.test.ref) + '/test', { method: 'POST', headers: { Accept: 'application/json' } })
+        .then(function (r) { return r.json(); })
+        .then(function (r) { draw(r.title, r.body); })
+        .catch(function () { b.disabled = false; });
+    };
+    m.appendChild(b);
+  }
+})();
+</script>
+</body>
+</html>

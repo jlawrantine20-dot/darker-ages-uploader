@@ -1,5 +1,6 @@
 import { serve } from '@hono/node-server';
 import { createApp } from './app.js';
+import { nodeWebFiles } from './web-files.js';
 import { DryRunChannel, whatsappCloud } from './channels/whatsapp.js';
 import { loadConfig } from './config.js';
 import { embeddedDb, migrate, postgresDb } from './db.js';
@@ -14,7 +15,8 @@ const channel = config.dryRun
   : whatsappCloud({ token: config.whatsapp.token, apiVersion: config.whatsapp.apiVersion });
 
 const ctx = { db, channel, config };
-serve({ fetch: createApp(ctx).fetch, port: config.port }, ({ port }) => {
+const webFiles = nodeWebFiles();
+serve({ fetch: createApp(ctx, () => new Date(), { webFiles }).fetch, port: config.port }, ({ port }) => {
   console.log(`NKAPGUARD listening on :${port}${config.dryRun ? ' (test mode: nothing is sent, payments are simulated)' : ''}`);
 });
 
