@@ -13,7 +13,7 @@ import { handleInbound } from './services/inbound.js';
 import { dispatch } from './services/outbound.js';
 import { baseRef, handlePayment, previewRestock, startRestock, tick } from './services/restock.js';
 import { escapeHtml, page, pageText } from './pages.js';
-import { normalizePhone } from './domain/phone.js';
+import { normalizePhone, phoneCountry } from './domain/phone.js';
 import { productLabel } from './domain/copy.js';
 import { AuthError, ForbiddenError, addMember, logout, removeMember, requireRole, shopOf, startLogin, verifyLogin, viewerFor, type Role, type Viewer } from './services/auth.js';
 import { getSeller, money, providerFor, publicSeller, resolveSellerInput, setPaymentProvider, type Seller } from './services/sellers.js';
@@ -220,8 +220,9 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
   app.get('/api/me', async (c) => {
     const v = c.get('viewer');
     if (v.kind === 'admin') return c.json({ admin: true, user: null });
-    const [user] = await db.query('select id, wa_id, name from users where id = $1', [v.userId]);
-    return c.json({ admin: false, user });
+    const [user] = await db.query<{ wa_id: string }>('select id, wa_id, name from users where id = $1', [v.userId]);
+    // The country of their phone number is the best default for a new shop.
+    return c.json({ admin: false, user: { ...user, country: phoneCountry(user.wa_id) } });
   });
 
   app.get('/api/sellers/:id/members', async (c) => {

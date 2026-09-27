@@ -18,6 +18,11 @@ export function findPhone(text: string, defaultCountry: string): string | null {
   return hit ? hit.number.number.replace('+', '') : null;
 }
 
+/** The country a WhatsApp id belongs to, e.g. 237677123456 → "CM". */
+export function phoneCountry(waId: string): string | null {
+  return parsePhoneNumberFromString('+' + waId)?.country ?? null;
+}
+
 /** "+237 6 77 12 34 56" style, for showing a WhatsApp id to a seller. */
 export function formatPhone(waId: string): string {
   const n = parsePhoneNumberFromString('+' + waId);

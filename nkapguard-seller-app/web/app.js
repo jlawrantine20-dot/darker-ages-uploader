@@ -134,8 +134,9 @@ views.setup = async () => {
   header('NKAPGUARD Seller App', { sub: 'Your shops' });
   setNav(null);
   const sellers = await api('/api/sellers');
-  const mk = await markets();
-  const guess = (Intl.DateTimeFormat().resolvedOptions().locale.split('-')[1] ?? '').toUpperCase();
+  const [mk, me] = await Promise.all([markets(), api('/api/me')]);
+  // Default to the country of the seller's own WhatsApp number, then the browser's.
+  const guess = me.user?.country ?? (Intl.DateTimeFormat().resolvedOptions().locale.split('-')[1] ?? '').toUpperCase();
   const def = mk.countries.some((c) => c.code === guess) ? guess : 'CM';
   main.innerHTML = `
     ${sellers.length ? `<div class="sect">Choose a shop</div>${sellers.map((s) => `<a class="row" href="#/chats" data-pick="${esc(s.id)}">
@@ -392,7 +393,7 @@ views.settings = async () => {
   const [members, me] = await Promise.all([api(`/api/sellers/${s.id}/members`), api('/api/me')]);
   const team = `<div class="sect">Team</div>
     ${members.map((mb) => `<div class="line"><span class="pos">${mb.role === 'owner' ? '★' : '·'}</span>
-      <span>${esc(mb.name ?? '+' + mb.wa_id)}${me.user?.id === mb.user_id ? ' (you)' : ''}<span class="q">+${esc(mb.wa_id)} · ${mb.role === 'owner' ? 'Owner: everything' : 'Staff: chats, stock and restocks'}</span></span>
+      <span>${me.user?.id === mb.user_id ? 'You' : esc(mb.name ?? '+' + mb.wa_id)}<span class="q">${mb.name || me.user?.id === mb.user_id ? `+${esc(mb.wa_id)} · ` : ''}${mb.role === 'owner' ? 'Owner: everything' : 'Staff: chats, stock and restocks'}</span></span>
       ${owner && me.user?.id !== mb.user_id ? `<button class="btn sm" data-remove-member="${esc(mb.user_id)}">Remove</button>` : '<span></span>'}</div>`).join('')}
     ${owner ? `<form class="form" data-form="member">
       <label>Add someone by WhatsApp number<input id="m-phone" type="tel" required placeholder="${esc(samplePhone())}"><span class="hint">They sign in with this number. Local numbers are read as ${esc(m?.name ?? s.country)}.</span></label>
@@ -420,7 +421,9 @@ views.settings = async () => {
     </form>
     ${team}
     <div class="sect">Channels</div>
-    ${chRow('whatsapp', 'WhatsApp', `Number id ${esc(s.wa_phone_number_id)}`, true)}
+    ${S.dryRun
+      ? `<div class="line"><span class="pos"><span class="ch whatsapp" style="padding:4px"><i></i></span></span><span>WhatsApp<span class="q">Test mode: messages are shown in chats but not sent</span></span><span class="pill held">Test mode</span></div>`
+      : chRow('whatsapp', 'WhatsApp', `Number id ${esc(s.wa_phone_number_id)}`, true)}
     ${chRow('instagram', 'Instagram DMs', 'Needs Meta app review for Instagram messaging', false)}
     ${chRow('facebook', 'Facebook Messenger', 'Needs Meta app review for Messenger', false)}
     ${chRow('tiktok', 'TikTok DMs', 'Needs TikTok Business Messaging API access', false)}
@@ -466,11 +469,13 @@ async function route(quiet = false) {
 }
 window.addEventListener('hashchange', () => route());
 
-// Keep chats, waitlists and running restocks fresh without interrupting typing.
+// Refresh only screens that change on their own (new messages, holds counting down), and only
+// while the tab is visible: every refresh is a round trip to the database.
 setInterval(() => {
   const busy = document.activeElement?.matches('input, textarea, select') || S.confirm;
-  if (!busy && document.visibilityState === 'visible' && sellerId() && get('nkg.token') && !/setup|new|login/.test(location.hash)) route(true);
-}, 5000);
+  const live = /^#\/(chats|chat\/|restock\/)/.test(location.hash);
+  if (live && !busy && document.visibilityState === 'visible' && sellerId() && get('nkg.token')) route(true);
+}, 15000);
 
 // ---------- actions ----------
 document.addEventListener('click', async (e) => {
