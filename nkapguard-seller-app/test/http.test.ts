@@ -24,7 +24,7 @@ const waPayload = (from: string, text: string, name = 'Amaka Obi') => ({
 });
 
 const liveConfig = () => loadConfig({
-  DRY_RUN: 'false', WA_TOKEN: 't', WA_APP_SECRET: 'app-secret', WA_VERIFY_TOKEN: 'v', ADMIN_TOKEN: 'admin', APP_SECRET: 'k', PLATFORM_WA_PHONE_ID: 'platform', PUBLIC_URL: 'https://oja.test',
+  DRY_RUN: 'false', WA_TOKEN: 't', WA_APP_SECRET: 'app-secret', WA_VERIFY_TOKEN: 'v', ADMIN_TOKEN: 'admin', APP_SECRET: 'k', PLATFORM_WA_PHONE_ID: 'platform', PUBLIC_URL: 'https://nkapguard.test',
 });
 
 describe('WhatsApp webhook plumbing', () => {
@@ -50,40 +50,40 @@ describe('WhatsApp webhook plumbing', () => {
 });
 
 describe('payment providers', () => {
-  const opts = { publicUrl: 'https://oja.test', emailDomain: 'b.test' };
+  const opts = { publicUrl: 'https://nkapguard.test', emailDomain: 'b.test' };
   const hdr = (h: Record<string, string>) => (name: string) => h[name.toLowerCase()];
 
   it('Paystack: HMAC-SHA512 of the body with the secret key', () => {
     const p = paystack({ ...opts, secretKey: 'sk_test' });
-    const body = JSON.stringify({ event: 'charge.success', data: { status: 'success', reference: 'oja_1', amount: 1850000, currency: 'NGN' } });
+    const body = JSON.stringify({ event: 'charge.success', data: { status: 'success', reference: 'nkg_1', amount: 1850000, currency: 'NGN' } });
     const sig = createHmac('sha512', 'sk_test').update(body).digest('hex');
-    expect(p.parseWebhook(body, hdr({ 'x-paystack-signature': sig }))).toEqual({ ok: true, event: { reference: 'oja_1', amountMinor: 1850000, currency: 'NGN' } });
+    expect(p.parseWebhook(body, hdr({ 'x-paystack-signature': sig }))).toEqual({ ok: true, event: { reference: 'nkg_1', amountMinor: 1850000, currency: 'NGN' } });
     expect(p.parseWebhook(body, hdr({ 'x-paystack-signature': '00' }))).toEqual({ ok: false });
   });
 
   it('Flutterwave: verif-hash header, amounts in major units converted to minor', () => {
     const p = flutterwave({ ...opts, secretKey: 'FLWSECK', webhookSecret: 'my-hash' });
-    const body = JSON.stringify({ event: 'charge.completed', data: { status: 'successful', tx_ref: 'oja_2', amount: 15000, currency: 'XAF' } });
-    expect(p.parseWebhook(body, hdr({ 'verif-hash': 'my-hash' }))).toEqual({ ok: true, event: { reference: 'oja_2', amountMinor: 15000, currency: 'XAF' } });
+    const body = JSON.stringify({ event: 'charge.completed', data: { status: 'successful', tx_ref: 'nkg_2', amount: 15000, currency: 'XAF' } });
+    expect(p.parseWebhook(body, hdr({ 'verif-hash': 'my-hash' }))).toEqual({ ok: true, event: { reference: 'nkg_2', amountMinor: 15000, currency: 'XAF' } });
     expect(p.parseWebhook(body, hdr({ 'verif-hash': 'wrong' }))).toEqual({ ok: false });
-    const failed = JSON.stringify({ event: 'charge.completed', data: { status: 'failed', tx_ref: 'oja_2' } });
+    const failed = JSON.stringify({ event: 'charge.completed', data: { status: 'failed', tx_ref: 'nkg_2' } });
     expect(p.parseWebhook(failed, hdr({ 'verif-hash': 'my-hash' }))).toEqual({ ok: true, event: null });
   });
 
   it('Stripe: timestamped HMAC-SHA256 signature, stale ones refused', () => {
     const p = stripe({ ...opts, secretKey: 'sk', webhookSecret: 'whsec_x' });
-    const body = JSON.stringify({ type: 'checkout.session.completed', data: { object: { payment_status: 'paid', client_reference_id: 'oja_3', amount_total: 1999, currency: 'usd' } } });
+    const body = JSON.stringify({ type: 'checkout.session.completed', data: { object: { payment_status: 'paid', client_reference_id: 'nkg_3', amount_total: 1999, currency: 'usd' } } });
     const sign = (t: number) => `t=${t},v1=${createHmac('sha256', 'whsec_x').update(`${t}.${body}`).digest('hex')}`;
     const now = Math.floor(Date.now() / 1000);
-    expect(p.parseWebhook(body, hdr({ 'stripe-signature': sign(now) }))).toEqual({ ok: true, event: { reference: 'oja_3', amountMinor: 1999, currency: 'USD' } });
+    expect(p.parseWebhook(body, hdr({ 'stripe-signature': sign(now) }))).toEqual({ ok: true, event: { reference: 'nkg_3', amountMinor: 1999, currency: 'USD' } });
     expect(p.parseWebhook(body, hdr({ 'stripe-signature': sign(now - 3600) }))).toEqual({ ok: false });
   });
 
   it('Notch Pay: HMAC-SHA256 with the webhook hash, whole-franc amounts', () => {
     const p = notchpay({ ...opts, secretKey: 'pk.test', webhookSecret: 'hash' });
-    const body = JSON.stringify({ event: 'payment.complete', data: { status: 'complete', reference: 'oja_5.abc', amount: 15000, currency: 'XAF' } });
+    const body = JSON.stringify({ event: 'payment.complete', data: { status: 'complete', reference: 'nkg_5.abc', amount: 15000, currency: 'XAF' } });
     const sig = createHmac('sha256', 'hash').update(body).digest('hex');
-    expect(p.parseWebhook(body, hdr({ 'x-notch-signature': sig }))).toEqual({ ok: true, event: { reference: 'oja_5.abc', amountMinor: 15000, currency: 'XAF' } });
+    expect(p.parseWebhook(body, hdr({ 'x-notch-signature': sig }))).toEqual({ ok: true, event: { reference: 'nkg_5.abc', amountMinor: 15000, currency: 'XAF' } });
     expect(p.parseWebhook(body, hdr({ 'x-notch-signature': 'ab' }))).toEqual({ ok: false });
   });
 
@@ -94,9 +94,9 @@ describe('payment providers', () => {
       return new Response(JSON.stringify({ status: 'success', message: 'ok', data: { link: 'https://checkout.flutterwave.com/x' } }), { status: 200 });
     }) as unknown as typeof fetch;
     const p = flutterwave({ ...opts, secretKey: 'FLWSECK', webhookSecret: 'h', fetchFn });
-    const r = await p.createLink({ reference: 'oja_4', amountMinor: 15000, currency: 'XAF', description: 'Shop: clip', waId: '237677123456', metadata: {} });
+    const r = await p.createLink({ reference: 'nkg_4', amountMinor: 15000, currency: 'XAF', description: 'Shop: clip', waId: '237677123456', metadata: {} });
     expect(r.url).toBe('https://checkout.flutterwave.com/x');
-    expect(sent).toMatchObject({ tx_ref: 'oja_4', amount: 15000, currency: 'XAF', customer: { phonenumber: '237677123456' } });
+    expect(sent).toMatchObject({ tx_ref: 'nkg_4', amount: 15000, currency: 'XAF', customer: { phonenumber: '237677123456' } });
   });
 
   it('encrypts stored keys', () => {
@@ -140,12 +140,12 @@ describe('HTTP API', () => {
     }
     const { restockId } = await (await post(`/api/products/${env.brown}/restocks`, { units: 1, mode: 'hold', holdMinutes: 60 })).json();
     const [first] = (await (await app.request(`/api/restocks/${restockId}`)).json()).offers;
-    expect(first.payment_url).toBe(`https://oja.test/pay/${first.payment_ref}`);
+    expect(first.payment_url).toBe(`https://nkapguard.test/pay/${first.payment_ref}`);
 
     const tap = await app.request(`/pay/${first.payment_ref}`);
     expect(tap.status).toBe(302);
-    expect(tap.headers.get('location')).toMatch(new RegExp(`^https://oja\\.test/pay/${first.payment_ref}\\.[a-z0-9]+/test$`));
-    expect(await (await app.request(tap.headers.get('location')!.replace('https://oja.test', ''))).text()).toContain('FCFA\u00a015,000');
+    expect(tap.headers.get('location')).toMatch(new RegExp(`^https://nkapguard\\.test/pay/${first.payment_ref}\\.[a-z0-9]+/test$`));
+    expect(await (await app.request(tap.headers.get('location')!.replace('https://nkapguard.test', ''))).text()).toContain('FCFA\u00a015,000');
 
     now = new Date(T0.getTime() + 61 * 60_000);
     const late = await app.request(`/pay/${first.payment_ref}`);
@@ -157,7 +157,7 @@ describe('HTTP API', () => {
     const paid = await app.request(`/pay/${second.payment_ref}.x1/test`, { method: 'POST' });
     expect(await paid.text()).toContain('Test payment received');
     expect((await app.request(`/pay/${second.payment_ref}`)).status).toBe(410);
-    expect((await app.request('/pay/oja_nothing')).status).toBe(404);
+    expect((await app.request('/pay/nkg_nothing')).status).toBe(404);
 
     // A bilingual shop explains an ended offer in both languages.
     await env.db.query(`update sellers set language = 'fr+en'`);
@@ -186,7 +186,7 @@ describe('HTTP API', () => {
     const put = (body: unknown) => app.request(`/api/sellers/${env.sellerId}/payments`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     expect((await put({ provider: 'flutterwave', secretKey: 'FLWSECK-live' })).status).toBe(400); // missing webhook hash
     const ok = await (await put({ provider: 'flutterwave', secretKey: 'FLWSECK-live', webhookSecret: 'hash' })).json();
-    expect(ok).toMatchObject({ payment_provider: 'flutterwave', payments_connected: true, webhookUrl: `https://oja.test/webhooks/payments/${env.sellerId}` });
+    expect(ok).toMatchObject({ payment_provider: 'flutterwave', payments_connected: true, webhookUrl: `https://nkapguard.test/webhooks/payments/${env.sellerId}` });
     expect(JSON.stringify(ok)).not.toContain('FLWSECK');
     const [row] = await env.db.query<{ payment_secret_enc: string }>('select payment_secret_enc from sellers');
     expect(row.payment_secret_enc).not.toContain('FLWSECK');
@@ -200,7 +200,7 @@ describe('HTTP API', () => {
       encryptSecret('FLWSECK', 'k'), encryptSecret('my-hash', 'k'),
     ]);
     const app = createApp(env.ctx);
-    const body = JSON.stringify({ event: 'charge.completed', data: { status: 'successful', tx_ref: 'oja_unknown', amount: 15000, currency: 'XAF' } });
+    const body = JSON.stringify({ event: 'charge.completed', data: { status: 'successful', tx_ref: 'nkg_unknown', amount: 15000, currency: 'XAF' } });
     const hook = (h: Record<string, string>) => app.request(`/webhooks/payments/${env.sellerId}`, { method: 'POST', body, headers: h });
     expect((await hook({ 'verif-hash': 'nope' })).status).toBe(401);
     // Correct hash but no transaction Flutterwave can confirm: ignored, nothing marked paid.

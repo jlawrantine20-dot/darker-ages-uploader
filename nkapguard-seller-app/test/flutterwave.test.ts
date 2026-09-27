@@ -1,6 +1,6 @@
 /**
  * Flutterwave end to end, against a fake of its v3 API: checkout creation, the customer
- * paying, the webhook, and Oja confirming the payment with the verify endpoint.
+ * paying, the webhook, and NKAPGUARD confirming the payment with the verify endpoint.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
@@ -12,7 +12,7 @@ import { T0, setup, wa } from './helpers.js';
 const SECRET = 'FLWSECK_TEST-abc';
 const HASH = 'my-secret-hash';
 
-/** Just enough of Flutterwave's v3 API to exercise Oja, with the same shapes. */
+/** Just enough of Flutterwave's v3 API to exercise NKAPGUARD, with the same shapes. */
 function fakeFlutterwave() {
   const tx = new Map<number, { id: number; tx_ref: string; amount: number; currency: string; status: string }>();
   const created: any[] = [];
@@ -60,7 +60,7 @@ async function liveShop(opts: { country?: string; clipPrice?: number } = {}) {
   env = await setup(opts);
   const fw = fakeFlutterwave();
   env.ctx.config = loadConfig({
-    DRY_RUN: 'false', WA_TOKEN: 't', WA_APP_SECRET: 'a', WA_VERIFY_TOKEN: 'v', ADMIN_TOKEN: 'admin', APP_SECRET: 'k', PLATFORM_WA_PHONE_ID: 'platform', PUBLIC_URL: 'https://oja.test',
+    DRY_RUN: 'false', WA_TOKEN: 't', WA_APP_SECRET: 'a', WA_VERIFY_TOKEN: 'v', ADMIN_TOKEN: 'admin', APP_SECRET: 'k', PLATFORM_WA_PHONE_ID: 'platform', PUBLIC_URL: 'https://nkapguard.test',
   });
   env.ctx.providerFactory = (name, o) => makeProvider(name, { ...o, fetchFn: fw.fetchFn });
   await env.db.query(`update sellers set payment_provider = 'flutterwave', payment_secret_enc = $1, payment_webhook_secret_enc = $2`, [
@@ -90,13 +90,13 @@ describe('Flutterwave', () => {
     const s = await liveShop();
     const res = await s.tap(s.offers[0].payment_ref);
     expect(res.status).toBe(302);
-    expect(res.headers.get('location')).toMatch(/^https:\/\/checkout\.flutterwave\.com\/v3\/hosted\/pay\/oja_/);
+    expect(res.headers.get('location')).toMatch(/^https:\/\/checkout\.flutterwave\.com\/v3\/hosted\/pay\/nkg_/);
     expect(s.fw.created[0]).toMatchObject({
       tx_ref: expect.stringMatching(new RegExp(`^${s.offers[0].payment_ref}\\.[a-z0-9]+$`)),
       amount: 15000,
       currency: 'XAF',
       payment_options: 'mobilemoneyfranco,card',
-      redirect_url: 'https://oja.test/paid',
+      redirect_url: 'https://nkapguard.test/paid',
       customer: { phonenumber: wa(1), email: `${wa(1)}@buyers.example.com`, name: 'Buyer1' },
     });
   });

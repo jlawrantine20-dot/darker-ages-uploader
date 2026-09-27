@@ -16,7 +16,7 @@ async function boot(env: Record<string, string> = {}) {
   const db = await embeddedDb();
   await migrate(db);
   const channel = new DryRunChannel();
-  ctx = { db, channel, config: loadConfig({ DRY_RUN: 'true', PUBLIC_URL: 'https://oja.test', ...env }) };
+  ctx = { db, channel, config: loadConfig({ DRY_RUN: 'true', PUBLIC_URL: 'https://nkapguard.test', ...env }) };
   const app = createApp(ctx, () => now);
   const call = async (method: string, path: string, body?: unknown, token?: string) => {
     const res = await app.request(path, {
@@ -70,12 +70,12 @@ describe('signing in with WhatsApp', () => {
 
   it('sends the code as a WhatsApp authentication template when live, and never returns it', async () => {
     const { call, channel } = await boot({
-      DRY_RUN: 'false', WA_TOKEN: 't', WA_APP_SECRET: 'a', WA_VERIFY_TOKEN: 'v', ADMIN_TOKEN: 'admin', APP_SECRET: 'k', PLATFORM_WA_PHONE_ID: 'oja-number',
+      DRY_RUN: 'false', WA_TOKEN: 't', WA_APP_SECRET: 'a', WA_VERIFY_TOKEN: 'v', ADMIN_TOKEN: 'admin', APP_SECRET: 'k', PLATFORM_WA_PHONE_ID: 'nkapguard-number',
     });
     const r = await call('POST', '/auth/start', { phone: '0803 555 2190', country: 'NG' });
     expect(r.body).toEqual({ sent: true });
     const [sent] = channel.sent;
-    expect(sent).toMatchObject({ from: 'oja-number', to: '2348035552190', kind: 'template', template: { name: 'login_code_v1', language: 'en' } });
+    expect(sent).toMatchObject({ from: 'nkapguard-number', to: '2348035552190', kind: 'template', template: { name: 'login_code_v1', language: 'en' } });
     expect(sent.template!.params[0]).toMatch(/^\d{6}$/);
     expect(sent.template!.buttonParams).toEqual(sent.template!.params);
   });

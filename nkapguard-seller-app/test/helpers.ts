@@ -18,7 +18,7 @@ export async function setup(opts: { country?: string; language?: 'en' | 'fr' | '
   const db = await embeddedDb();
   await migrate(db);
   const channel = new DryRunChannel();
-  const config = loadConfig({ DRY_RUN: 'true', PUBLIC_URL: 'https://oja.test' });
+  const config = loadConfig({ DRY_RUN: 'true', PUBLIC_URL: 'https://nkapguard.test' });
   const ctx: Ctx = { db, channel, config };
   const [seller] = await db.query<{ id: string }>(
     `insert into sellers (name, wa_phone_number_id, country, currency, language, timezone)

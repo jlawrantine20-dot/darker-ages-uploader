@@ -1,12 +1,12 @@
-# Oja
+# NKAPGUARD Seller App
 
 A WhatsApp selling tool for small businesses, in any country. When a customer asks for
-something that's sold out, Oja asks whether they want an alert, records their consent, and
+something that's sold out, NKAPGUARD asks whether they want an alert, records their consent, and
 puts them on a waitlist. When stock arrives it messages the people at the front of the line
 with a payment link and, in hold mode, a real timed hold on a real unit. Unpaid holds pass
 down the line.
 
-`Oja` is a placeholder name.
+The product is NKAPGUARD Seller App.
 
 ## Works for any country
 
@@ -74,7 +74,7 @@ India and Brazil. Any other country works once you enter its currency and time z
 - **Honest numbers:** counts, prices and deadlines in messages come from live data, never
   from something the seller types.
 - **Payment links:**
-  - Alerts carry Oja's own link. The provider checkout is created only when the customer
+  - Alerts carry NKAPGUARD's own link. The provider checkout is created only when the customer
     taps it, and only if the hold still stands. Otherwise the customer sees a clear "this
     offer has ended" page in their language.
   - This matters because some providers' checkouts expire (Notch Pay after 3 hours) before
@@ -149,7 +149,7 @@ operator.
 
 1. **Database:** set `DATABASE_URL`, for example to a Supabase pooled connection string.
 2. **Secrets:** set `APP_SECRET` to a long random value, and `ADMIN_TOKEN`.
-3. **Sign-in number:** set `PLATFORM_WA_PHONE_ID` to Oja's own WhatsApp number, which
+3. **Sign-in number:** set `PLATFORM_WA_PHONE_ID` to NKAPGUARD's own WhatsApp number, which
    sends sign-in codes. Then submit an **authentication** template named `login_code_v1`
    with a copy-code button. Meta supplies the wording for authentication templates.
 4. **WhatsApp:**

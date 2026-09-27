@@ -24,7 +24,7 @@ export interface PaymentEvent {
 /** ok=false means the signature did not check out; event=null means a genuine event we don't act on. */
 export type WebhookResult = { ok: false } | { ok: true; event: PaymentEvent | null };
 
-/** Money always goes to the seller's own account; Oja only creates links and reads results. */
+/** Money always goes to the seller's own account; NKAPGUARD only creates links and reads results. */
 export interface PaymentProvider {
   name: Provider;
   createLink(r: LinkRequest): Promise<{ url: string }>;
@@ -214,7 +214,7 @@ export function stripe(o: ProviderOptions): PaymentProvider {
  * Notch Pay: MTN Mobile Money and Orange Money in Cameroon, no customer email needed.
  * Payments are created with the public key; webhooks are signed with the webhook hash
  * (x-notch-signature = HMAC-SHA256 hex of the raw body). Checkout links expire after
- * 3 hours, which is why Oja creates them only when the customer taps the link.
+ * 3 hours, which is why NKAPGUARD creates them only when the customer taps the link.
  */
 export function notchpay(o: ProviderOptions): PaymentProvider {
   const f = o.fetchFn ?? fetch;

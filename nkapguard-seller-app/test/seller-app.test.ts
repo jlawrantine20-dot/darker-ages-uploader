@@ -113,7 +113,7 @@ describe('seller app API', () => {
     const { app } = client(() => at(0));
     const page = await app.request('/app/');
     expect(page.status).toBe(200);
-    expect(await page.text()).toContain('<title>Oja Seller</title>');
+    expect(await page.text()).toContain('<title>NKAPGUARD Seller App</title>');
     expect((await app.request('/app/app.js')).status).toBe(200);
     expect((await app.request('/')).headers.get('location')).toBe('/app/');
   });

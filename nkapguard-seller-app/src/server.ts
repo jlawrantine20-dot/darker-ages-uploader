@@ -15,7 +15,7 @@ const channel = config.dryRun
 
 const ctx = { db, channel, config };
 serve({ fetch: createApp(ctx).fetch, port: config.port }, ({ port }) => {
-  console.log(`Oja listening on :${port}${config.dryRun ? ' (test mode: nothing is sent, payments are simulated)' : ''}`);
+  console.log(`NKAPGUARD listening on :${port}${config.dryRun ? ' (test mode: nothing is sent, payments are simulated)' : ''}`);
 });
 
 // Expire holds and pass units down the line once a minute.

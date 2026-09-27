@@ -18,7 +18,7 @@ export interface Config {
     apiVersion: string;
     templates: { hold: string; race: string; soldOut: string; paid: string; refund: string };
   };
-  /** Oja's own WhatsApp number, which sends sign-in codes to sellers. */
+  /** NKAPGUARD's own WhatsApp number, which sends sign-in codes to sellers. */
   platform: { phoneNumberId: string; loginTemplate: string; loginTemplateLanguage: string };
 }
 

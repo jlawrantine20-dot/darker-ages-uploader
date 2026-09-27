@@ -25,13 +25,13 @@ const fr = lang !== 'en';
 const PHONE_ID = '1098765432';
 const start = new Date('2026-10-05T09:00:00Z');
 let now = new Date('2026-10-01T15:00:00Z');
-const config = loadConfig({ DRY_RUN: 'true', PUBLIC_URL: 'https://oja.test' });
+const config = loadConfig({ DRY_RUN: 'true', PUBLIC_URL: 'https://nkapguard.test' });
 const names = new Map<string, string>();
 const at = () => clockTime(now, m.timezone, lang).padStart(8);
 const channel = new DryRunChannel((msg) => {
   const who = names.get(msg.to) ?? msg.to;
   const text = msg.body ?? `[template ${msg.template?.name} · ${msg.template?.language}] ${msg.template?.params.join(' | ')}`;
-  console.log(`   ${at()}  Oja → ${who}: ${text}`);
+  console.log(`   ${at()}  NKAPGUARD → ${who}: ${text}`);
 });
 const db = await embeddedDb();
 await migrate(db);

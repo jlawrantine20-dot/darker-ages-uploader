@@ -1,4 +1,4 @@
-// Oja seller app. Plain JavaScript modules, no build step; talks to the /api routes.
+// NKAPGUARD Seller App. Plain JavaScript modules, no build step; talks to the /api routes.
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const main = $('#main');
@@ -66,7 +66,7 @@ class ApiError extends Error {
 }
 async function api(path, { method = 'GET', body } = {}) {
   const headers = { 'Content-Type': 'application/json' };
-  const token = get('oja.token');
+  const token = get('nkg.token');
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   const data = res.headers.get('content-type')?.includes('json') ? await res.json() : await res.text();
@@ -78,7 +78,7 @@ async function api(path, { method = 'GET', body } = {}) {
 const S = { dryRun: false, seller: null, markets: null, chatFilter: 'all', restockForm: null, confirm: false };
 const setSeller = (s) => { S.seller = s; TZ = s?.timezone ?? 'UTC'; };
 async function markets() { return (S.markets ??= await api('/markets')); }
-const sellerId = () => get('oja.seller');
+const sellerId = () => get('nkg.seller');
 
 // ---------- chrome ----------
 const ICON = {
@@ -104,7 +104,7 @@ const views = {};
 
 /** Sign in with a WhatsApp number: step 1 asks for the number, step 2 for the code. */
 views.login = async (_p, msg) => {
-  header('Oja', { sub: 'Sign in with WhatsApp' });
+  header('NKAPGUARD Seller App', { sub: 'Sign in with WhatsApp' });
   setNav(null);
   const mk = await markets();
   const guess = (Intl.DateTimeFormat().resolvedOptions().locale.split('-')[1] ?? '').toUpperCase();
@@ -129,7 +129,7 @@ views.login = async (_p, msg) => {
 };
 
 views.setup = async () => {
-  header('Oja', { sub: 'Your shops' });
+  header('NKAPGUARD Seller App', { sub: 'Your shops' });
   setNav(null);
   const sellers = await api('/api/sellers');
   const mk = await markets();
@@ -251,7 +251,7 @@ views.products = async () => {
   main.innerHTML = `<div class="pad"><a class="btn block" href="#/products/new">Add a product</a></div>
     ${out.length ? `<div class="sect">Sold out</div>${out.map(row).join('')}` : ''}
     ${inStock.length ? `<div class="sect">In stock</div>${inStock.map(row).join('')}` : ''}
-    ${products.length ? '' : '<p class="empty">No products yet. Add what you sell so Oja can recognise it in chats.</p>'}`;
+    ${products.length ? '' : '<p class="empty">No products yet. Add what you sell so NKAPGUARD can recognise it in chats.</p>'}`;
 };
 
 views.newProduct = async () => {
@@ -259,7 +259,7 @@ views.newProduct = async () => {
   setNav('stock');
   main.innerHTML = `<form class="form" data-form="product">
     <label>Name<input id="p-name" required placeholder='12" Claw Clip Ponytail'></label>
-    <label>Colour or variant<input id="p-variant" placeholder="${S.seller.language === 'fr+en' ? 'Marron / Brown' : 'Brown'}"><span class="hint">Oja uses this to tell variants apart in chats. Leave empty if there's only one.${S.seller.language === 'fr+en' ? ' Write both languages as “Marron / Brown” so each half of a message reads naturally.' : ''}</span></label>
+    <label>Colour or variant<input id="p-variant" placeholder="${S.seller.language === 'fr+en' ? 'Marron / Brown' : 'Brown'}"><span class="hint">NKAPGUARD uses this to tell variants apart in chats. Leave empty if there's only one.${S.seller.language === 'fr+en' ? ' Write both languages as “Marron / Brown” so each half of a message reads naturally.' : ''}</span></label>
     <label>Price (${esc(S.seller.currency)})<input id="p-price" type="number" min="0" step="any" required></label>
     <label>In stock now<input id="p-stock" type="number" min="0" step="1" value="0"></label>
     <label>Other words customers use<input id="p-aliases" placeholder="ponytail extension, claw ponytail"><span class="hint">Separate with commas.</span></label>
@@ -292,7 +292,7 @@ views.product = async ([id]) => {
       <span>${esc(w.name ?? phone(w.wa_id))}<span class="q">“${esc(w.consent_quote)}” · since ${when(w.joined_at)}</span></span><span class="ch whatsapp"><i></i>WhatsApp</span></div>`).join('')}` : ''}
     <div class="sect">Edit</div>
     <form class="form" data-form="edit-product" data-id="${esc(id)}" style="padding-top:4px">
-      <label>Set stock count<input id="e-stock" type="number" min="0" step="1" value="${p.stock}"><span class="hint">For sales outside Oja. To announce new stock, use the restock above.</span></label>
+      <label>Set stock count<input id="e-stock" type="number" min="0" step="1" value="${p.stock}"><span class="hint">For sales outside NKAPGUARD. To announce new stock, use the restock above.</span></label>
       <label>Price (${esc(S.seller.currency)})<input id="e-price" type="number" min="0" step="any" value="${toMajor(p.price_minor)}"></label>
       <label>Other words customers use<input id="e-aliases" value="${esc(p.aliases.join(', '))}"></label>
       <button class="btn block">Save changes</button></form>
@@ -403,7 +403,7 @@ views.settings = async () => {
     <div class="sect"${owner ? '' : ' hidden'}>Get paid</div>
     <form class="form" data-form="payments" style="padding-top:4px"${owner ? '' : ' hidden'}>
       <label>Payment provider<select id="pay-provider" data-provider>${order.map((k) => `<option value="${k}" ${k === s.payment_provider ? 'selected' : ''}>${esc(mk.providers[k].label)}${suggested.includes(k) ? ' · suggested' : ''}</option>`).join('')}</select>
-        <span class="hint">Money goes straight to your own account. Oja never holds it.</span></label>
+        <span class="hint">Money goes straight to your own account. NKAPGUARD never holds it.</span></label>
       <div id="pay-keys">${payKeyFields(mk, s.payment_provider)}</div>
       <p class="note" id="pay-hook">${s.payment_provider !== 'test' && s.payments_connected ? `Webhook URL to paste in your provider dashboard: <code>${esc(location.origin)}/webhooks/payments/${esc(s.id)}</code>` : ''}</p>
       <p class="err" hidden></p>
@@ -442,7 +442,7 @@ const routes = [
 ];
 async function route(quiet = false) {
   let hash = location.hash || '#/chats';
-  if (!get('oja.token')) hash = '#/login';
+  if (!get('nkg.token')) hash = '#/login';
   else if (hash === '#/login' || (!sellerId() && hash !== '#/setup')) hash = '#/setup';
   const match = routes.map(([re, name]) => [hash.match(re), name]).find(([m]) => m);
   const [m, name] = match ?? [[], 'chats'];
@@ -451,14 +451,14 @@ async function route(quiet = false) {
   try {
     if (sellerId() && !S.seller && name !== 'setup' && name !== 'login') {
       setSeller((await api('/api/sellers')).find((s) => s.id === sellerId()) ?? null);
-      if (!S.seller) { set('oja.seller', null); location.hash = '#/setup'; return; }
+      if (!S.seller) { set('nkg.seller', null); location.hash = '#/setup'; return; }
     }
     await views[name](m.slice(1));
     main.dataset.view = key;
     if (!quiet) { if (name !== 'chat') window.scrollTo(0, 0); main.focus({ preventScroll: true }); }
   } catch (e) {
-    if (e.status === 401) { set('oja.token', null); set('oja.seller', null); setSeller(null); S.login = null; await views.login([], 'Please sign in again.'); return; }
-    if (e.status === 404 && name !== 'setup' && sellerId() && !S.seller) { set('oja.seller', null); location.hash = '#/setup'; return; }
+    if (e.status === 401) { set('nkg.token', null); set('nkg.seller', null); setSeller(null); S.login = null; await views.login([], 'Please sign in again.'); return; }
+    if (e.status === 404 && name !== 'setup' && sellerId() && !S.seller) { set('nkg.seller', null); location.hash = '#/setup'; return; }
     if (!quiet) main.innerHTML = `<p class="empty">${esc(e.message)}</p>`;
   }
 }
@@ -467,14 +467,14 @@ window.addEventListener('hashchange', () => route());
 // Keep chats, waitlists and running restocks fresh without interrupting typing.
 setInterval(() => {
   const busy = document.activeElement?.matches('input, textarea, select') || S.confirm;
-  if (!busy && document.visibilityState === 'visible' && sellerId() && get('oja.token') && !/setup|new|login/.test(location.hash)) route(true);
+  if (!busy && document.visibilityState === 'visible' && sellerId() && get('nkg.token') && !/setup|new|login/.test(location.hash)) route(true);
 }, 5000);
 
 // ---------- actions ----------
 document.addEventListener('click', async (e) => {
   const t = e.target.closest('[data-pick],[data-filter],[data-cfg],[data-mode],[data-hold],[data-act],[data-pay],[data-remove-member]');
   if (!t) return;
-  if (t.dataset.pick) { set('oja.seller', t.dataset.pick); setSeller(null); return; }
+  if (t.dataset.pick) { set('nkg.seller', t.dataset.pick); setSeller(null); return; }
   if (t.dataset.filter) { S.chatFilter = t.dataset.filter; return route(true); }
   if (t.dataset.removeMember) {
     try { await api(`/api/sellers/${sellerId()}/members/${t.dataset.removeMember}`, { method: 'DELETE' }); toast('Removed from the team'); }
@@ -516,7 +516,7 @@ document.addEventListener('click', async (e) => {
     if (act === 'tick') { await api('/api/tick', { method: 'POST' }); toast('Holds checked'); return route(true); }
     if (act === 'signout') {
       try { await api('/auth/logout', { method: 'POST' }); } catch { /* already signed out */ }
-      set('oja.token', null); set('oja.seller', null); setSeller(null); S.login = null; location.hash = '#/login'; return route();
+      set('nkg.token', null); set('nkg.seller', null); setSeller(null); S.login = null; location.hash = '#/login'; return route();
     }
     if (act === 'login-back') { S.login = { country: S.login?.country, phone: S.login?.phone }; return views.login(); }
     if (act === 'demo') { t.disabled = true; t.textContent = 'Loading…'; await loadDemo(); return; }
@@ -542,7 +542,7 @@ document.addEventListener('submit', async (e) => {
       }
       case 'login-code': {
         const r = await api('/auth/verify', { method: 'POST', body: { phone: S.login.phone, country: S.login.country, code: val('l-code') } });
-        set('oja.token', r.token);
+        set('nkg.token', r.token);
         S.login = null;
         location.hash = '#/setup';
         return route();
@@ -553,7 +553,7 @@ document.addEventListener('submit', async (e) => {
         return route(true);
       case 'seller': {
         const s = await api('/api/sellers', { method: 'POST', body: { name: val('s-name'), waPhoneNumberId: val('s-phone'), ...shopValues(form) } });
-        set('oja.seller', s.id); setSeller(s);
+        set('nkg.seller', s.id); setSeller(s);
         location.hash = '#/products';
         return;
       }
@@ -614,10 +614,10 @@ document.addEventListener('submit', async (e) => {
 });
 
 const outcomeText = {
-  offered: 'Oja offered a restock alert',
+  offered: 'NKAPGUARD offered a restock alert',
   joined: 'Customer joined the waitlist',
   already_waiting: 'Already on the waitlist',
-  in_stock: 'Oja said it’s in stock',
+  in_stock: 'NKAPGUARD said it’s in stock',
   stopped: 'Customer opted out',
   unhandled: 'Left for you to reply',
 };
@@ -627,7 +627,7 @@ async function loadDemo() {
   const shop = shopValues(form);
   const fr = shop.language !== 'en';
   const s = await api('/api/sellers', { method: 'POST', body: { name: $('#s-name', form).value.trim() || (fr ? 'Douala Hair Plug' : 'Hair Plug'), waPhoneNumberId: 'demo-' + Date.now(), ...shop } });
-  set('oja.seller', s.id); setSeller(s);
+  set('nkg.seller', s.id); setSeller(s);
   // Sample prices in the shop's currency: [clip, bonnet, wig]
   const prices = { XAF: [15000, 5000, 85000], XOF: [15000, 5000, 85000], NGN: [18500, 6500, 145000], GHS: [250, 90, 1800], KES: [2500, 900, 18000], ZAR: [350, 120, 2400] }[s.currency] ?? [25, 9, 180];
   const add = (name, variant, price, stock, aliases = []) => api('/api/products', { method: 'POST', body: { sellerId: s.id, name, variant, price, stock, aliases } });

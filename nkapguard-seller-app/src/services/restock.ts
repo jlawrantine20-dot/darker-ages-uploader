@@ -115,7 +115,7 @@ async function createOffers(q: Q, restock: RestockRow, rows: CandidateRow[], now
   const status = restock.mode === 'hold' ? 'held' : 'notified';
   const expires = restock.mode === 'hold' ? new Date(now.getTime() + restock.hold_minutes * 60_000) : null;
   for (const r of rows) {
-    const ref = 'oja_' + randomBytes(9).toString('base64url');
+    const ref = 'nkg_' + randomBytes(9).toString('base64url');
     const [o] = await q.query<{ id: string }>(
       `insert into offers (restock_id, interest_id, status, sent_at, expires_at, payment_ref)
        values ($1, $2, $3, $4, $5, $6) returning id`,
@@ -127,7 +127,7 @@ async function createOffers(q: Q, restock: RestockRow, rows: CandidateRow[], now
 }
 
 /**
- * Alerts carry Oja's own link. The provider checkout is created only when the customer
+ * Alerts carry NKAPGUARD's own link. The provider checkout is created only when the customer
  * taps it (see /pay/:ref), so it never expires before the hold does, and an ended offer
  * shows a clear page instead of a stale checkout.
  */

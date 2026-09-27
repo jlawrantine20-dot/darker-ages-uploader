@@ -1,4 +1,4 @@
--- Oja schema. Prices are stored in the currency's smallest unit (e.g. kobo for NGN,
+-- NKAPGUARD schema. Prices are stored in the currency's smallest unit (e.g. kobo for NGN,
 -- cents for USD, whole francs for XAF, which has no subunit). Meta message costs are
 -- estimates in millionths of a US dollar, because Meta bills WhatsApp in USD.
 

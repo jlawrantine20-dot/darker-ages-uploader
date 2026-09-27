@@ -122,14 +122,14 @@ describe('wording and time', () => {
 
   it('writes bilingual messages with each half formatted in its own language', () => {
     const f = { currency: 'XAF', country: 'CM', timezone: 'Africa/Douala' };
-    const facts = { name: 'Nadège Mballa', product: { name: 'Claw Clip', variant: 'Brown' }, priceMinor: 15000, units: 3, waiting: 8, until: new Date('2026-10-05T11:00:00Z'), url: 'https://oja.test/pay/x' };
+    const facts = { name: 'Nadège Mballa', product: { name: 'Claw Clip', variant: 'Brown' }, priceMinor: 15000, units: 3, waiting: 8, until: new Date('2026-10-05T11:00:00Z'), url: 'https://nkapguard.test/pay/x' };
     const [french, english] = say('fr+en', 'hold', facts, f).split('\n\n');
-    expect(french).toBe("Bonjour Nadège, l'article « Claw Clip brown » est de retour. Arrivage : 3 pièce(s), liste d'attente : 8 personne(s). Une pièce vous est réservée jusqu'à 12:00. Payez 15\u202f000\u00a0FCFA pour la garder : https://oja.test/pay/x Répondez STOP pour quitter la liste.");
-    expect(english).toBe('Hi Nadège, the brown Claw Clip is back. 3 came in and the waiting list has 8. One is held for you until 12:00 PM. Pay FCFA\u00a015,000 to keep it: https://oja.test/pay/x Reply STOP to leave the list.');
+    expect(french).toBe("Bonjour Nadège, l'article « Claw Clip brown » est de retour. Arrivage : 3 pièce(s), liste d'attente : 8 personne(s). Une pièce vous est réservée jusqu'à 12:00. Payez 15\u202f000\u00a0FCFA pour la garder : https://nkapguard.test/pay/x Répondez STOP pour quitter la liste.");
+    expect(english).toBe('Hi Nadège, the brown Claw Clip is back. 3 came in and the waiting list has 8. One is held for you until 12:00 PM. Pay FCFA\u00a015,000 to keep it: https://nkapguard.test/pay/x Reply STOP to leave the list.');
     // Template slots: the 7 French values, then the 7 English ones.
     expect(slots('fr+en', 'hold', facts, f)).toEqual([
-      'Nadège', 'Claw Clip brown', '3', '8', '12:00', '15\u202f000\u00a0FCFA', 'https://oja.test/pay/x',
-      'Nadège', 'brown Claw Clip', '3', '8', '12:00 PM', 'FCFA\u00a015,000', 'https://oja.test/pay/x',
+      'Nadège', 'Claw Clip brown', '3', '8', '12:00', '15\u202f000\u00a0FCFA', 'https://nkapguard.test/pay/x',
+      'Nadège', 'brown Claw Clip', '3', '8', '12:00 PM', 'FCFA\u00a015,000', 'https://nkapguard.test/pay/x',
     ]);
     expect(slots('en', 'hold', facts, f)).toHaveLength(7);
     expect(say('fr+en', 'offerAlert', { product: facts.product }, f)).toMatch(/^Bonjour cher client, .+\n\nHi there, /s);

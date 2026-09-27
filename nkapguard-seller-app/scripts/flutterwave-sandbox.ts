@@ -1,11 +1,11 @@
 /**
- * Check Oja's Flutterwave integration against Flutterwave's real test environment.
+ * Check NKAPGUARD's Flutterwave integration against Flutterwave's real test environment.
  *
  *   FLW_SECRET_KEY=FLWSECK_TEST-... npm run check:flutterwave -- --amount 100 --currency XAF --phone 237677123456
  *
- * It creates a checkout exactly the way Oja does, prints the link, then waits while you pay
+ * It creates a checkout exactly the way NKAPGUARD does, prints the link, then waits while you pay
  * with Flutterwave's test details (their docs list test cards and test mobile money numbers),
- * and finally confirms the payment through the same verify endpoint Oja uses for webhooks.
+ * and finally confirms the payment through the same verify endpoint NKAPGUARD uses for webhooks.
  * Use test keys only: nothing here should touch real money.
  */
 import { flutterwave, flutterwaveByReference } from '../src/payments/providers.js';
@@ -23,7 +23,7 @@ if (!secretKey.startsWith('FLWSECK_TEST')) {
 const currency = arg('currency', 'XAF').toUpperCase();
 const amount = Number(arg('amount', '100'));
 const phone = arg('phone', '237677123456').replace(/\D/g, '');
-const reference = `oja_sandbox.${Date.now().toString(36)}`;
+const reference = `nkg_sandbox.${Date.now().toString(36)}`;
 
 const provider = flutterwave({ secretKey, publicUrl: 'https://example.com', emailDomain: 'buyers.example.com' });
 console.log(`Creating a ${amount} ${currency} checkout (reference ${reference})…`);
@@ -31,7 +31,7 @@ const { url } = await provider.createLink({
   reference,
   amountMinor: toMinor(amount, currency),
   currency,
-  description: 'Oja sandbox check',
+  description: 'NKAPGUARD sandbox check',
   waId: phone,
   name: 'Sandbox Buyer',
   metadata: { purpose: 'sandbox-check' },

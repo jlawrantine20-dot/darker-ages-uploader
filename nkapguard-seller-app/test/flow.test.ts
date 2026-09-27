@@ -147,7 +147,7 @@ describe('restock in hold mode', () => {
     expect(alerts[0].template).toMatchObject({
       name: 'restock_hold_v1',
       language: 'en',
-      params: ['Buyer1', 'brown 12" Claw Clip Ponytail', '3', '6', '12:00 PM', 'FCFA\u00a015,000', expect.stringMatching(/^https:\/\/oja\.test\/pay\/oja_/)],
+      params: ['Buyer1', 'brown 12" Claw Clip Ponytail', '3', '6', '12:00 PM', 'FCFA\u00a015,000', expect.stringMatching(/^https:\/\/nkapguard\.test\/pay\/nkg_/)],
     });
 
     expect((await pay(await refFor(wa(1)), at(18))).outcome).toBe('paid');
@@ -214,7 +214,7 @@ describe('restock in hold mode', () => {
     expect((await handlePayment(env.ctx, { reference: ref, amountMinor: env.clipPrice, currency: 'USD' }, at(5))).outcome).toBe('underpaid');
     expect((await pay(ref, at(6))).outcome).toBe('paid');
     expect((await pay(ref, at(7))).outcome).toBe('duplicate');
-    expect((await pay('oja_nope', at(8))).outcome).toBe('unknown');
+    expect((await pay('nkg_nope', at(8))).outcome).toBe('unknown');
     expect(await stock(env.brown)).toBe(0);
   });
 
