@@ -77,6 +77,8 @@ create table if not exists seller_app.messages (
   created_at timestamptz not null default now()
 );
 create index if not exists messages_contact on seller_app.messages (contact_id, created_at, seq);
+-- Why an outgoing message was not delivered (for example an expired WhatsApp token).
+alter table seller_app.messages add column if not exists error text;
 
 -- Consent record: who agreed, to what, in their own words, and when.
 create table if not exists seller_app.consents (

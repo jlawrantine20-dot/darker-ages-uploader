@@ -334,3 +334,22 @@ describe('sending rules', () => {
     ]);
   });
 });
+
+describe('failed sends', () => {
+  it('keeps a message Meta rejected, with the reason, and does not count its cost', async () => {
+    env = await setup();
+    env.ctx.channel = {
+      sendText: async () => { throw new Error('WhatsApp send failed (401): Error validating access token: Session has expired'); },
+      sendTemplate: async () => { throw new Error('unused'); },
+    };
+    const r = await handleInbound(env.ctx, inbound(wa(1), 'una get the jet black claw clip?', T0, 'Tunde'));
+    expect(r.sent).toMatchObject([{ status: 'failed', error: expect.stringContaining('Session has expired') }]);
+    const rows = await env.db.query<{ direction: string; error: string | null; cost_usd_micros: number }>(
+      `select direction, error, cost_usd_micros from messages order by seq`,
+    );
+    expect(rows).toEqual([
+      { direction: 'in', error: null, cost_usd_micros: 0 },
+      { direction: 'out', error: expect.stringContaining('Session has expired'), cost_usd_micros: 0 },
+    ]);
+  });
+});

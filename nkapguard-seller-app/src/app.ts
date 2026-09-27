@@ -107,9 +107,9 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
   const loadOffer = async (ref: string) =>
     (await db.query<{
       offer_id: string; status: string; expires_at: Date | null; closed_at: Date | null; price_minor: string;
-      name: string; variant: string; wa_id: string; contact_name: string | null; seller_id: string;
+      name: string; variant: string; wa_id: string; contact_name: string | null; seller_id: string; language: 'en' | 'fr' | null;
     }>(
-      `select o.id as offer_id, o.status, o.expires_at, r.closed_at, p.price_minor, p.name, p.variant, c.wa_id, c.name as contact_name, p.seller_id
+      `select o.id as offer_id, o.status, o.expires_at, r.closed_at, p.price_minor, p.name, p.variant, c.wa_id, c.name as contact_name, p.seller_id, c.language
          from offers o join restocks r on r.id = o.restock_id join products p on p.id = r.product_id
          join interests i on i.id = o.interest_id join contacts c on c.id = i.contact_id
         where o.payment_ref = $1`,
@@ -120,15 +120,17 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     const o = await loadOffer(c.req.param('ref'));
     if (!o) return customerPage(c, 'en', pageText('en').ended, pageText('en').endedSold, 404);
     const seller = (await getSeller(db, o.seller_id))!;
-    const t = pageText(seller.language);
+    // The customer's own language when known, as in chat.
+    const lang = o.language ?? seller.language;
+    const t = pageText(lang);
     const now = clock();
     const live = (o.status === 'held' && o.expires_at && o.expires_at > now) || (o.status === 'notified' && !o.closed_at);
     if (!live) {
       const why = o.status === 'paid' ? t.endedPaid : o.status === 'expired' || o.status === 'held' ? t.endedHeld : t.endedSold;
-      return customerPage(c, seller.language, t.ended, why, 410);
+      return customerPage(c, lang, t.ended, why, 410);
     }
     try {
-      const label = productLabel({ name: o.name, variant: o.variant }, seller.language);
+      const label = productLabel({ name: o.name, variant: o.variant }, lang);
       const { url } = await providerFor(ctx, seller).createLink({
         reference: `${c.req.param('ref')}.${now.getTime().toString(36)}`,
         amountMinor: Number(o.price_minor),
@@ -137,11 +139,12 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
         waId: o.wa_id,
         name: o.contact_name,
         metadata: { offer_id: o.offer_id, seller_id: seller.id },
+        language: lang,
       });
       return c.redirect(url, 302);
     } catch (err) {
       console.error(err);
-      return customerPage(c, seller.language, t.unavailable, t.tryAgain, 503);
+      return customerPage(c, lang, t.unavailable, t.tryAgain, 503);
     }
   });
 
@@ -155,10 +158,11 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
       const o = await loadOffer(c.req.param('ref'));
       if (!o) return c.notFound();
       const seller = (await getSeller(db, o.seller_id))!;
-      const t = pageText(seller.language);
-      const label = productLabel({ name: o.name, variant: o.variant }, seller.language);
+      const lang = o.language ?? seller.language;
+      const t = pageText(lang);
+      const label = productLabel({ name: o.name, variant: o.variant }, lang);
       const amount = money(seller, Number(o.price_minor));
-      return customerPage(c, seller.language, t.testTitle, `${seller.name} · ${label} · ${amount}. ${t.testBody}`, 200, { ref: c.req.param('ref'), pay: `${t.testPay} ${amount}` });
+      return customerPage(c, lang, t.testTitle, `${seller.name} · ${label} · ${amount}. ${t.testBody}`, 200, { ref: c.req.param('ref'), pay: `${t.testPay} ${amount}` });
     });
     app.post('/pay/:ref/test', async (c) => {
       const o = await loadOffer(c.req.param('ref'));
@@ -441,7 +445,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     const [contact] = await db.query<{ last_inbound_at: Date | null }>('select * from contacts where id = $1', [c.req.param('id')]);
     if (!contact) return c.json({ error: 'No chat with that id.' }, 404);
     const messages = await db.query(
-      'select direction, kind, template, category, body, cost_usd_micros, created_at from messages where contact_id = $1 order by created_at, seq',
+      'select direction, kind, template, category, body, cost_usd_micros, error, created_at from messages where contact_id = $1 order by created_at, seq',
       [c.req.param('id')],
     );
     const waitingFor = await db.query(
@@ -503,7 +507,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     );
     const [spend] = await db.query(
       `select count(*)::int as messages, coalesce(sum(cost_usd_micros), 0)::bigint as cost_usd_micros
-         from messages where direction = 'out' and created_at >= $2 and ($1::uuid is null or seller_id = $1)`,
+         from messages where direction = 'out' and error is null and created_at >= $2 and ($1::uuid is null or seller_id = $1)`,
       [sellerId, monthStart],
     );
     const demand = await db.query(

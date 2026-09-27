@@ -250,7 +250,7 @@ views.chat = async ([id]) => {
       ${waitingFor.map((w) => `<span class="tag">Waiting: ${label(w)} · #${w.position}</span>`).join('')}
       ${live ? `<span class="tag muted">Consent: “${esc(live.quote)}” · ${when(live.granted_at)}</span>` : consents.length ? '<span class="tag muted">Opted out</span>' : ''}
     </span></div>` : ''}
-    <div class="msgs">${messages.map((m) => `<div class="b ${m.direction}">${m.kind === 'template' ? `<span class="tpl">Template${m.cost_usd_micros ? ` · ${usd(m.cost_usd_micros)}` : ''}</span>` : ''}${esc(m.body)}<small>${when(m.created_at)}</small></div>`).join('')}</div>
+    <div class="msgs">${messages.map((m) => `<div class="b ${m.direction}">${m.kind === 'template' ? `<span class="tpl">Template${m.cost_usd_micros ? ` · ${usd(m.cost_usd_micros)}` : ''}</span>` : ''}${esc(m.body)}${m.error ? `<span class="fail">Not sent: ${esc(m.error)}</span>` : ''}<small>${when(m.created_at)}</small></div>`).join('')}</div>
     <form class="composer" data-form="reply" data-id="${esc(id)}">
       <input id="reply" placeholder="${c.window_open ? 'Reply' : 'Replies are off until they message again'}" autocomplete="off" ${c.window_open ? '' : 'disabled'}>
       <button ${c.window_open ? '' : 'disabled'}>Send</button></form>
@@ -425,7 +425,7 @@ views.settings = async () => {
       <label>Payment provider<select id="pay-provider" data-provider>${order.map((k) => `<option value="${k}" ${k === s.payment_provider ? 'selected' : ''}>${esc(mk.providers[k].label)}${suggested.includes(k) ? ' · suggested' : ''}</option>`).join('')}</select>
         <span class="hint">Money goes straight to your own account. NKAPGUARD never holds it.</span></label>
       <div id="pay-keys">${payKeyFields(mk, s.payment_provider)}</div>
-      <p class="note" id="pay-hook">${s.payment_provider !== 'test' && s.payments_connected ? `Webhook URL to paste in your provider dashboard: <code>${esc(location.origin)}/webhooks/payments/${esc(s.id)}</code>` : ''}</p>
+      <p class="note" id="pay-hook">${s.payment_provider !== 'test' && s.payments_connected ? `Webhook URL to paste in your provider dashboard: <code>${esc(API || location.origin)}/webhooks/payments/${esc(s.id)}</code>` : ''}</p>
       <p class="err" hidden></p>
       <button class="btn block">Save payment settings</button>
     </form>

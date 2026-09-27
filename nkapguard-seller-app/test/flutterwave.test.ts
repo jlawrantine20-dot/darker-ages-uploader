@@ -96,7 +96,7 @@ describe('Flutterwave', () => {
       amount: 15000,
       currency: 'XAF',
       payment_options: 'mobilemoneyfranco,card',
-      redirect_url: 'https://nkapguard.test/paid',
+      redirect_url: expect.stringMatching(/^https:\/\/nkapguard\.test\/paid\?lang=/),
       customer: { phonenumber: wa(1), email: `${wa(1)}@buyers.example.com`, name: 'Buyer1' },
     });
   });

@@ -41,7 +41,15 @@ export async function dispatch(ctx: Ctx, outs: Outbound[], now: Date): Promise<D
       );
       results.push({ to: o.to, status: 'sent', body, costUsdMicros: cost });
     } catch (err) {
-      results.push({ to: o.to, status: 'failed', body, costUsdMicros: 0, error: (err as Error).message });
+      const error = (err as Error).message;
+      // Keep the failed message, with the reason, so the seller sees it in the chat.
+      console.error(`Message to ${o.to} not sent: ${error}`);
+      await ctx.db.query(
+        `insert into messages (seller_id, contact_id, direction, kind, template, category, body, cost_usd_micros, error, created_at)
+         values ($1, $2, 'out', $3, $4, $5, $6, 0, $7, $8)`,
+        [o.sellerId, o.contactId, o.kind, o.kind === 'template' ? templateFor(templates[o.template], o.language).name : null, category, body, error, now],
+      );
+      results.push({ to: o.to, status: 'failed', body, costUsdMicros: 0, error });
     }
   }
   return results;

@@ -11,6 +11,8 @@ export interface LinkRequest {
   waId: string;
   name?: string | null;
   metadata: Record<string, string>;
+  /** Language of the thank-you page the customer returns to: en, fr or fr+en. */
+  language?: string;
 }
 
 export interface PaymentEvent {
@@ -44,6 +46,10 @@ export interface ProviderOptions {
   emailDomain: string;
   fetchFn?: typeof fetch;
 }
+
+/** Where the customer lands after paying: the thank-you page, in their language. */
+const paidUrl = (o: ProviderOptions, r: LinkRequest) =>
+  `${o.publicUrl.replace(/\/$/, '')}/paid${r.language ? `?lang=${encodeURIComponent(r.language)}` : ''}`;
 
 const safeEqual = (a: Buffer, b: Buffer) => a.length === b.length && timingSafeEqual(a, b);
 const json = (raw: string): any => {
@@ -129,7 +135,7 @@ export function flutterwave(o: ProviderOptions): PaymentProvider {
           tx_ref: r.reference,
           amount: toMajor(r.amountMinor, r.currency),
           currency: r.currency,
-          redirect_url: `${o.publicUrl.replace(/\/$/, '')}/paid`,
+          redirect_url: paidUrl(o, r),
           payment_options: FLUTTERWAVE_OPTIONS[r.currency] ?? 'card',
           customer: { email: `${r.waId}@${o.emailDomain}`, phonenumber: r.waId, name: r.name ?? undefined },
           customizations: { title: r.description },
@@ -178,7 +184,7 @@ export function stripe(o: ProviderOptions): PaymentProvider {
       const form = new URLSearchParams({
         mode: 'payment',
         client_reference_id: r.reference,
-        success_url: `${o.publicUrl.replace(/\/$/, '')}/paid`,
+        success_url: paidUrl(o, r),
         'line_items[0][quantity]': '1',
         'line_items[0][price_data][currency]': r.currency.toLowerCase(),
         'line_items[0][price_data][unit_amount]': String(r.amountMinor),
@@ -230,7 +236,7 @@ export function notchpay(o: ProviderOptions): PaymentProvider {
           phone: '+' + r.waId,
           reference: r.reference,
           description: r.description,
-          callback: `${o.publicUrl.replace(/\/$/, '')}/paid`,
+          callback: paidUrl(o, r),
         }),
       });
       const b = (await res.json()) as { authorization_url?: string; message?: string };

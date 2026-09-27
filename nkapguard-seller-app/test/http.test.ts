@@ -159,8 +159,14 @@ describe('HTTP API', () => {
     expect((await app.request(`/pay/${second.payment_ref}`)).status).toBe(410);
     expect((await app.request('/pay/nkg_nothing')).status).toBe(404);
 
-    // A bilingual shop explains an ended offer in both languages.
+    // A customer who wrote in English sees the page in English only, even in a bilingual shop.
     await env.db.query(`update sellers set language = 'fr+en'`);
+    const english = await (await app.request(`/pay/${first.payment_ref}`)).text();
+    expect(english).toContain('This offer has ended');
+    expect(english).not.toContain('Cette offre');
+
+    // With no known language, a bilingual shop explains it in both.
+    await env.db.query(`update contacts set language = null`);
     const both = await (await app.request(`/pay/${first.payment_ref}`)).text();
     expect(both).toContain('Cette offre est terminée<br>This offer has ended');
     expect(both).toContain("<p>La réservation a expiré et l&#39;article est passé à la personne suivante. Vous gardez votre place sur la liste pour le prochain arrivage.</p><p>The hold on this item ran out");
