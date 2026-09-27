@@ -25,5 +25,9 @@ const esm = (ns: Record<string, unknown>) => ({ ...ns });
     DB_PASSWORD: '<set at deploy time; never committed>',
     // Must match the Vault secret the pg_cron job sends (see deploy/seller_app_cron.sql).
     CRON_SECRET: '<set at deploy time; never committed>',
+    // Meta webhook handshake token (typed into the app's WhatsApp webhook settings) and the
+    // NKAPGUARD number that sends sign-in codes. Real Supabase secrets override these.
+    WA_VERIFY_TOKEN: '<set at deploy time; never committed>',
+    PLATFORM_WA_PHONE_ID: '1317731698091107',
   },
 };

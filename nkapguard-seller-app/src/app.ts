@@ -74,7 +74,10 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
 
   app.post('/webhooks/whatsapp', async (c) => {
     const raw = await c.req.text();
-    if (!config.dryRun && !verifyMetaSignature(raw, c.req.header('x-hub-signature-256'), config.whatsapp.appSecret)) {
+    // Check Meta's signature whenever the app secret is set, test mode included, so a public
+    // URL never accepts made-up messages. Without a secret (local test mode) it is skipped.
+    const mustVerify = !config.dryRun || Boolean(config.whatsapp.appSecret);
+    if (mustVerify && !verifyMetaSignature(raw, c.req.header('x-hub-signature-256'), config.whatsapp.appSecret)) {
       return c.text('Bad signature.', 401);
     }
     const results = [];

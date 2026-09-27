@@ -215,6 +215,16 @@ describe('HTTP API', () => {
     expect((await app.request('/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=bad&hub.challenge=42')).status).toBe(403);
   });
 
+  it('checks WhatsApp signatures in test mode too once the app secret is set', async () => {
+    env = await setup();
+    env.ctx.config.whatsapp.appSecret = 'app-secret';
+    const app = createApp(env.ctx);
+    const body = JSON.stringify(waPayload(wa(1), 'hi'));
+    expect((await app.request('/webhooks/whatsapp', { method: 'POST', body })).status).toBe(401);
+    const sig = 'sha256=' + createHmac('sha256', 'app-secret').update(body).digest('hex');
+    expect((await app.request('/webhooks/whatsapp', { method: 'POST', body, headers: { 'x-hub-signature-256': sig } })).status).toBe(200);
+  });
+
   it('requires signatures and the admin token when live', async () => {
     env = await setup();
     env.ctx.config = liveConfig();
