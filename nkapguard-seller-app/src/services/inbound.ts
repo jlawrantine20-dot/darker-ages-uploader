@@ -1,13 +1,13 @@
 import type { InboundText } from '../channels/whatsapp.js';
 import { say } from '../domain/copy.js';
-import { asksAvailability, detectLanguage, detectProduct, isConsentYes, isStop } from '../domain/intent.js';
+import { asksAvailability, detectLanguage, detectProduct, fold, isConsentYes, isStop, pickVariant, productFamily } from '../domain/intent.js';
 import { CONSENT_PROMPT_TTL_MS } from '../domain/windows.js';
 import type { Q } from '../db.js';
 import type { Ctx, DispatchResult, Outbound, Recipient } from './context.js';
 import { dispatch } from './outbound.js';
 import { fmt, type Seller } from './sellers.js';
 
-export type InboundAction = 'unknown_seller' | 'stopped' | 'joined' | 'already_waiting' | 'offered' | 'in_stock' | 'unhandled';
+export type InboundAction = 'unknown_seller' | 'stopped' | 'joined' | 'already_waiting' | 'offered' | 'in_stock' | 'asked_variant' | 'unhandled';
 
 interface ContactRow {
   id: string;
@@ -18,6 +18,8 @@ interface ContactRow {
   awaiting_consent_product_id: string | null;
   awaiting_consent_at: Date | null;
   language: 'en' | 'fr' | null;
+  awaiting_choice_name: string | null;
+  awaiting_choice_at: Date | null;
 }
 
 interface ProductRow {
@@ -113,16 +115,43 @@ export async function handleInbound(ctx: Ctx, msg: InboundText): Promise<{ actio
       return { action: 'joined' as const, outs: reply(say(lang, 'joined', { product, position: await waitlistPosition(q, interest.id) }, f)) };
     }
 
+    // Answer about one product: in stock with the price, or sold out with an alert offer.
+    const answerFor = async (product: ProductRow) => {
+      await q.query('update contacts set awaiting_choice_name = null, awaiting_choice_at = null where id = $1', [contact.id]);
+      const free = await freeStock(q, product.id);
+      if (free > 0) {
+        return { action: 'in_stock' as const, outs: reply(say(lang, 'inStock', { name: contact.name, product, priceMinor: product.price_minor, stock: free }, f)) };
+      }
+      await q.query('update contacts set awaiting_consent_product_id = $2, awaiting_consent_at = $3 where id = $1', [contact.id, product.id, msg.at]);
+      return { action: 'offered' as const, outs: reply(say(lang, 'offerAlert', { name: contact.name, product }, f)) };
+    };
+    const catalog = () => q.query<ProductRow>('select * from products where seller_id = $1', [seller.id]);
+
+    // A short answer to "which one?" ("jet black", "le noir") picks the variant.
+    const choiceLive =
+      contact.awaiting_choice_name &&
+      contact.awaiting_choice_at &&
+      msg.at.getTime() - contact.awaiting_choice_at.getTime() < CONSENT_PROMPT_TTL_MS;
+    if (choiceLive) {
+      const family = (await catalog()).filter((p) => fold(p.name) === contact.awaiting_choice_name);
+      const picked = pickVariant(msg.text, family);
+      if (picked) return answerFor(picked);
+    }
+
     if (asksAvailability(msg.text) || msg.text.includes('?')) {
-      const catalog = await q.query<ProductRow>('select * from products where seller_id = $1', [seller.id]);
-      const product = detectProduct(msg.text, catalog);
-      if (product) {
-        const free = await freeStock(q, product.id);
-        if (free > 0) {
-          return { action: 'in_stock' as const, outs: reply(say(lang, 'inStock', { name: contact.name, product, priceMinor: product.price_minor, stock: free }, f)) };
-        }
-        await q.query('update contacts set awaiting_consent_product_id = $2, awaiting_consent_at = $3 where id = $1', [contact.id, product.id, msg.at]);
-        return { action: 'offered' as const, outs: reply(say(lang, 'offerAlert', { name: contact.name, product }, f)) };
+      const products = await catalog();
+      const product = detectProduct(msg.text, products);
+      if (product) return answerFor(product);
+      // The product comes in several variants and the customer didn't say which: list them.
+      const family = productFamily(msg.text, products);
+      if (family) {
+        const options = [];
+        for (const p of family) options.push({ variant: p.variant, free: await freeStock(q, p.id) });
+        await q.query('update contacts set awaiting_choice_name = $2, awaiting_choice_at = $3 where id = $1', [contact.id, fold(family[0].name), msg.at]);
+        return {
+          action: 'asked_variant' as const,
+          outs: reply(say(lang, 'whichVariant', { name: contact.name, product: { name: family[0].name, variant: '' }, options }, f)),
+        };
       }
     }
     return { action: 'unhandled' as const, outs: [] as Outbound[] };

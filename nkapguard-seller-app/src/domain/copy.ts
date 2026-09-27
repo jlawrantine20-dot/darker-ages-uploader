@@ -24,6 +24,8 @@ export interface Facts {
   position?: number;
   stock?: number;
   seller?: string;
+  /** For "which one?": each variant of a product and how many are free to sell. */
+  options?: { variant: string; free: number }[];
 }
 
 /** Shop settings needed to format money and time. */
@@ -45,9 +47,10 @@ interface Args {
   position: number;
   stock: number;
   seller: string;
+  options: string;
 }
 
-export type Key = 'offerAlert' | 'inStock' | 'joined' | 'alreadyWaiting' | 'stopped' | 'hold' | 'race' | 'soldOut' | 'paid' | 'refund';
+export type Key = 'whichVariant' | 'offerAlert' | 'inStock' | 'joined' | 'alreadyWaiting' | 'stopped' | 'hold' | 'race' | 'soldOut' | 'paid' | 'refund';
 type Sentences = Record<Key, (a: Args) => string> & { fallbackName: string };
 
 // Each language is written as a native speaker would text a customer, not translated line by
@@ -56,6 +59,7 @@ type Sentences = Record<Key, (a: Args) => string> & { fallbackName: string };
 // so they avoid wording that changes with a number ("1 personne" / "2 personnes").
 const en: Sentences = {
   fallbackName: 'there',
+  whichVariant: (a) => `Hi ${a.first}, the ${a.label} comes in ${a.options}. Which one would you like?`,
   offerAlert: (a) =>
     `Hi ${a.first}, the ${a.label} is sold out at the moment. Want us to message you here as soon as it's back? Just reply YES. (Reply STOP anytime to opt out.)`,
   inStock: (a) =>
@@ -77,6 +81,7 @@ const en: Sentences = {
 
 const fr: Sentences = {
   fallbackName: 'cher client',
+  whichVariant: (a) => `Bonjour ${a.first} ! Le modèle ${a.label} existe en ${a.options}. Lequel souhaitez-vous ?`,
   offerAlert: (a) =>
     `Bonjour ${a.first} ! Le modèle ${a.label} est momentanément en rupture de stock. Souhaitez-vous que nous vous prévenions ici dès son retour ? Répondez simplement OUI. (Répondez STOP à tout moment pour ne plus recevoir de messages.)`,
   inStock: (a) =>
@@ -136,6 +141,17 @@ export function clockTime(d: Date, timezone: string, lang: string = 'en'): strin
     .replace(/\s+/g, ' ');
 }
 
+/** "brown (sold out) or jet black (6 in stock)"; "marron (en rupture) ou noir (6 en stock)". */
+function options(l: Base, list: { variant: string; free: number }[]): string {
+  const items = list.map(({ variant, free }) => {
+    const [frName, enName] = variantParts(variant);
+    const name = (l === 'fr' ? frName : enName).toLowerCase();
+    if (l === 'fr') return `${name} (${free > 0 ? `${free} en stock` : 'en rupture'})`;
+    return `${name} (${free > 0 ? `${free} in stock` : 'sold out'})`;
+  });
+  return new Intl.ListFormat(l, { type: 'disjunction' }).format(items);
+}
+
 function args(l: Base, f: Facts, fmt: Fmt): Args {
   return {
     first: firstName(f.name, l),
@@ -149,6 +165,7 @@ function args(l: Base, f: Facts, fmt: Fmt): Args {
     position: f.position ?? 0,
     stock: f.stock ?? 0,
     seller: f.seller ?? '',
+    options: options(l, f.options ?? []),
   };
 }
 

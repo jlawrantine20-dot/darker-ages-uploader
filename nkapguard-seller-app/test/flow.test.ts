@@ -100,6 +100,24 @@ describe('chat to waitlist', () => {
     expect(env.channel.sent.at(-1)?.body).toMatch(/^C'est noté/);
   });
 
+  it('asks which colour when a product has several, then reads the short answer', async () => {
+    env = await setup({ language: 'fr' });
+    const a = await handleInbound(env.ctx, inbound(wa(1), 'Bonjour, vous avez le claw clip ponytail ?', T0, 'Nadège'));
+    expect(a.action).toBe('asked_variant');
+    expect(env.channel.sent.at(-1)?.body).toBe('Bonjour Nadège ! Le modèle 12" Claw Clip Ponytail existe en marron (en rupture) ou noir (6 en stock). Lequel souhaitez-vous ?');
+    expect((await handleInbound(env.ctx, inbound(wa(1), 'le noir', at(1)))).action).toBe('in_stock');
+    expect(env.channel.sent.at(-1)?.body).toMatch(/^Bonjour Nadège ! Oui, le modèle 12" Claw Clip Ponytail noir est disponible/);
+
+    // English, picking the sold-out one, then joining the list.
+    await handleInbound(env.ctx, inbound(wa(2), 'do you have the claw clip ponytail?', at(2), 'Tunde'));
+    expect(env.channel.sent.at(-1)?.body).toBe('Hi Tunde, the 12" Claw Clip Ponytail comes in marron (sold out) or noir (6 in stock). Which one would you like?');
+    expect((await handleInbound(env.ctx, inbound(wa(2), 'marron', at(3)))).action).toBe('offered');
+    expect((await handleInbound(env.ctx, inbound(wa(2), 'yes', at(4)))).action).toBe('joined');
+
+    // A colour on its own, with no question before it, is left for the seller.
+    expect((await handleInbound(env.ctx, inbound(wa(3), 'noir', at(5)))).action).toBe('unhandled');
+  });
+
   it('says in stock with the real count and the shop currency', async () => {
     env = await setup();
     const r = await handleInbound(env.ctx, inbound(wa(1), 'una get the jet black claw clip?', T0, 'Tunde'));

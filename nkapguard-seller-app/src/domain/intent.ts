@@ -24,7 +24,7 @@ const STOPWORDS = new Set([
 ]);
 
 /** Lowercase, strip accents and punctuation: "Marron?" → "marron", "Mèche" → "meche". */
-const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+export const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 const tokens = (s: string) =>
   fold(s).replace(/["”“'’]/g, ' ').replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((t) => t && !STOPWORDS.has(t));
@@ -101,6 +101,35 @@ export function detectProduct<T extends CatalogItem>(text: string, catalog: T[])
   const siblings = catalog.filter((c) => fold(c.name) === fold(best.item.name));
   if (siblings.length > 1 && !best.variantHit) return null;
   return best.item;
+}
+
+/**
+ * A product that comes in several variants, named without saying which one ("vous avez le
+ * claw clip ponytail ?"). Returns every variant of it, or null when the message names no
+ * single product family.
+ */
+export function productFamily<T extends CatalogItem>(text: string, catalog: T[]): T[] | null {
+  const words = new Set(tokens(text));
+  const families = new Map<string, T[]>();
+  for (const item of catalog) families.set(fold(item.name), [...(families.get(fold(item.name)) ?? []), item]);
+  const named = [...families.values()].filter((items) => {
+    const nameWords = new Set([...tokens(items[0].name), ...items.flatMap((i) => i.aliases.flatMap(tokens))]);
+    const hits = [...nameWords].filter((w) => words.has(w)).length;
+    return hits >= Math.min(2, tokens(items[0].name).length);
+  });
+  return named.length === 1 && named[0].length > 1 ? named[0] : null;
+}
+
+/** The one variant a reply picks out of a family ("jet black", "le noir"), or null. */
+export function pickVariant<T extends CatalogItem>(text: string, family: T[]): T | null {
+  const words = new Set(tokens(text));
+  const picked = family.filter((item) =>
+    item.variant.split('/').some((alt) => {
+      const vw = tokens(alt);
+      return vw.length > 0 && vw.every((w) => words.has(w));
+    }),
+  );
+  return picked.length === 1 ? picked[0] : null;
 }
 
 export function isStop(text: string): boolean {

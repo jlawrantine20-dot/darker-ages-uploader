@@ -646,6 +646,7 @@ const outcomeText = {
   joined: 'Customer joined the waitlist',
   already_waiting: 'Already on the waitlist',
   in_stock: 'NKAPGUARD said it’s in stock',
+  asked_variant: 'NKAPGUARD asked which colour',
   stopped: 'Customer opted out',
   unhandled: 'Left for you to reply',
 };

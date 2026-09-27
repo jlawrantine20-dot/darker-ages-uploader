@@ -62,7 +62,9 @@ India and Brazil. Any other country works once you enter its currency and time z
 ## What it does
 
 - **Reading chats:** spots "is this available?" and matches it to your catalog, including
-  the right colour. When it isn't sure, it stays quiet and leaves the reply to you.
+  the right colour. When a product comes in several colours and the customer doesn't say
+  which, it lists them with what's in stock and reads the short answer ("jet black", "le
+  noir"). When it isn't sure, it stays quiet and leaves the reply to you.
 - **Consent:** a clear yes ("yes", "oui", "d'accord") is recorded with the customer's exact
   words and the time. Hedged replies ("oui mais c'est combien ?") don't count. STOP (or
   "arrêter") removes them from every list.

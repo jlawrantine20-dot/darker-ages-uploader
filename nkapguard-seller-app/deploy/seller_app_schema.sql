@@ -56,6 +56,9 @@ create table if not exists seller_app.contacts (
 );
 -- The language the customer writes in (en or fr), learned from their messages.
 alter table seller_app.contacts add column if not exists language text check (language in ('en', 'fr'));
+-- Set after asking "which colour?", so a short answer can be read against that product.
+alter table seller_app.contacts add column if not exists awaiting_choice_name text;
+alter table seller_app.contacts add column if not exists awaiting_choice_at timestamptz;
 
 create table if not exists seller_app.messages (
   id uuid primary key default gen_random_uuid(),
