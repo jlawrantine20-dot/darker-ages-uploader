@@ -235,7 +235,7 @@ data and other functions) is not read or changed.
 
 - **API:** `https://psalpplvvygliobywsda.supabase.co/functions/v1/seller-app`
   (`/health` answers `{"ok":true,...}`)
-- **Seller app:** `https://rawcdn.githack.com/jlawrantine20-dot/darker-ages-uploader/64f2b0aa25611a6903770b03364aea543e54eda0/nkapguard-seller-app/web/index.html`
+- **Seller app:** `https://rawcdn.githack.com/jlawrantine20-dot/darker-ages-uploader/68bb3d9e296e4fd29c8f7cfb1d1085f580df1743/nkapguard-seller-app/web/index.html`
 - **Schema:** `deploy/seller_app_schema.sql`, applied as the `seller_app_schema` migration.
   Every name is schema-qualified, every table has row-level security on, and the public
   API roles have no access.
