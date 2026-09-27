@@ -305,7 +305,7 @@ views.product = async ([id]) => {
       ${p.waiting ? `<div class="field"><div class="seg"><button type="button" data-mode="hold" class="${f.mode === 'hold' ? 'on' : ''}">Hold one per unit</button><button type="button" data-mode="race" class="${f.mode === 'race' ? 'on' : ''}">Open race</button></div></div>
       ${f.mode === 'hold'
         ? `<div class="field"><label>Hold length</label><div class="seg" style="width:auto;min-width:220px">${[60, 120, 240, 1440].map((m) => `<button type="button" data-hold="${m}" class="${f.holdMinutes === m ? 'on' : ''}">${mins(m)}</button>`).join('')}</div></div>`
-        : `<div class="field"><label>People per unit<span class="hint">More people sells faster but costs more</span></label>${stepper('perUnit')}</div>`}` : ''}
+        : `<div class="field"><label>People per unit<span class="hint">Messaging more people sells faster but costs more</span></label>${stepper('perUnit')}</div>`}` : ''}
       <div id="plan"><p class="note">Working out who to message…</p></div>
     </div>
     ${waitlist.length ? `<div class="sect">Waitlist</div>${waitlist.map((w) => `<div class="line"><span class="pos">#${w.position}</span>
@@ -335,7 +335,7 @@ async function loadPlan(id, p) {
         : `Message the first ${pv.toMessage} on the list at once. The first ${f.units} to pay get one; everyone else gets a “sold out, you keep your place” note.`;
     plan.innerHTML = `<p class="note" style="margin-top:4px">${what}</p>
       ${pv.toMessage ? `<p class="hint" style="margin:12px 0 6px">What the first person on the list will read</p><div class="preview">${esc(pv.preview)}</div>
-      <p class="note">Numbers come from your stock and waitlist, so every count is true.</p>
+      <p class="note">Counts come from your stock and waitlist.</p>
       <div class="cost" style="margin-top:12px"><span>${pv.toMessage} alert${pv.toMessage === 1 ? '' : 's'}</span><b class="num">${usd(pv.costUsdMicros.alerts)}</b>
         ${pv.soldOutNotes ? `<span>${pv.soldOutNotes} sold-out notes</span><b class="num">${usd(pv.costUsdMicros.soldOutNotes)}</b>` : f.mode === 'hold' ? `<span>Each re-offer if a hold lapses</span><b class="num">${usd(pv.perMessageUsdMicros.marketing)}</b>` : ''}
         <span class="tot">Estimated WhatsApp fees (Meta bills in USD)</span><b class="tot num">${usd(pv.costUsdMicros.total)}</b></div>` : ''}

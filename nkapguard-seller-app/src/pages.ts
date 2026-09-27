@@ -23,7 +23,7 @@ const TEXT = {
     endedSold: "Cet article est épuisé. Vous gardez votre place sur la liste pour le prochain arrivage.",
     endedPaid: 'Vous avez déjà payé cet article. Merci !',
     unavailable: 'Le paiement est indisponible pour le moment',
-    tryAgain: 'Réessayez le lien dans une minute.',
+    tryAgain: 'Réessayez dans une minute.',
     thanks: 'Merci !',
     thanksBody: 'Si votre paiement est passé, vous recevrez une confirmation sur WhatsApp sous peu.',
     testTitle: 'Paiement test',

@@ -6,8 +6,6 @@ puts them on a waitlist. When stock arrives it messages the people at the front 
 with a payment link and, in hold mode, a real timed hold on a real unit. Unpaid holds pass
 down the line.
 
-The product is NKAPGUARD Seller App.
-
 ## Works for any country
 
 Each shop has its own country, currency, language, time zone and payment provider. Picking a
@@ -15,9 +13,10 @@ country fills in sensible defaults, and every one of them can be changed.
 
 - **Currency:** any currency. Prices are stored in each currency's smallest unit, so FCFA
   (no subunit), naira (kobo) and dollars (cents) are all exact.
-- **Language:** customers are messaged in English, French, or **both** (French first,
-  then English, in every message). Cameroon shops default to both, because Law 2011/012
-  (Art. 13) asks for consumer information in French and English. Reading chats works in
+- **Language:** each customer is answered in the language they write in, French or
+  English (Pidgin gets English). The shop's setting (English, French, or both, French
+  first) covers customers whose language isn't known yet. Cameroon shops default to both,
+  because Law 2011/012 (Art. 13) asks for consumer information in French and English. Reading chats works in
   English, French and West/Central African Pidgin ("una get", "e dey", "c'est dispo ?",
   "il en reste ?"). More languages are a matter of adding a translation set.
 - **Phone numbers:** any country. Local formats are read in the shop's country
