@@ -242,7 +242,10 @@ data and other functions) is not read or changed.
 
 - **API:** `https://psalpplvvygliobywsda.supabase.co/functions/v1/seller-app`
   (`/health` answers `{"ok":true,...}`)
-- **Seller app:** `https://rawcdn.githack.com/jlawrantine20-dot/darker-ages-uploader/745dd1677007322f527c0f8f4c6319629965b20f/nkapguard-seller-app/web/index.html`
+- **Seller app:** `https://seller.nkapguard.com`, served by GitHub Pages from the
+  `jlawrantine20-dot/nkapguard-seller` repo (a copy of `web/`, plus a `CNAME` file). The DNS
+  record is a CNAME from `seller` to `jlawrantine20-dot.github.io`, in Vercel DNS. To
+  publish a change, copy `web/` into that repo and push.
 - **Schema:** `deploy/seller_app_schema.sql`, applied as the `seller_app_schema` migration.
   Every name is schema-qualified, every table has row-level security on, and the public
   API roles have no access.
