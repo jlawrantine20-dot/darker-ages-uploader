@@ -65,6 +65,12 @@ India and Brazil. Any other country works once you enter its currency and time z
   the right colour. When a product comes in several colours and the customer doesn't say
   which, it lists them with what's in stock and reads the short answer ("jet black", "le
   noir"). When it isn't sure, it stays quiet and leaves the reply to you.
+- **Shop page:** each shop gets a public page, `seller.nkapguard.com/shop.html?s=<link name>`,
+  listing what it sells and whether each item is in stock (never how many), in French or
+  English. Every item has a WhatsApp button that opens a chat with the question already
+  written ("Bonjour, vous avez le modèle … ?"), which the app answers like any other message.
+  Settings shows the link and a QR code to print. Customers start the chat themselves, which
+  keeps the seller within WhatsApp's rules on contacting people.
 - **Consent:** a clear yes ("yes", "oui", "d'accord") is recorded with the customer's exact
   words and the time. Hedged replies ("oui mais c'est combien ?") don't count. STOP (or
   "arrêter") removes them from every list.

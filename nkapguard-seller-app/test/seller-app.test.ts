@@ -119,3 +119,28 @@ describe('seller app API', () => {
     expect((await app.request('/')).headers.get('location')).toBe('/app/');
   });
 });
+
+describe('public shop page', () => {
+  it('gives new shops a link name, lets the owner change it, and shows only public facts', async () => {
+    env = await setup();
+    const { call } = client(() => at(0));
+    const shop = (await call('POST', '/api/sellers', { name: 'Mèches Bonapriso!', waPhoneNumberId: 'pn-x', country: 'CM' })).body;
+    expect(shop.slug).toBe('meches-bonapriso');
+    const again = (await call('POST', '/api/sellers', { name: 'Mèches Bonapriso', waPhoneNumberId: 'pn-y', country: 'CM' })).body;
+    expect(again.slug).toBe('meches-bonapriso-2');
+
+    // The seed shop gets a link and a WhatsApp number; a local number is read in the shop's country.
+    const saved = await call('PATCH', `/api/sellers/${env.sellerId}`, { slug: 'Douala-Hair', waDisplayPhone: '6 77 12 34 56' });
+    expect(saved.body).toMatchObject({ slug: 'douala-hair', wa_display_phone: '237677123456' });
+    expect((await call('PATCH', `/api/sellers/${env.sellerId}`, { slug: 'meches-bonapriso' })).status).toBe(400);
+    expect((await call('PATCH', `/api/sellers/${env.sellerId}`, { slug: 'no spaces!' })).status).toBe(400);
+
+    const page = (await call('GET', '/shop/douala-hair')).body;
+    expect(page).toMatchObject({ name: 'Douala Hair Plug', currency: 'XAF', whatsapp: '237677123456' });
+    expect(page.products).toContainEqual({ name: '12" Claw Clip Ponytail', variant: 'Jet black', priceMinor: 15000, available: true });
+    expect(page.products).toContainEqual({ name: '12" Claw Clip Ponytail', variant: 'Brown', priceMinor: 15000, available: false });
+    // Stock counts, ids and payment settings stay private.
+    expect(JSON.stringify(page)).not.toMatch(/stock|payment|"id"|secret/);
+    expect((await call('GET', '/shop/nobody')).status).toBe(404);
+  });
+});

@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0B6B55">
+<title>Boutique</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&family=Figtree:wght@400;500;600;700&display=swap">
+<style>
+:root{color-scheme:light;--page:#E9EEEB;--surface:#fff;--surface-2:#F3F6F4;--ink:#15201A;--muted:#5B6961;--line:#DCE3DF;
+  --accent:#0B6B55;--on-accent:#fff;--wa:#1FA855;--good:#1D7A43;--good-bg:#DFF3E6;--bad:#A8322A;--bad-bg:#FBE3E0;
+  --display:"Bricolage Grotesque","Avenir Next",system-ui,sans-serif;--body:"Figtree","Segoe UI",system-ui,sans-serif}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;--page:#0C110F;--surface:#141A17;--surface-2:#1B2320;--ink:#E6EDE9;
+  --muted:#95A49C;--line:#2A3530;--accent:#3CC49E;--on-accent:#052019;--good:#6FD39A;--good-bg:#173A26;--bad:#F08A80;--bad-bg:#3A1D1A}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);font:16px/1.5 var(--body)}
+.wrap{max-width:560px;margin:0 auto;padding:20px 16px 40px}
+header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:6px}
+h1{font:700 28px/1.15 var(--display);margin:0}
+.sub{color:var(--muted);margin:0 0 20px}
+.lang{flex:none;display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--surface)}
+.lang button{border:0;background:none;color:var(--muted);font:600 13px var(--body);padding:6px 12px;cursor:pointer}
+.lang button[aria-pressed="true"]{background:var(--accent);color:var(--on-accent)}
+.product{background:var(--surface);border-radius:16px;padding:16px;margin-bottom:12px}
+.product h2{font:700 18px/1.3 var(--display);margin:0 0 10px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+.row:first-of-type{border-top:0;padding-top:0}
+.what{min-width:0}
+.variant{font-weight:600}
+.price{color:var(--muted);font-size:14px;font-variant-numeric:tabular-nums}
+.tag{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:1px 8px;margin-left:6px;vertical-align:1px}
+.tag.in{background:var(--good-bg);color:var(--good)}.tag.out{background:var(--bad-bg);color:var(--bad)}
+a.btn{flex:none;display:inline-flex;align-items:center;gap:6px;text-decoration:none;border-radius:12px;padding:10px 14px;font-weight:700;font-size:14px;
+  background:var(--wa);color:#fff;white-space:nowrap}
+a.btn.alt{background:var(--surface-2);color:var(--ink);border:1px solid var(--line)}
+.note{color:var(--muted);font-size:14px;text-align:center;margin-top:24px}
+.empty{background:var(--surface);border-radius:16px;padding:24px;color:var(--muted)}
+@media (max-width:420px){.row{flex-direction:column;align-items:stretch}a.btn{justify-content:center}}
+</style>
+<script src="config.js"></script>
+</head>
+<body>
+<div class="wrap" id="app"><p class="empty">…</p></div>
+<script>
+// A seller's public shop page: what's in stock, and a WhatsApp button for each item that opens
+// a chat with the question already written. The NKAPGUARD app then answers it like any other
+// message, so ordering and restock alerts work exactly as in a normal chat.
+(function () {
+  var TEXT = {
+    fr: {
+      sub: 'Touchez un article pour le demander sur WhatsApp.',
+      inStock: 'En stock', soldOut: 'En rupture',
+      order: 'Commander sur WhatsApp', alert: 'Me prévenir à son retour',
+      ask: function (label) { return 'Bonjour, vous avez le modèle ' + label + ' ?'; },
+      note: function (shop) { return 'Vous écrivez directement à ' + shop + ' sur WhatsApp.'; },
+      noShop: "Ce lien de boutique n'existe pas. Vérifiez l'adresse.",
+      noPhone: "Cette boutique n'a pas encore ajouté son numéro WhatsApp.",
+      empty: "Cette boutique n'a pas encore ajouté d'articles.",
+      offline: 'La boutique ne répond pas pour le moment. Réessayez dans une minute.',
+    },
+    en: {
+      sub: 'Tap an item to ask about it on WhatsApp.',
+      inStock: 'In stock', soldOut: 'Sold out',
+      order: 'Order on WhatsApp', alert: "Alert me when it's back",
+      ask: function (label) { return 'Hi, do you have the ' + label + '?'; },
+      note: function (shop) { return 'You message ' + shop + ' directly on WhatsApp.'; },
+      noShop: "This shop link doesn't exist. Check the address.",
+      noPhone: "This shop hasn't added its WhatsApp number yet.",
+      empty: "This shop hasn't added any items yet.",
+      offline: "The shop isn't answering right now. Try again in a minute.",
+    },
+  };
+  var app = document.getElementById('app');
+  var slug = new URLSearchParams(location.search).get('s') || '';
+  var API = (window.NKG_API || '').replace(/\/$/, '');
+  var shop = null;
+  var lang = null;
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function message(text) { app.textContent = ''; app.appendChild(el('p', 'empty', text)); }
+
+  // "Marron / Brown": French takes the first word, English the second.
+  function variantName(v, l) {
+    var parts = String(v || '').split('/').map(function (s) { return s.trim(); });
+    return (l === 'fr' ? parts[0] : parts[1] || parts[0]) || '';
+  }
+  function label(p, l) {
+    var v = variantName(p.variant, l).toLowerCase();
+    if (!v) return p.name;
+    return l === 'fr' ? p.name + ' ' + v : v + ' ' + p.name;
+  }
+  function price(minor, l) {
+    var digits = new Intl.NumberFormat('en', { style: 'currency', currency: shop.currency }).resolvedOptions().maximumFractionDigits;
+    var major = minor / Math.pow(10, digits);
+    var opts = { style: 'currency', currency: shop.currency, minimumFractionDigits: Number.isInteger(major) ? 0 : undefined };
+    try { return new Intl.NumberFormat(l + '-' + shop.country, opts).format(major); }
+    catch (e) { return new Intl.NumberFormat(l, opts).format(major); }
+  }
+
+  function draw() {
+    var t = TEXT[lang];
+    document.documentElement.lang = lang;
+    document.title = shop.name;
+    app.textContent = '';
+
+    var head = el('header');
+    head.appendChild(el('h1', null, shop.name));
+    var toggle = el('div', 'lang');
+    ['fr', 'en'].forEach(function (l) {
+      var b = el('button', null, l.toUpperCase());
+      b.setAttribute('aria-pressed', String(l === lang));
+      b.onclick = function () { lang = l; draw(); };
+      toggle.appendChild(b);
+    });
+    head.appendChild(toggle);
+    app.appendChild(head);
+
+    if (!shop.whatsapp) { app.appendChild(el('p', 'empty', t.noPhone)); return; }
+    if (!shop.products.length) { app.appendChild(el('p', 'empty', t.empty)); return; }
+    app.appendChild(el('p', 'sub', t.sub));
+
+    // One card per product, one row per variant.
+    var groups = [];
+    shop.products.forEach(function (p) {
+      var g = groups[groups.length - 1];
+      if (!g || g.name !== p.name) groups.push(g = { name: p.name, items: [] });
+      g.items.push(p);
+    });
+    groups.forEach(function (g) {
+      var card = el('section', 'product');
+      card.appendChild(el('h2', null, g.name));
+      g.items.forEach(function (p) {
+        var row = el('div', 'row');
+        var what = el('div', 'what');
+        var name = el('div', 'variant', variantName(p.variant, lang) || g.name);
+        name.appendChild(el('span', 'tag ' + (p.available ? 'in' : 'out'), p.available ? t.inStock : t.soldOut));
+        what.appendChild(name);
+        what.appendChild(el('div', 'price', price(p.priceMinor, lang)));
+        row.appendChild(what);
+        var a = el('a', 'btn' + (p.available ? '' : ' alt'), p.available ? t.order : t.alert);
+        a.href = 'https://wa.me/' + shop.whatsapp + '?text=' + encodeURIComponent(t.ask(label(p, lang)));
+        a.target = '_blank';
+        a.rel = 'noopener';
+        row.appendChild(a);
+        card.appendChild(row);
+      });
+      app.appendChild(card);
+    });
+    app.appendChild(el('p', 'note', t.note(shop.name)));
+  }
+
+  var guess = (navigator.language || '').toLowerCase().indexOf('fr') === 0 ? 'fr' : 'en';
+  if (!slug) { lang = guess; message(TEXT[lang].noShop); return; }
+  fetch(API + '/shop/' + encodeURIComponent(slug))
+    .then(function (r) {
+      if (r.status === 404) { lang = guess; message(TEXT[lang].noShop); return null; }
+      if (!r.ok) throw new Error(String(r.status));
+      return r.json();
+    })
+    .then(function (data) {
+      if (!data) return;
+      shop = data;
+      // A French-only or English-only shop opens in its language; a bilingual one follows the phone.
+      lang = shop.language === 'fr' || shop.language === 'en' ? shop.language : guess;
+      draw();
+    })
+    .catch(function () { lang = guess; message(TEXT[lang].offline); });
+})();
+</script>
+</body>
+</html>

@@ -163,3 +163,6 @@ details.test .form{padding:0 12px 12px}
   .b{animation:rise .2s ease-out both}
   @keyframes rise{from{transform:translateY(3px);opacity:.5}to{transform:none;opacity:1}}
 }
+
+.qr{width:180px;max-width:60%;margin:8px 0 12px;background:#fff;border-radius:12px;padding:8px}
+.qr svg{display:block;width:100%;height:auto}

@@ -24,6 +24,9 @@ create table if not exists seller_app.sellers (
   payment_webhook_secret_enc text,      -- encrypted webhook signing secret, where the provider uses one
   created_at timestamptz not null default now()
 );
+-- Public shop page: its link name, and the WhatsApp number customers write to.
+alter table seller_app.sellers add column if not exists slug text unique;
+alter table seller_app.sellers add column if not exists wa_display_phone text;
 
 create table if not exists seller_app.products (
   id uuid primary key default gen_random_uuid(),

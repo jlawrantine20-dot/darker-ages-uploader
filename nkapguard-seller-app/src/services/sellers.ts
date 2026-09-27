@@ -1,3 +1,4 @@
+import { normalizePhone } from '../domain/phone.js';
 import { decryptSecret, encryptSecret } from '../crypto.js';
 import type { Q } from '../db.js';
 import { LANGS, type Lang, type Provider, isCurrency, isTimezone, marketFor } from '../domain/markets.js';
@@ -15,6 +16,10 @@ export interface Seller {
   currency: string;
   language: Lang;
   timezone: string;
+  /** The shop page link name, like "hair-plug". */
+  slug: string | null;
+  /** The number customers message, in international digits, like 237677123456. */
+  wa_display_phone: string | null;
   payment_provider: Provider;
   payment_secret_enc: string | null;
   payment_webhook_secret_enc: string | null;
@@ -40,6 +45,23 @@ export interface SellerInput {
   currency?: string;
   language?: string;
   timezone?: string;
+  slug?: string;
+  waDisplayPhone?: string;
+}
+
+/** "Hair Plug Douala!" → "hair-plug-douala". Accents are dropped: "Mèches" → "meches". */
+export function slugify(name: string): string {
+  return name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'shop';
+}
+
+/** A free link name for a new shop: "hair-plug", or "hair-plug-2" if that one is taken. */
+export async function uniqueSlug(q: Q, name: string): Promise<string> {
+  const base = slugify(name);
+  for (let i = 1; ; i++) {
+    const candidate = i === 1 ? base : `${base}-${i}`;
+    const [taken] = await q.query('select 1 from sellers where slug = $1', [candidate]);
+    if (!taken) return candidate;
+  }
 }
 
 /** Fill in currency, language and time zone from the country when not given, and check everything. */
@@ -55,7 +77,16 @@ export function resolveSellerInput(b: SellerInput, current?: Seller) {
   if (!isTimezone(timezone)) throw new InputError(`Choose a time zone for ${country}, like Africa/Douala.`);
   const name = (b.name ?? current?.name ?? '').trim();
   if (!name) throw new InputError('Give the shop a name.');
-  return { name, country, currency, language: language as Lang, timezone };
+  const slug = b.slug === undefined ? current?.slug ?? null : b.slug.trim().toLowerCase();
+  if (slug !== null && !/^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$/.test(slug)) {
+    throw new InputError('The shop link can use lowercase letters, numbers and dashes, 3 to 40 characters, like hair-plug.');
+  }
+  let waDisplayPhone = current?.wa_display_phone ?? null;
+  if (b.waDisplayPhone !== undefined) {
+    waDisplayPhone = b.waDisplayPhone.trim() ? normalizePhone(b.waDisplayPhone, country) : null;
+    if (b.waDisplayPhone.trim() && !waDisplayPhone) throw new InputError("That WhatsApp number doesn't look right. Include the country code, like +237 6 77 12 34 56.");
+  }
+  return { name, country, currency, language: language as Lang, timezone, slug, waDisplayPhone };
 }
 
 export async function setPaymentProvider(

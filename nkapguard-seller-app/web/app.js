@@ -420,6 +420,7 @@ views.settings = async () => {
   main.innerHTML = `
     ${S.dryRun ? '<div class="banner"><b>Test mode.</b> Nothing is sent to WhatsApp and payments are simulated. Set DRY_RUN=false on the server to go live.</div>' : ''}
     ${owner ? '' : '<div class="banner">You are <b>staff</b> in this shop. The owner manages payments, shop details and the team.</div>'}
+    ${shopPage(s, owner)}
     <div class="sect"${owner ? '' : ' hidden'}>Get paid</div>
     <form class="form" data-form="payments" style="padding-top:4px"${owner ? '' : ' hidden'}>
       <label>Payment provider<select id="pay-provider" data-provider>${order.map((k) => `<option value="${k}" ${k === s.payment_provider ? 'selected' : ''}>${esc(mk.providers[k].label)}${suggested.includes(k) ? ' · suggested' : ''}</option>`).join('')}</select>
@@ -447,6 +448,33 @@ views.settings = async () => {
     ${chRow('tiktok', 'TikTok DMs', 'Needs TikTok Business Messaging API access', false)}
     <div class="pad btns" style="margin:0"><a class="btn" href="#/setup">Switch or add shop</a><button class="btn danger" data-act="signout">Sign out</button></div>`;
 };
+/** The public page customers open from a link or a printed QR code. */
+const shopUrl = (s) => `${location.origin}${location.pathname.replace(/[^/]*$/, '')}shop.html?s=${encodeURIComponent(s.slug)}`;
+function shopPage(s, owner) {
+  const ready = s.slug && s.wa_display_phone;
+  let qr = '';
+  if (ready && window.qrcode) {
+    const code = window.qrcode(0, 'M');
+    code.addData(shopUrl(s));
+    code.make();
+    qr = `<div class="qr">${code.createSvgTag({ cellSize: 5, margin: 2, scalable: true })}</div>`;
+  }
+  return `<div class="sect">Shop page</div>
+    <div class="card">
+      ${ready
+        ? `<p>Share this link, or print the QR code for your stall. Customers see what's in stock and message you on WhatsApp in one tap.</p>
+           <p><a href="${esc(shopUrl(s))}" target="_blank" rel="noopener"><code>${esc(shopUrl(s))}</code></a></p>
+           ${qr}
+           <div class="btns"><button type="button" class="btn sm" data-act="copy-shop">Copy link</button>${qr ? '<button type="button" class="btn sm" data-act="qr-download">Download QR code</button>' : ''}</div>`
+        : `<p>Add the WhatsApp number customers write to, and your shop page is ready to share.</p>`}
+    </div>
+    ${owner ? `<form class="form" data-form="shoppage">
+      <label>WhatsApp number customers write to<input id="sp-phone" type="tel" value="${s.wa_display_phone ? '+' + esc(s.wa_display_phone) : ''}" placeholder="${esc(samplePhone())}"><span class="hint">The number of your WhatsApp Business account, with the country code.</span></label>
+      <label>Link name<input id="sp-slug" value="${esc(s.slug ?? '')}" placeholder="my-shop"><span class="hint">Lowercase letters, numbers and dashes. Changing it breaks links and QR codes you already shared.</span></label>
+      <p class="err" hidden></p>
+      <button class="btn block">Save shop page</button></form>` : ''}`;
+}
+
 function payKeyFields(mk, provider) {
   const info = mk.providers[provider];
   if (provider === 'test') return '<p class="note">Customers see a test checkout. Nothing is charged.</p>';
@@ -538,6 +566,20 @@ document.addEventListener('click', async (e) => {
       if (!r.offered) route(true);
       return;
     }
+    if (act === 'copy-shop') {
+      try { await navigator.clipboard.writeText(shopUrl(S.seller)); toast('Link copied'); } catch { toast('Copy the link from the box above'); }
+      return;
+    }
+    if (act === 'qr-download') {
+      const code = window.qrcode(0, 'M');
+      code.addData(shopUrl(S.seller));
+      code.make();
+      const a = document.createElement('a');
+      a.href = code.createDataURL(12, 24);
+      a.download = `${S.seller.slug}-qr.gif`;
+      a.click();
+      return;
+    }
     if (act === 'tick') { await api('/api/tick', { method: 'POST' }); toast('Holds checked'); return route(true); }
     if (act === 'signout') {
       try { await api('/auth/logout', { method: 'POST' }); } catch { /* already signed out */ }
@@ -585,14 +627,18 @@ document.addEventListener('submit', async (e) => {
       case 'shop': {
         const rateWrap = $('#s-rate-wrap', form);
         const rate = rateWrap && !rateWrap.hidden ? Number(val('s-rate')) : undefined;
-        setSeller(await api(`/api/sellers/${sellerId()}`, { method: 'PATCH', body: { name: val('s-name'), ...shopValues(form), rate } }));
+        setSeller({ ...S.seller, ...await api(`/api/sellers/${sellerId()}`, { method: 'PATCH', body: { name: val('s-name'), ...shopValues(form), rate } }) });
         toast(rate ? 'Shop saved and prices converted' : 'Shop saved');
       }
+        return route(true);
+      case 'shoppage':
+        setSeller({ ...S.seller, ...await api(`/api/sellers/${sellerId()}`, { method: 'PATCH', body: { slug: val('sp-slug'), waDisplayPhone: val('sp-phone') } }) });
+        toast('Shop page saved');
         return route(true);
       case 'payments': {
         const provider = val('pay-provider');
         const r = await api(`/api/sellers/${sellerId()}/payments`, { method: 'PUT', body: { provider, secretKey: val('pay-secret') || undefined, webhookSecret: val('pay-hook-secret') || undefined } });
-        setSeller(r);
+        setSeller({ ...S.seller, ...r });
         toast(provider === 'test' ? 'Using test payments' : 'Payments connected');
         await route(true);
         if (provider !== 'test') $('#pay-hook').innerHTML = `Webhook URL to paste in your provider dashboard: <code>${esc(r.webhookUrl)}</code>`;

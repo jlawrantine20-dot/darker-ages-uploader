@@ -353,3 +353,16 @@ describe('failed sends', () => {
     ]);
   });
 });
+
+describe('messages written by the shop page', () => {
+  it('answers the prefilled French and English questions', async () => {
+    env = await setup({ language: 'fr+en' });
+    // What shop.html writes for an in-stock item, in French, and a sold-out one, in English.
+    const fr = await handleInbound(env.ctx, inbound(wa(1), 'Bonjour, vous avez le modèle 12" Claw Clip Ponytail jet black ?', T0, 'Nadège'));
+    expect(fr.action).toBe('in_stock');
+    expect(env.channel.sent.at(-1)?.body).toMatch(/^Bonjour Nadège ! Oui, le modèle 12" Claw Clip Ponytail jet black est disponible/);
+    const en = await handleInbound(env.ctx, inbound(wa(2), 'Hi, do you have the brown 12" Claw Clip Ponytail?', at(1), 'Tunde'));
+    expect(en.action).toBe('offered');
+    expect(env.channel.sent.at(-1)?.body).toMatch(/^Hi Tunde, the brown 12" Claw Clip Ponytail is sold out/);
+  });
+});

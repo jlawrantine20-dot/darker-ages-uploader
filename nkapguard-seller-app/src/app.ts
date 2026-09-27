@@ -18,7 +18,7 @@ import { escapeHtml, page, pageText } from './pages.js';
 import { normalizePhone, phoneCountry } from './domain/phone.js';
 import { productLabel } from './domain/copy.js';
 import { AuthError, ForbiddenError, addMember, logout, removeMember, requireRole, shopOf, startLogin, verifyLogin, viewerFor, type Role, type Viewer } from './services/auth.js';
-import { getSeller, money, providerFor, publicSeller, resolveSellerInput, setPaymentProvider, type Seller, type SellerInput } from './services/sellers.js';
+import { getSeller, money, providerFor, publicSeller, resolveSellerInput, setPaymentProvider, uniqueSlug, type Seller, type SellerInput } from './services/sellers.js';
 
 export interface AppOptions {
   /** Serves the seller app's files under /app when the API and the app share one host (the Node server). */
@@ -146,6 +146,28 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
       console.error(err);
       return customerPage(c, lang, t.unavailable, t.tryAgain, 503);
     }
+  });
+
+  // Public shop page data: what the shop sells and whether it's available. No stock counts,
+  // no customer data, nothing that needs a sign-in.
+  app.get('/shop/:slug', async (c) => {
+    const [seller] = await db.query<Seller>('select * from sellers where slug = $1', [c.req.param('slug').toLowerCase()]);
+    if (!seller) return c.json({ error: 'No shop with that link.' }, 404);
+    const products = await db.query<{ name: string; variant: string; price_minor: number; free: number }>(
+      `select p.name, p.variant, p.price_minor,
+              p.stock - coalesce((select count(*)::int from offers o join restocks r on r.id = o.restock_id
+                                   where r.product_id = p.id and o.status = 'held'), 0) as free
+         from products p where p.seller_id = $1 order by p.name, p.variant`,
+      [seller.id],
+    );
+    return c.json({
+      name: seller.name,
+      country: seller.country,
+      currency: seller.currency,
+      language: seller.language,
+      whatsapp: seller.wa_display_phone,
+      products: products.map((p) => ({ name: p.name, variant: p.variant, priceMinor: Number(p.price_minor), available: Number(p.free) > 0 })),
+    });
   });
 
   app.get('/paid', (c) => {
@@ -278,8 +300,9 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     const viewer = c.get('viewer');
     const row = await db.tx(async (q) => {
       const [s] = await q.query<Seller>(
-        'insert into sellers (name, wa_phone_number_id, country, currency, language, timezone) values ($1, $2, $3, $4, $5, $6) returning *',
-        [v.name, b.waPhoneNumberId.trim(), v.country, v.currency, v.language, v.timezone],
+        `insert into sellers (name, wa_phone_number_id, country, currency, language, timezone, slug, wa_display_phone)
+         values ($1, $2, $3, $4, $5, $6, $7, $8) returning *`,
+        [v.name, b.waPhoneNumberId.trim(), v.country, v.currency, v.language, v.timezone, v.slug ?? (await uniqueSlug(q, v.name)), v.waDisplayPhone],
       );
       // Whoever creates a shop owns it.
       if (viewer.kind === 'user') await q.query(`insert into shop_members (seller_id, user_id, role) values ($1, $2, 'owner')`, [s.id, viewer.userId]);
@@ -307,9 +330,14 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
           }
         }
       }
+      if (v.slug && v.slug !== current.slug) {
+        const [taken] = await q.query('select 1 from sellers where slug = $1 and id <> $2', [v.slug, current.id]);
+        if (taken) throw new InputError(`The link "${v.slug}" is taken. Try another.`);
+      }
       const [s] = await q.query<Seller>(
-        'update sellers set name = $2, country = $3, currency = $4, language = $5, timezone = $6 where id = $1 returning *',
-        [current.id, v.name, v.country, v.currency, v.language, v.timezone],
+        `update sellers set name = $2, country = $3, currency = $4, language = $5, timezone = $6, slug = $7, wa_display_phone = $8
+          where id = $1 returning *`,
+        [current.id, v.name, v.country, v.currency, v.language, v.timezone, v.slug ?? (await uniqueSlug(q, v.name)), v.waDisplayPhone],
       );
       return s;
     });
