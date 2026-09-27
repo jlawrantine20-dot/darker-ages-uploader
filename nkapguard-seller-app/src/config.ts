@@ -20,6 +20,12 @@ export interface Config {
     apiVersion: string;
     templates: { hold: string; race: string; soldOut: string; paid: string; refund: string };
   };
+  /**
+   * Optional Instagram and Messenger channels. A channel can only be connected when its app id
+   * and secret are set. Messenger uses the Meta app (the same one as WhatsApp); Instagram Login
+   * has its own Instagram app id and secret, shown under Instagram > API setup in the dashboard.
+   */
+  meta: { appId: string; appSecret: string; igAppId: string; igAppSecret: string; graphVersion: string };
   /** NKAPGUARD's own WhatsApp number, which sends sign-in codes to sellers. */
   platform: { phoneNumberId: string; loginTemplate: string; loginTemplateLanguage: string };
   /** Where the seller app is hosted, when it is not on the API's own host. Customer pages are drawn there. */
@@ -61,6 +67,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     appUrl: env.APP_URL ?? '',
     allowedOrigins: (env.ALLOWED_ORIGINS ?? '*').split(',').map((o) => o.trim()).filter(Boolean),
     openTestMode: dryRun && env.OPEN_TEST_MODE !== 'false',
+    meta: {
+      appId: env.META_APP_ID ?? '',
+      appSecret: env.META_APP_SECRET ?? env.WA_APP_SECRET ?? '',
+      igAppId: env.IG_APP_ID ?? '',
+      igAppSecret: env.IG_APP_SECRET ?? '',
+      graphVersion: env.META_GRAPH_VERSION ?? 'v23.0',
+    },
     platform: {
       phoneNumberId: env.PLATFORM_WA_PHONE_ID ?? '',
       loginTemplate: env.WA_TEMPLATE_LOGIN ?? 'login_code_v1',

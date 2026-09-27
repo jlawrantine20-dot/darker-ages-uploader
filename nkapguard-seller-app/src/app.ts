@@ -11,7 +11,10 @@ import { whatsappWindowOpen } from './domain/windows.js';
 import { PROVIDER_INFO } from './payments/providers.js';
 import type { Ctx } from './services/context.js';
 import { InputError } from './services/errors.js';
-import { handleInbound } from './services/inbound.js';
+import { handleInbound, handleSocialInbound } from './services/inbound.js';
+import { parseMetaWebhook } from './channels/meta.js';
+import { encryptSecret } from './crypto.js';
+import { CHANNEL_NAMES, appBase, channelAvailable, choosePendingPage, completeFacebook, completeInstagram, connectUrl, listPendingPages, refreshInstagramTokens } from './services/channels.js';
 import { dispatch } from './services/outbound.js';
 import { baseRef, handlePayment, previewRestock, startRestock, tick } from './services/restock.js';
 import { escapeHtml, page, pageText } from './pages.js';
@@ -61,6 +64,32 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     languages: LANGS,
     providers: PROVIDER_INFO,
     rateGroups: RATE_GROUPS,
+  });
+
+  // ---- Instagram and Messenger webhook (Meta app: "instagram" and "page" objects) ----
+  app.get('/webhooks/meta', (c) => {
+    const q = c.req.query();
+    if (q['hub.mode'] === 'subscribe' && config.whatsapp.verifyToken && q['hub.verify_token'] === config.whatsapp.verifyToken) {
+      return c.text(q['hub.challenge'] ?? '');
+    }
+    return c.text('Verification token does not match.', 403);
+  });
+
+  app.post('/webhooks/meta', async (c) => {
+    const raw = await c.req.text();
+    // Messenger events are signed with the Meta app secret, Instagram Login ones with the
+    // Instagram app secret. Either may sign; nothing unsigned is accepted once one is set.
+    const secrets = [config.meta.appSecret, config.meta.igAppSecret].filter(Boolean);
+    const signature = c.req.header('x-hub-signature-256');
+    if ((!config.dryRun || secrets.length) && !secrets.some((s) => verifyMetaSignature(raw, signature, s))) {
+      return c.text('Bad signature.', 401);
+    }
+    const handled = [];
+    for (const m of parseMetaWebhook(JSON.parse(raw))) {
+      const r = await handleSocialInbound(ctx, m);
+      handled.push({ channel: m.channel, action: r.action });
+    }
+    return c.json({ handled });
   });
 
   // ---- WhatsApp Cloud API webhook ----
@@ -452,7 +481,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     const sellerId = await scoped(c);
     const now = clock();
     const rows = await db.query<{ last_inbound_at: Date | null }>(
-      `select c.id, c.name, c.wa_id, c.channel, c.last_inbound_at, m.body as last_body, m.direction as last_direction, m.created_at as last_at,
+      `select c.id, c.name, c.username, c.wa_id, c.channel, c.last_inbound_at, m.body as last_body, m.direction as last_direction, m.created_at as last_at,
               (select count(*)::int from messages x where x.contact_id = c.id and x.direction = 'in'
                  and x.created_at > coalesce(c.seller_read_at, 'epoch'::timestamptz)) as unread,
               coalesce((select array_agg(trim(p.name || ' ' || p.variant) order by i.created_at, i.seq)
@@ -492,21 +521,31 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     await guardOf(c, 'chat', c.req.param('id'));
     const { body } = await c.req.json<{ body: string }>();
     if (!body?.trim()) throw new InputError('Type a message first.');
-    if (body.length > 4096) throw new InputError('WhatsApp messages can be at most 4096 characters.');
-    const [row] = await db.query<{ id: string; seller_id: string; wa_id: string; last_inbound_at: Date | null; wa_phone_number_id: string; country: string; language: string }>(
+    const [row] = await db.query<{
+      id: string; seller_id: string; wa_id: string; channel: 'whatsapp' | 'instagram' | 'facebook'; channel_account_id: string | null;
+      last_inbound_at: Date | null; wa_phone_number_id: string; country: string; language: string;
+    }>(
       'select c.*, s.wa_phone_number_id, s.country, s.language from contacts c join sellers s on s.id = c.seller_id where c.id = $1',
       [c.req.param('id')],
     );
     if (!row) return c.json({ error: 'No chat with that id.' }, 404);
+    const app_ = row.channel === 'instagram' ? 'Instagram' : row.channel === 'facebook' ? 'Messenger' : 'WhatsApp';
+    const limit = row.channel === 'instagram' ? 1000 : row.channel === 'facebook' ? 2000 : 4096;
+    if (body.length > limit) throw new InputError(`${app_} messages can be at most ${limit} characters.`);
     const now = clock();
     if (!whatsappWindowOpen(row.last_inbound_at, now)) {
-      return c.json({ error: "It's been more than 24 hours since they last messaged, so WhatsApp only allows approved templates. Wait for them to message you." }, 409);
+      return c.json({
+        error: row.channel === 'whatsapp'
+          ? "It's been more than 24 hours since they last messaged, so WhatsApp only allows approved templates. Wait for them to message you."
+          : `It's been more than 24 hours since they last messaged, so ${app_} doesn't allow a reply. Wait for them to message you.`,
+      }, 409);
     }
+    if (row.channel !== 'whatsapp' && !row.channel_account_id) return c.json({ error: `This ${app_} account is no longer connected.` }, 409);
     const [r] = await dispatch(ctx, [{
-      kind: 'text', body: body.trim(), sellerId: row.seller_id, from: row.wa_phone_number_id, contactId: row.id, to: row.wa_id,
-      lastInboundAt: row.last_inbound_at, country: row.country, language: row.language,
+      kind: 'text', body: body.trim(), sellerId: row.seller_id, from: row.channel === 'whatsapp' ? row.wa_phone_number_id : row.channel_account_id!,
+      contactId: row.id, to: row.wa_id, lastInboundAt: row.last_inbound_at, country: row.country, language: row.language, channel: row.channel,
     }], now);
-    if (r.status !== 'sent') return c.json({ error: `WhatsApp didn't accept the message: ${r.error ?? r.status}` }, 502);
+    if (r.status !== 'sent') return c.json({ error: `${app_} didn't accept the message: ${r.error ?? r.status}` }, 502);
     await db.query('update contacts set seller_read_at = $2 where id = $1', [row.id, now]);
     return c.json(r, 201);
   });
@@ -564,7 +603,90 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     const given = Buffer.from(c.req.header('x-cron-secret') ?? '');
     const secret = Buffer.from(config.cronSecret);
     if (!secret.length || given.length !== secret.length || !timingSafeEqual(given, secret)) return c.json({ error: 'Not allowed.' }, 403);
-    return c.json({ sent: (await tick(ctx, clock())).length });
+    const now = clock();
+    const sent = (await tick(ctx, now)).length;
+    // Once an hour is plenty for tokens that last 60 days.
+    const refreshed = now.getUTCMinutes() === 0 ? await refreshInstagramTokens(ctx, now) : 0;
+    return c.json({ sent, refreshed });
+  });
+
+  // ---- Optional channels: Instagram and Messenger, connected per shop ----
+  const channelOwner = async (c: C, id: string) => {
+    const [row] = await db.query<{ seller_id: string }>('select seller_id from channel_accounts where id = $1', [id]);
+    if (!row) throw new ForbiddenError('Not found.');
+    await guard(c, row.seller_id, 'owner');
+    return row.seller_id;
+  };
+
+  app.get('/api/channels', async (c) => {
+    const sellerId = await scoped(c);
+    const accounts = await db.query(
+      `select id, channel, name, username, enabled, comment_replies, connected_at, token_expires_at
+         from channel_accounts where seller_id = $1 order by channel`,
+      [sellerId],
+    );
+    return c.json({
+      accounts,
+      available: { instagram: channelAvailable(config, 'instagram'), facebook: channelAvailable(config, 'facebook') },
+    });
+  });
+
+  app.post('/api/channels/:channel/connect', async (c) => {
+    const channel = c.req.param('channel');
+    if (channel !== 'instagram' && channel !== 'facebook') throw new InputError('channel must be instagram or facebook');
+    const { sellerId } = await c.req.json<{ sellerId: string }>();
+    await guard(c, sellerId, 'owner');
+    return c.json({ url: connectUrl(ctx, channel, sellerId) });
+  });
+
+  app.patch('/api/channels/:id', async (c) => {
+    await channelOwner(c, c.req.param('id'));
+    const b = await c.req.json<{ enabled?: boolean; commentReplies?: boolean }>();
+    const [row] = await db.query(
+      `update channel_accounts set enabled = coalesce($2, enabled), comment_replies = coalesce($3, comment_replies) where id = $1
+       returning id, channel, name, username, enabled, comment_replies, connected_at`,
+      [c.req.param('id'), b.enabled ?? null, b.commentReplies ?? null],
+    );
+    return c.json(row);
+  });
+
+  app.delete('/api/channels/:id', async (c) => {
+    await channelOwner(c, c.req.param('id'));
+    // Past chats stay; they just can't be answered from here any more.
+    await db.query('delete from channel_accounts where id = $1', [c.req.param('id')]);
+    return c.json({ removed: true });
+  });
+
+  app.get('/api/channels/pending/:id', async (c) => {
+    const sellerId = await scoped(c);
+    return c.json(await listPendingPages(ctx, c.req.param('id'), sellerId!));
+  });
+
+  app.post('/api/channels/pending/:id', async (c) => {
+    const { sellerId, pageId } = await c.req.json<{ sellerId: string; pageId: string }>();
+    await guard(c, sellerId, 'owner');
+    await choosePendingPage(ctx, c.req.param('id'), sellerId, pageId);
+    return c.json({ connected: true });
+  });
+
+  // Instagram and Facebook send the seller back here after they approve (or cancel).
+  const backToSettings = (c: Context, query: Record<string, string>) => c.redirect(`${appBase(config)}/?${new URLSearchParams(query)}#/settings`, 302);
+  app.get('/oauth/:channel', async (c) => {
+    const channel = c.req.param('channel');
+    if (channel !== 'instagram' && channel !== 'facebook') return c.notFound();
+    const { code, state, error_description: why } = c.req.query();
+    if (!code) return backToSettings(c, { channel_error: why || `${CHANNEL_NAMES[channel]} was not connected.` });
+    try {
+      if (channel === 'instagram') {
+        await completeInstagram(ctx, code, state);
+        return backToSettings(c, { connected: channel });
+      }
+      const r = await completeFacebook(ctx, code, state);
+      return backToSettings(c, r.pendingId ? { pick_page: r.pendingId } : { connected: channel });
+    } catch (err) {
+      console.error(err);
+      return backToSettings(c, { channel_error: err instanceof InputError ? err.message : `${CHANNEL_NAMES[channel]} was not connected. Try again.` });
+    }
   });
 
   app.post('/api/tick', async (c) => {
@@ -575,14 +697,39 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
   // ---- Test mode helpers: pretend to be a customer, or pretend a customer paid ----
   if (config.dryRun) {
     app.post('/dev/inbound', async (c) => {
-      const b = await c.req.json<{ sellerId: string; from: string; name?: string; text: string }>();
+      const b = await c.req.json<{ sellerId: string; from: string; name?: string; text: string; channel?: 'whatsapp' | 'instagram' | 'facebook'; comment?: boolean }>();
       await guard(c, b.sellerId);
       const seller = (await getSeller(db, b.sellerId))!;
       if (!b.from || !b.text) throw new InputError('from and text are required');
+      if (b.channel && b.channel !== 'whatsapp') {
+        // Pretend to be an Instagram or Messenger customer of the shop's connected account.
+        const [account] = await db.query<{ external_id: string }>('select external_id from channel_accounts where seller_id = $1 and channel = $2', [seller.id, b.channel]);
+        if (!account) throw new InputError(`Connect ${b.channel === 'instagram' ? 'Instagram' : 'Messenger'} in Settings first.`);
+        const at = clock();
+        const r = await handleSocialInbound(ctx, {
+          channel: b.channel, accountId: account.external_id, from: b.from.trim().replace(/^@/, ''), username: b.from.trim().replace(/^@/, ''), name: b.name,
+          text: b.text, providerId: `dev-${at.getTime()}`, at, comment: b.comment ? { id: `dev-comment-${at.getTime()}`, postId: 'dev-post' } : undefined,
+        });
+        return c.json({ action: r.action });
+      }
       const from = normalizePhone(b.from, seller.country);
       if (!from) throw new InputError(`That doesn't look like a valid phone number for ${seller.country}.`);
       const r = await handleInbound(ctx, { phoneNumberId: seller.wa_phone_number_id, from, name: b.name, text: b.text, providerId: `dev-${Date.now()}`, at: clock() });
       return c.json({ action: r.action });
+    });
+
+    // Test mode: a sample Instagram or Messenger account, so the channel can be tried without Meta.
+    app.post('/dev/channels', async (c) => {
+      const { sellerId, channel } = await c.req.json<{ sellerId: string; channel: 'instagram' | 'facebook' }>();
+      await guard(c, sellerId, 'owner');
+      if (channel !== 'instagram' && channel !== 'facebook') throw new InputError('channel must be instagram or facebook');
+      const seller = (await getSeller(db, sellerId))!;
+      await db.query('delete from channel_accounts where seller_id = $1 and channel = $2', [sellerId, channel]);
+      await db.query(
+        `insert into channel_accounts (seller_id, channel, external_id, name, username, token_enc) values ($1, $2, $3, $4, $5, $6)`,
+        [sellerId, channel, `sample-${channel}-${sellerId}`, seller.name, channel === 'instagram' ? (seller.slug ?? 'your_shop').replace(/-/g, '_') : null, encryptSecret('sample', config.appSecret)],
+      );
+      return c.json({ connected: channel }, 201);
     });
 
     app.post('/dev/pay/:ref', async (c) => {

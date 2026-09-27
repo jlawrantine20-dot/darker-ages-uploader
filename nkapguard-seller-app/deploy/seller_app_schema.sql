@@ -179,6 +179,41 @@ create table if not exists seller_app.sessions (
   revoked_at timestamptz
 );
 
+-- Optional Instagram and Messenger channels, connected per shop (see db/migrations/007).
+create table if not exists seller_app.channel_accounts (
+  id uuid primary key default gen_random_uuid(),
+  seller_id uuid not null references seller_app.sellers(id) on delete cascade,
+  channel text not null check (channel in ('instagram', 'facebook')),
+  external_id text not null,
+  name text,
+  username text,
+  token_enc text not null,
+  token_expires_at timestamptz,
+  enabled boolean not null default true,
+  comment_replies boolean not null default true,
+  connected_at timestamptz not null default now(),
+  unique (channel, external_id)
+);
+create index if not exists channel_accounts_seller on seller_app.channel_accounts (seller_id);
+alter table seller_app.contacts drop constraint if exists contacts_seller_id_wa_id_key;
+alter table seller_app.contacts drop constraint if exists contacts_seller_channel_user;
+alter table seller_app.contacts add constraint contacts_seller_channel_user unique (seller_id, channel, wa_id);
+alter table seller_app.contacts add column if not exists channel_account_id uuid references seller_app.channel_accounts(id) on delete set null;
+alter table seller_app.contacts add column if not exists username text;
+create table if not exists seller_app.comment_replies (
+  account_id uuid not null references seller_app.channel_accounts(id) on delete cascade,
+  commenter_id text not null,
+  post_id text not null,
+  created_at timestamptz not null
+);
+create index if not exists comment_replies_lookup on seller_app.comment_replies (account_id, commenter_id, post_id, created_at);
+create table if not exists seller_app.channel_pending (
+  id uuid primary key default gen_random_uuid(),
+  seller_id uuid not null references seller_app.sellers(id) on delete cascade,
+  pages_enc text not null,
+  expires_at timestamptz not null
+);
+
 -- Defence in depth: row-level security on, with no policies, so even if the schema were
 -- exposed later, the anon and authenticated roles would see nothing.
 do $$

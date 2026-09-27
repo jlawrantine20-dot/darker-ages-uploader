@@ -27,7 +27,10 @@ function money(minor) {
 const usd = (micros) => { const v = (micros ?? 0) / 1e6; return '$' + v.toFixed(v !== 0 && v < 1 ? 4 : 2); };
 const initials = (name) => esc((name || '?').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase());
 const phone = (wa) => (wa ? '+' + esc(wa) : '');
-const chName = { whatsapp: 'WhatsApp', instagram: 'Instagram', facebook: 'Facebook', tiktok: 'TikTok' };
+const chName = { whatsapp: 'WhatsApp', instagram: 'Instagram', facebook: 'Messenger', tiktok: 'TikTok' };
+/** How a customer is shown: WhatsApp by name or number; Instagram and Messenger by name or @handle. */
+const who = (c) => c.channel === 'whatsapp' || !c.channel ? c.name ?? phone(c.wa_id) : c.name ?? (c.username ? '@' + c.username : `${chName[c.channel]} customer`);
+const whoSub = (c) => c.channel === 'whatsapp' || !c.channel ? phone(c.wa_id) : c.username ? '@' + c.username : chName[c.channel];
 const chip = (ch) => `<span class="ch ${esc(ch)}"><i></i>${chName[ch] ?? esc(ch)}</span>`;
 /** "Brown Claw Clip" in English, "Claw Clip marron" in French, following the shop's language. */
 const variantFor = (v) => { const [a, b] = (v ?? '').split('/').map((x) => x.trim()); return baseLang() === 'fr' ? a : (b || a); };
@@ -197,31 +200,33 @@ document.addEventListener('change', async (e) => {
 });
 
 views.chats = async () => {
-  const chats = await api(`/api/chats?sellerId=${sellerId()}`);
+  const [chats, channels] = await Promise.all([api(`/api/chats?sellerId=${sellerId()}`), S.dryRun ? api(`/api/channels?sellerId=${sellerId()}`) : null]);
   const unread = chats.reduce((a, c) => a + (c.unread > 0 ? 1 : 0), 0);
   header('Chats', { sub: esc(S.seller?.name ?? '') });
   setNav('chats', unread);
   const list = S.chatFilter === 'unread' ? chats.filter((c) => c.unread > 0) : S.chatFilter === 'waiting' ? chats.filter((c) => c.waiting_for.length) : chats;
   const f = (k, t) => `<button class="chip ${S.chatFilter === k ? 'on' : ''}" data-filter="${k}">${t}</button>`;
   main.innerHTML = `
-    ${S.dryRun ? testCustomerForm() : ''}
+    ${S.dryRun ? testCustomerForm(channels?.accounts.filter((a) => a.enabled)) : ''}
     <div class="chips">${f('all', 'All')}${f('unread', `Unread${unread ? ` · ${unread}` : ''}`)}${f('waiting', 'On a waitlist')}</div>
     ${list.map((c) => {
       const tags = c.waiting_for.map((w) => `<span class="tag">Waiting: ${esc(w)}</span>`);
       if (c.awaiting_consent) tags.push('<span class="tag hold">Asked for alert</span>');
       return `<a class="row" href="#/chat/${esc(c.id)}">
         <span class="av">${initials(c.name ?? c.wa_id)}</span>
-        <span style="min-width:0"><span class="name"><span class="n">${esc(c.name ?? phone(c.wa_id))}</span>${chip(c.channel)}</span>
+        <span style="min-width:0"><span class="name"><span class="n">${esc(who(c))}</span>${chip(c.channel)}</span>
           <span class="last">${c.last_direction === 'out' ? 'You: ' : ''}${esc(c.last_body ?? '')}</span>
           ${tags.length ? `<span class="tagline">${tags.join('')}</span>` : ''}</span>
         <span class="meta"><span>${when(c.last_at)}</span>${c.unread ? `<span class="badge">${c.unread}</span>` : ''}</span></a>`;
     }).join('') || `<p class="empty">${chats.length ? 'Nothing here.' : 'No chats yet. When customers message your WhatsApp number, they show up here.'}</p>`}`;
 };
 
-function testCustomerForm() {
+function testCustomerForm(accounts = []) {
+  const opts = [['whatsapp', 'WhatsApp'], ...accounts.map((a) => [a.channel, chName[a.channel]]), ...accounts.map((a) => [`${a.channel}:comment`, `${chName[a.channel]} comment on a post`])];
   return `<details class="test"><summary>Test mode: message the shop as a customer</summary>
     <form class="form" data-form="as-customer">
-      <label>Customer's WhatsApp number<input id="tc-from" value="${esc(samplePhone())}" required><span class="hint">Local or international format.</span></label>
+      ${accounts.length ? `<label>Channel<select id="tc-channel">${opts.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join('')}</select></label>` : ''}
+      <label>Customer's WhatsApp number or Instagram handle<input id="tc-from" value="${esc(samplePhone())}" required><span class="hint">A phone number for WhatsApp; any name for Instagram or Messenger.</span></label>
       <label>Name<input id="tc-name" value="Amaka Obi"></label>
       <label>Message<input id="tc-text" value="Do you have the brown claw clip ponytail?" required></label>
       <button class="btn block">Send as customer</button>
@@ -237,15 +242,20 @@ function samplePhone() {
 
 views.chat = async ([id]) => {
   const { contact: c, messages, waitingFor, consents } = await api(`/api/chats/${id}`);
-  header(esc(c.name ?? phone(c.wa_id)), { back: '#/chats', sub: `${phone(c.wa_id)} · ${chName[c.channel] ?? ''}` });
+  header(esc(who(c)), { back: '#/chats', sub: `${esc(whoSub(c))} · ${chName[c.channel] ?? ''}` });
+  const app_ = chName[c.channel] ?? 'WhatsApp';
   setNav('chats');
   const hoursLeft = c.last_inbound_at ? Math.max(0, 24 - Math.floor((Date.now() - new Date(c.last_inbound_at)) / 36e5)) : 0;
   const live = consents.find((k) => !k.revoked_at);
   const stickToBottom = !main.dataset.view || main.dataset.view !== `chat:${id}` || window.innerHeight + window.scrollY >= document.body.scrollHeight - 40;
   main.innerHTML = `
-    ${c.window_open
-      ? `<div class="banner ok"><b>Reply window open</b> for about ${hoursLeft}h. After that, WhatsApp only allows approved templates.</div>`
-      : `<div class="banner"><b>Reply window closed.</b> It's been over 24 hours since they last messaged, so free replies are off until they message again. Restock alerts still reach them as templates.</div>`}
+    ${c.channel !== 'whatsapp'
+      ? c.window_open
+        ? `<div class="banner ok"><b>Reply window open</b> for about ${hoursLeft}h. After that, ${app_} doesn't allow replies until they message again.</div>`
+        : `<div class="banner"><b>Reply window closed.</b> ${app_} doesn't allow a reply until they message again. Restock alerts only go out on WhatsApp, so sold-out answers here send them there.</div>`
+      : c.window_open
+        ? `<div class="banner ok"><b>Reply window open</b> for about ${hoursLeft}h. After that, WhatsApp only allows approved templates.</div>`
+        : `<div class="banner"><b>Reply window closed.</b> It's been over 24 hours since they last messaged, so free replies are off until they message again. Restock alerts still reach them as templates.</div>`}
     ${waitingFor.length || live ? `<div class="pad" style="padding-bottom:0"><span class="tagline">
       ${waitingFor.map((w) => `<span class="tag">Waiting: ${label(w)} · #${w.position}</span>`).join('')}
       ${live ? `<span class="tag muted">Consent: “${esc(live.quote)}” · ${when(live.granted_at)}</span>` : consents.length ? '<span class="tag muted">Opted out</span>' : ''}
@@ -254,7 +264,7 @@ views.chat = async ([id]) => {
     <form class="composer" data-form="reply" data-id="${esc(id)}">
       <input id="reply" placeholder="${c.window_open ? 'Reply' : 'Replies are off until they message again'}" autocomplete="off" ${c.window_open ? '' : 'disabled'}>
       <button ${c.window_open ? '' : 'disabled'}>Send</button></form>
-    ${S.dryRun ? `<form class="composer test" data-form="as-this-customer" data-wa="${esc(c.wa_id)}" data-name="${esc(c.name ?? '')}">
+    ${S.dryRun ? `<form class="composer test" data-form="as-this-customer" data-wa="${esc(c.wa_id)}" data-name="${esc(c.name ?? '')}" data-channel="${esc(c.channel)}">
       <input id="as-cust" placeholder="Test mode: reply as ${esc((c.name ?? 'customer').split(' ')[0])}" autocomplete="off"><button>Send</button></form>` : ''}`;
   if (stickToBottom) window.scrollTo(0, document.body.scrollHeight);
 };
@@ -407,7 +417,8 @@ views.settings = async () => {
   const connected = (on) => (on ? '<span class="pill paid">Connected</span>' : '<span class="pill expired">Not connected yet</span>');
   const chRow = (ch, title, note, on) => `<div class="line"><span class="pos"><span class="ch ${ch}" style="padding:4px"><i></i></span></span><span>${title}<span class="q">${note}</span></span>${connected(on)}</div>`;
   const owner = s.role === 'owner';
-  const [members, me] = await Promise.all([api(`/api/sellers/${s.id}/members`), api('/api/me')]);
+  const [members, me, channels] = await Promise.all([api(`/api/sellers/${s.id}/members`), api('/api/me'), api(`/api/channels?sellerId=${s.id}`)]);
+  const pagePicker = S.pickPage ? await api(`/api/channels/pending/${S.pickPage}?sellerId=${s.id}`).catch(() => null) : null;
   const team = `<div class="sect">Team</div>
     ${members.map((mb) => `<div class="line"><span class="pos">${mb.role === 'owner' ? '★' : '·'}</span>
       <span>${me.user?.id === mb.user_id ? 'You' : esc(mb.name ?? '+' + mb.wa_id)}<span class="q">${mb.name || me.user?.id === mb.user_id ? `+${esc(mb.wa_id)} · ` : ''}${mb.role === 'owner' ? 'Owner: everything' : 'Staff: chats, stock and restocks'}</span></span>
@@ -443,11 +454,38 @@ views.settings = async () => {
     ${S.dryRun
       ? `<div class="line"><span class="pos"><span class="ch whatsapp" style="padding:4px"><i></i></span></span><span>WhatsApp<span class="q">Test mode: messages are shown in chats but not sent</span></span><span class="pill held">Test mode</span></div>`
       : chRow('whatsapp', 'WhatsApp', `Number id ${esc(s.wa_phone_number_id)}`, true)}
-    ${chRow('instagram', 'Instagram DMs', 'Needs Meta app review for Instagram messaging', false)}
-    ${chRow('facebook', 'Facebook Messenger', 'Needs Meta app review for Messenger', false)}
-    ${chRow('tiktok', 'TikTok DMs', 'Needs TikTok Business Messaging API access', false)}
+    <p class="note pad" style="padding-top:0">WhatsApp is always on: it's the only app that can send restock alerts later, so waitlists and payments run there. Connect the other apps only if you sell on them.</p>
+    ${pagePicker?.length ? `<div class="card"><h2>Which Facebook Page?</h2><p>Your account manages several Pages. Pick the one customers message.</p>
+      <div class="btns">${pagePicker.map((p) => `<button class="btn" data-act="pick-page" data-page="${esc(p.id)}">${esc(p.name)}</button>`).join('')}</div></div>` : ''}
+    ${['instagram', 'facebook'].map((ch) => channelCard(ch, channels, s, owner)).join('')}
+    <div class="line"><span class="pos"><span class="ch tiktok" style="padding:4px"><i></i></span></span><span>TikTok<span class="q">TikTok doesn't let us answer DMs yet. Put your shop page link in your TikTok bio so viewers can message you on WhatsApp.</span></span>${s.slug ? '<button class="btn sm" data-act="copy-shop">Copy link</button>' : '<span></span>'}</div>
     <div class="pad btns" style="margin:0"><a class="btn" href="#/setup">Switch or add shop</a><button class="btn danger" data-act="signout">Sign out</button></div>`;
 };
+/** One optional channel in Settings: connect it, or pause, turn comment replies on or off, and disconnect. */
+function channelCard(ch, channels, s, owner) {
+  const a = channels.accounts.find((x) => x.channel === ch);
+  const title = ch === 'instagram' ? 'Instagram' : 'Facebook Messenger';
+  const icon = `<span class="pos"><span class="ch ${ch}" style="padding:4px"><i></i></span></span>`;
+  if (!a) {
+    const what = ch === 'instagram'
+      ? 'Answer DMs and comments that ask about price or stock. Needs an Instagram Business or Creator account.'
+      : 'Answer messages and comments on your Facebook Page.';
+    const action = !owner ? '<span></span>'
+      : channels.available[ch] ? `<button class="btn sm" data-act="ch-connect" data-ch="${ch}">Connect</button>`
+      : S.dryRun ? `<button class="btn sm" data-act="ch-sample" data-ch="${ch}">Test: add sample</button>`
+      : '<span class="pill expired">Not set up yet</span>';
+    return `<div class="line">${icon}<span>${title}<span class="q">${what}${!channels.available[ch] && !S.dryRun ? ` The server needs ${ch === 'instagram' ? 'IG_APP_ID and IG_APP_SECRET' : 'META_APP_ID'} first.` : ''}</span></span>${action}</div>`;
+  }
+  const handle = a.username ? '@' + a.username : a.name ?? '';
+  return `<div class="line">${icon}<span>${title}${handle ? ` · ${esc(handle)}` : ''}
+      <span class="q">${a.enabled ? 'Answering messages' : 'Paused: messages arrive in the app but nothing is answered'}${a.comment_replies ? ' · replies privately to price and stock comments' : ''}${!s.wa_display_phone ? '. Add your WhatsApp number under Shop page, so sold-out answers can send people there for alerts.' : ''}</span></span>
+      <span class="pill ${a.enabled ? 'paid' : 'held'}">${a.enabled ? 'On' : 'Paused'}</span></div>
+    ${owner ? `<div class="pad btns" style="margin:0;padding-top:0">
+      <button class="btn sm" data-act="ch-set" data-id="${esc(a.id)}" data-field="enabled" data-on="${!a.enabled}">${a.enabled ? 'Pause' : 'Turn on'}</button>
+      <button class="btn sm" data-act="ch-set" data-id="${esc(a.id)}" data-field="commentReplies" data-on="${!a.comment_replies}">${a.comment_replies ? 'Stop comment replies' : 'Reply to comments'}</button>
+      <button class="btn sm danger" data-act="ch-remove" data-id="${esc(a.id)}" data-name="${esc(title)}">Disconnect</button></div>` : ''}`;
+}
+
 /** The public page customers open from a link or a printed QR code. */
 const shopUrl = (s) => `${location.origin}${location.pathname.replace(/[^/]*$/, '')}shop.html?s=${encodeURIComponent(s.slug)}`;
 function shopPage(s, owner) {
@@ -566,6 +604,32 @@ document.addEventListener('click', async (e) => {
       if (!r.offered) route(true);
       return;
     }
+    if (act === 'ch-connect') {
+      const { url } = await api(`/api/channels/${t.dataset.ch}/connect`, { method: 'POST', body: { sellerId: sellerId() } });
+      location.href = url;
+      return;
+    }
+    if (act === 'ch-sample') {
+      await api('/dev/channels', { method: 'POST', body: { sellerId: sellerId(), channel: t.dataset.ch } });
+      toast(`Sample ${chName[t.dataset.ch]} account added. Try it from Chats.`);
+      return route(true);
+    }
+    if (act === 'ch-set') {
+      await api(`/api/channels/${t.dataset.id}`, { method: 'PATCH', body: { [t.dataset.field]: t.dataset.on === 'true' } });
+      return route(true);
+    }
+    if (act === 'ch-remove') {
+      if (!confirm(`Disconnect ${t.dataset.name}? Past chats stay, but new messages won't reach the app.`)) return;
+      await api(`/api/channels/${t.dataset.id}`, { method: 'DELETE' });
+      toast(`${t.dataset.name} disconnected`);
+      return route(true);
+    }
+    if (act === 'pick-page') {
+      await api(`/api/channels/pending/${S.pickPage}`, { method: 'POST', body: { sellerId: sellerId(), pageId: t.dataset.page } });
+      S.pickPage = null;
+      toast('Messenger connected');
+      return route(true);
+    }
     if (act === 'copy-shop') {
       try { await navigator.clipboard.writeText(shopUrl(S.seller)); toast('Link copied'); } catch { toast('Copy the link from the box above'); }
       return;
@@ -666,13 +730,14 @@ document.addEventListener('submit', async (e) => {
         $('#reply', form).value = '';
         return route(true);
       case 'as-customer': {
-        const r = await api('/dev/inbound', { method: 'POST', body: { sellerId: sellerId(), from: val('tc-from'), name: val('tc-name') || undefined, text: val('tc-text') } });
+        const [channel, kind] = ($('#tc-channel', form)?.value ?? 'whatsapp').split(':');
+        const r = await api('/dev/inbound', { method: 'POST', body: { sellerId: sellerId(), from: val('tc-from'), name: val('tc-name') || undefined, text: val('tc-text'), channel, comment: kind === 'comment' } });
         toast(outcomeText[r.action] ?? r.action);
         return route(true);
       }
       case 'as-this-customer': {
         if (!val('as-cust')) return;
-        const r = await api('/dev/inbound', { method: 'POST', body: { sellerId: sellerId(), from: form.dataset.wa, name: form.dataset.name || undefined, text: val('as-cust') } });
+        const r = await api('/dev/inbound', { method: 'POST', body: { sellerId: sellerId(), from: form.dataset.wa, name: form.dataset.name || undefined, text: val('as-cust'), channel: form.dataset.channel } });
         $('#as-cust', form).value = '';
         toast(outcomeText[r.action] ?? r.action);
         return route(true);
@@ -693,6 +758,9 @@ const outcomeText = {
   already_waiting: 'Already on the waitlist',
   in_stock: 'NKAPGUARD said it’s in stock',
   asked_variant: 'NKAPGUARD asked which colour',
+  sold_out: 'NKAPGUARD said it’s sold out',
+  shop_link: 'NKAPGUARD replied privately with your shop page',
+  ignored: 'No reply: channel paused, or not a price or stock question',
   stopped: 'Customer opted out',
   unhandled: 'Left for you to reply',
 };
@@ -733,4 +801,12 @@ async function loadDemo() {
 
 // ---------- start ----------
 try { S.dryRun = (await api('/health')).dryRun; } catch { /* server down: views will show the error */ }
+// Coming back from Instagram or Facebook sign-in: say what happened, then tidy the address.
+{
+  const q = new URLSearchParams(location.search);
+  if (q.get('connected')) setTimeout(() => toast(`${chName[q.get('connected')] ?? 'Channel'} connected`), 300);
+  if (q.get('channel_error')) setTimeout(() => toast(q.get('channel_error')), 300);
+  if (q.get('pick_page')) S.pickPage = q.get('pick_page');
+  if ([...q.keys()].length) history.replaceState(null, '', location.pathname + location.hash);
+}
 route();

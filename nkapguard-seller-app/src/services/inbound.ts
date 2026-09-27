@@ -1,13 +1,15 @@
+import type { SocialChannel, SocialInbound } from '../channels/meta.js';
 import type { InboundText } from '../channels/whatsapp.js';
-import { say } from '../domain/copy.js';
-import { asksAvailability, detectLanguage, detectProduct, fold, isConsentYes, isStop, pickVariant, productFamily } from '../domain/intent.js';
+import { parts, productLabel, say } from '../domain/copy.js';
+import { asksAvailability, detectLanguage, detectProduct, fold, isAlertRequest, isConsentYes, isStop, pickVariant, productFamily } from '../domain/intent.js';
 import { CONSENT_PROMPT_TTL_MS } from '../domain/windows.js';
 import type { Q } from '../db.js';
 import type { Ctx, DispatchResult, Outbound, Recipient } from './context.js';
-import { dispatch } from './outbound.js';
+import { appBase } from './channels.js';
+import { dispatch, socialAccount, socialFor } from './outbound.js';
 import { fmt, type Seller } from './sellers.js';
 
-export type InboundAction = 'unknown_seller' | 'stopped' | 'joined' | 'already_waiting' | 'offered' | 'in_stock' | 'asked_variant' | 'unhandled';
+export type InboundAction = 'unknown_seller' | 'stopped' | 'joined' | 'already_waiting' | 'offered' | 'in_stock' | 'asked_variant' | 'sold_out' | 'shop_link' | 'unhandled';
 
 interface ContactRow {
   id: string;
@@ -20,6 +22,7 @@ interface ContactRow {
   language: 'en' | 'fr' | null;
   awaiting_choice_name: string | null;
   awaiting_choice_at: Date | null;
+  channel: string;
 }
 
 interface ProductRow {
@@ -52,110 +55,245 @@ export async function waitlistPosition(q: Q, interestId: string): Promise<number
   return row.pos;
 }
 
+/** One incoming customer message, from any channel. */
+interface Incoming {
+  channel: 'whatsapp' | SocialChannel;
+  from: string;
+  name?: string | null;
+  username?: string | null;
+  text: string;
+  providerId: string;
+  at: Date;
+}
+
+interface AccountRow {
+  id: string;
+  seller_id: string;
+  channel: SocialChannel;
+  external_id: string;
+  enabled: boolean;
+  comment_replies: boolean;
+}
+
 export async function handleInbound(ctx: Ctx, msg: InboundText): Promise<{ action: InboundAction; sent: DispatchResult[] }> {
   const [seller] = await ctx.db.query<Seller>('select * from sellers where wa_phone_number_id = $1', [msg.phoneNumberId]);
   if (!seller) return { action: 'unknown_seller', sent: [] };
+  return handle(ctx, seller, null, { channel: 'whatsapp', from: msg.from, name: msg.name, text: msg.text, providerId: msg.providerId, at: msg.at });
+}
+
+/**
+ * An Instagram or Messenger DM or comment. Nothing happens unless the shop connected that
+ * account and has it switched on: the channels are optional, per shop.
+ */
+export async function handleSocialInbound(ctx: Ctx, m: SocialInbound): Promise<{ action: InboundAction | 'ignored'; sent: DispatchResult[] }> {
+  const [account] = await ctx.db.query<AccountRow>('select * from channel_accounts where channel = $1 and external_id = $2', [m.channel, m.accountId]);
+  if (!account) return { action: 'unknown_seller', sent: [] };
+  if (!account.enabled) return { action: 'ignored', sent: [] };
+  const seller = (await ctx.db.query<Seller>('select * from sellers where id = $1', [account.seller_id]))[0];
+  // DMs carry no name; ask the platform once, for customers we haven't seen.
+  let name = m.name ?? null;
+  let username = m.username ?? null;
+  if (!name) {
+    const [known] = await ctx.db.query<{ name: string | null }>('select name from contacts where seller_id = $1 and channel = $2 and wa_id = $3', [seller.id, m.channel, m.from]);
+    if (!known?.name) {
+      const acct = await socialAccount(ctx, account.id);
+      const p = acct ? await socialFor(ctx).profile(acct, m.from).catch(() => ({ name: null, username: null })) : null;
+      name = p?.name ?? null;
+      username = username ?? p?.username ?? null;
+    }
+  }
+  const incoming: Incoming = { channel: m.channel, from: m.from, name, username, text: m.text, providerId: m.providerId, at: m.at };
+  if (m.comment) return handleComment(ctx, seller, account, incoming, m.comment);
+  return handle(ctx, seller, account, incoming);
+}
+
+/** "Bonjour, prévenez-moi quand le modèle X revient" as a WhatsApp link: one tap joins the waitlist there. */
+function whatsappAlertLink(seller: Seller, lang: string, product: { name: string; variant: string }): string | null {
+  if (!seller.wa_display_phone) return null;
+  const base = parts(lang)[0];
+  const label = productLabel(product, base);
+  const text = base === 'fr' ? `Bonjour, prévenez-moi quand le modèle ${label} revient, s'il vous plaît.` : `Hi, please let me know when the ${label} is back.`;
+  return `https://wa.me/${seller.wa_display_phone}?text=${encodeURIComponent(text)}`;
+}
+
+async function upsertContact(q: Q, seller: Seller, account: AccountRow | null, msg: Incoming, opensWindow: boolean): Promise<ContactRow> {
+  const [contact] = await q.query<ContactRow>(
+    `insert into contacts (seller_id, channel, wa_id, name, username, channel_account_id, last_inbound_at, language)
+     values ($1, $2, $3, $4, $5, $6, $7, $8)
+     on conflict (seller_id, channel, wa_id) do update
+       set name = coalesce(excluded.name, contacts.name),
+           username = coalesce(excluded.username, contacts.username),
+           channel_account_id = coalesce(excluded.channel_account_id, contacts.channel_account_id),
+           last_inbound_at = greatest(contacts.last_inbound_at, excluded.last_inbound_at),
+           language = coalesce(excluded.language, contacts.language)
+     returning *`,
+    [seller.id, msg.channel, msg.from, msg.name ?? null, msg.username ?? null, account?.id ?? null, opensWindow ? msg.at : null, detectLanguage(msg.text)],
+  );
+  return contact;
+}
+
+async function handle(ctx: Ctx, seller: Seller, account: AccountRow | null, msg: Incoming): Promise<{ action: InboundAction; sent: DispatchResult[] }> {
   const f = fmt(seller);
-  // Answer in the language the customer writes in; remember it for later alerts.
-  const written = detectLanguage(msg.text);
+  const whatsapp = msg.channel === 'whatsapp';
 
   const { action, outs } = await ctx.db.tx(async (q) => {
-    const [contact] = await q.query<ContactRow>(
-      `insert into contacts (seller_id, wa_id, name, last_inbound_at, language) values ($1, $2, $3, $4, $5)
-       on conflict (seller_id, wa_id) do update
-         set name = coalesce(excluded.name, contacts.name),
-             last_inbound_at = greatest(contacts.last_inbound_at, excluded.last_inbound_at),
-             language = coalesce(excluded.language, contacts.language)
-       returning *`,
-      [seller.id, msg.from, msg.name ?? null, msg.at, written],
-    );
+    const contact = await upsertContact(q, seller, account, msg, true);
     await q.query(
-      `insert into messages (seller_id, contact_id, direction, kind, body, provider_id, created_at)
-       values ($1, $2, 'in', 'text', $3, $4, $5)`,
-      [seller.id, contact.id, msg.text, msg.providerId, msg.at],
+      `insert into messages (seller_id, contact_id, channel, direction, kind, body, provider_id, created_at)
+       values ($1, $2, $3, 'in', 'text', $4, $5, $6)`,
+      [seller.id, contact.id, msg.channel, msg.text, msg.providerId, msg.at],
+    );
+    // Answer in the language the customer writes in; it's remembered for later alerts.
+    const lang = contact.language ?? seller.language;
+    const to: Recipient = {
+      sellerId: seller.id, from: whatsapp ? seller.wa_phone_number_id : account!.id, contactId: contact.id, to: contact.wa_id,
+      lastInboundAt: contact.last_inbound_at, country: seller.country, language: lang, channel: msg.channel,
+    };
+    const reply = (body: string): Outbound[] => [{ ...to, kind: 'text', body }];
+    return decide(q, seller, contact, msg, lang, f, reply);
+  });
+
+  return { action, sent: await dispatch(ctx, outs, msg.at) };
+}
+
+/** What to answer. Waitlists and consent live on WhatsApp; Instagram and Messenger hand off to it. */
+async function decide(
+  q: Q, seller: Seller, contact: ContactRow, msg: Incoming, lang: string, f: ReturnType<typeof fmt>,
+  reply: (body: string) => Outbound[],
+): Promise<{ action: InboundAction; outs: Outbound[] }> {
+  const whatsapp = msg.channel === 'whatsapp';
+
+  const joinWaitlist = async (product: ProductRow) => {
+    await q.query('update contacts set awaiting_consent_product_id = null, awaiting_consent_at = null where id = $1', [contact.id]);
+    const [existing] = await q.query<{ id: string }>(
+      `select id from interests where product_id = $1 and contact_id = $2 and status = 'waiting'`,
+      [product.id, contact.id],
+    );
+    if (existing) {
+      return { action: 'already_waiting' as const, outs: reply(say(lang, 'alreadyWaiting', { product, position: await waitlistPosition(q, existing.id) }, f)) };
+    }
+    // The customer's own words are the consent record.
+    const [consent] = await q.query<{ id: string }>(
+      `insert into consents (seller_id, contact_id, channel, purpose, product_id, quote, granted_at)
+       values ($1, $2, 'whatsapp', 'restock_alert', $3, $4, $5) returning id`,
+      [seller.id, contact.id, product.id, msg.text, msg.at],
+    );
+    const [interest] = await q.query<{ id: string }>(
+      `insert into interests (seller_id, product_id, contact_id, consent_id, created_at)
+       values ($1, $2, $3, $4, $5) returning id`,
+      [seller.id, product.id, contact.id, consent.id, msg.at],
+    );
+    return { action: 'joined' as const, outs: reply(say(lang, 'joined', { product, position: await waitlistPosition(q, interest.id) }, f)) };
+  };
+
+  if (whatsapp && isStop(msg.text)) {
+    await q.query('update consents set revoked_at = $2 where contact_id = $1 and revoked_at is null', [contact.id, msg.at]);
+    await q.query(`update interests set status = 'removed' where contact_id = $1 and status = 'waiting'`, [contact.id]);
+    await q.query('update contacts set awaiting_consent_product_id = null, awaiting_consent_at = null where id = $1', [contact.id]);
+    return { action: 'stopped', outs: reply(say(lang, 'stopped', { seller: seller.name }, f)) };
+  }
+
+  const promptLive =
+    contact.awaiting_consent_product_id &&
+    contact.awaiting_consent_at &&
+    msg.at.getTime() - contact.awaiting_consent_at.getTime() < CONSENT_PROMPT_TTL_MS;
+  if (whatsapp && promptLive && isConsentYes(msg.text)) {
+    const [product] = await q.query<ProductRow>('select * from products where id = $1', [contact.awaiting_consent_product_id]);
+    return joinWaitlist(product);
+  }
+
+  // Answer about one product: in stock with the price, or sold out with a way to get an alert.
+  const answerFor = async (product: ProductRow) => {
+    await q.query('update contacts set awaiting_choice_name = null, awaiting_choice_at = null where id = $1', [contact.id]);
+    const free = await freeStock(q, product.id);
+    if (free > 0) {
+      return { action: 'in_stock' as const, outs: reply(say(lang, 'inStock', { name: contact.name, product, priceMinor: product.price_minor, stock: free }, f)) };
+    }
+    if (whatsapp) {
+      // "Prévenez-moi quand … revient" (from the shop page or an Instagram hand-off) is a clear yes already.
+      if (isAlertRequest(msg.text)) return joinWaitlist(product);
+      await q.query('update contacts set awaiting_consent_product_id = $2, awaiting_consent_at = $3 where id = $1', [contact.id, product.id, msg.at]);
+      return { action: 'offered' as const, outs: reply(say(lang, 'offerAlert', { name: contact.name, product }, f)) };
+    }
+    // Instagram and Messenger can't send an alert days later, so the alert moves to WhatsApp.
+    const url = whatsappAlertLink(seller, lang, product);
+    return url
+      ? { action: 'offered' as const, outs: reply(say(lang, 'offerWhatsApp', { name: contact.name, product, url }, f)) }
+      : { action: 'sold_out' as const, outs: reply(say(lang, 'soldOutPlain', { name: contact.name, product }, f)) };
+  };
+  const catalog = () => q.query<ProductRow>('select * from products where seller_id = $1', [seller.id]);
+
+  // A short answer to "which one?" ("jet black", "le noir") picks the variant.
+  const choiceLive =
+    contact.awaiting_choice_name &&
+    contact.awaiting_choice_at &&
+    msg.at.getTime() - contact.awaiting_choice_at.getTime() < CONSENT_PROMPT_TTL_MS;
+  if (choiceLive) {
+    const family = (await catalog()).filter((p) => fold(p.name) === contact.awaiting_choice_name);
+    const picked = pickVariant(msg.text, family);
+    if (picked) return answerFor(picked);
+  }
+
+  if (asksAvailability(msg.text) || isAlertRequest(msg.text) || msg.text.includes('?')) {
+    const products = await catalog();
+    const product = detectProduct(msg.text, products);
+    if (product) return answerFor(product);
+    // The product comes in several variants and the customer didn't say which: list them.
+    const family = productFamily(msg.text, products);
+    if (family) {
+      const options = [];
+      for (const p of family) options.push({ variant: p.variant, free: await freeStock(q, p.id) });
+      await q.query('update contacts set awaiting_choice_name = $2, awaiting_choice_at = $3 where id = $1', [contact.id, fold(family[0].name), msg.at]);
+      return {
+        action: 'asked_variant',
+        outs: reply(say(lang, 'whichVariant', { name: contact.name, product: { name: family[0].name, variant: '' }, options }, f)),
+      };
+    }
+  }
+  return { action: 'unhandled', outs: [] };
+}
+
+/** Comment words that are worth a private reply: a price or stock question. */
+const COMMENT_QUESTION = /\?|\b(prix|combien|dispo|disponible|price|how much|cost|available|in stock|still have|una get)\b/i;
+
+/**
+ * A comment on the shop's post. Platforms allow one private reply per comment (within 7
+ * days); the chat only continues if the person answers. Only comments that ask about price
+ * or stock get one, at most once per person per post per day.
+ */
+async function handleComment(
+  ctx: Ctx, seller: Seller, account: AccountRow, msg: Incoming, comment: { id: string; postId: string },
+): Promise<{ action: InboundAction | 'ignored'; sent: DispatchResult[] }> {
+  if (!account.comment_replies || !COMMENT_QUESTION.test(fold(msg.text))) return { action: 'ignored', sent: [] };
+  const f = fmt(seller);
+  const { action, outs } = await ctx.db.tx(async (q) => {
+    const [recent] = await q.query(
+      `select 1 from comment_replies where account_id = $1 and commenter_id = $2 and post_id = $3 and created_at > $4`,
+      [account.id, msg.from, comment.postId, new Date(msg.at.getTime() - 24 * 3600_000)],
+    );
+    if (recent) return { action: 'ignored' as const, outs: [] as Outbound[] };
+    // A comment doesn't open a chat window; only the person's reply does.
+    const contact = await upsertContact(q, seller, account, msg, false);
+    await q.query(
+      `insert into messages (seller_id, contact_id, channel, direction, kind, body, provider_id, created_at)
+       values ($1, $2, $3, 'in', 'text', $4, $5, $6)`,
+      [seller.id, contact.id, msg.channel, `Comment on your post: ${msg.text}`, msg.providerId, msg.at],
     );
     const lang = contact.language ?? seller.language;
     const to: Recipient = {
-      sellerId: seller.id, from: seller.wa_phone_number_id, contactId: contact.id, to: contact.wa_id,
-      lastInboundAt: contact.last_inbound_at, country: seller.country, language: lang,
+      sellerId: seller.id, from: account.id, contactId: contact.id, to: contact.wa_id,
+      lastInboundAt: contact.last_inbound_at, country: seller.country, language: lang, channel: msg.channel, commentId: comment.id,
     };
     const reply = (body: string): Outbound[] => [{ ...to, kind: 'text', body }];
-
-    if (isStop(msg.text)) {
-      await q.query('update consents set revoked_at = $2 where contact_id = $1 and revoked_at is null', [contact.id, msg.at]);
-      await q.query(`update interests set status = 'removed' where contact_id = $1 and status = 'waiting'`, [contact.id]);
-      await q.query('update contacts set awaiting_consent_product_id = null, awaiting_consent_at = null where id = $1', [contact.id]);
-      return { action: 'stopped' as const, outs: reply(say(lang, 'stopped', { seller: seller.name }, f)) };
+    let decided = await decide(q, seller, contact, msg, lang, f, reply);
+    if (decided.action === 'unhandled') {
+      // No product named ("prix ?"): send the shop page, which lists everything with prices.
+      if (!seller.slug) return { action: 'ignored' as const, outs: [] as Outbound[] };
+      const url = `${appBase(ctx.config)}/shop.html?s=${encodeURIComponent(seller.slug)}`;
+      decided = { action: 'shop_link', outs: reply(say(lang, 'commentReply', { name: contact.name ?? msg.username, url }, f)) };
     }
-
-    const promptLive =
-      contact.awaiting_consent_product_id &&
-      contact.awaiting_consent_at &&
-      msg.at.getTime() - contact.awaiting_consent_at.getTime() < CONSENT_PROMPT_TTL_MS;
-    if (promptLive && isConsentYes(msg.text)) {
-      const [product] = await q.query<ProductRow>('select * from products where id = $1', [contact.awaiting_consent_product_id]);
-      await q.query('update contacts set awaiting_consent_product_id = null, awaiting_consent_at = null where id = $1', [contact.id]);
-      const [existing] = await q.query<{ id: string }>(
-        `select id from interests where product_id = $1 and contact_id = $2 and status = 'waiting'`,
-        [product.id, contact.id],
-      );
-      if (existing) {
-        return { action: 'already_waiting' as const, outs: reply(say(lang, 'alreadyWaiting', { product, position: await waitlistPosition(q, existing.id) }, f)) };
-      }
-      const [consent] = await q.query<{ id: string }>(
-        `insert into consents (seller_id, contact_id, channel, purpose, product_id, quote, granted_at)
-         values ($1, $2, 'whatsapp', 'restock_alert', $3, $4, $5) returning id`,
-        [seller.id, contact.id, product.id, msg.text, msg.at],
-      );
-      const [interest] = await q.query<{ id: string }>(
-        `insert into interests (seller_id, product_id, contact_id, consent_id, created_at)
-         values ($1, $2, $3, $4, $5) returning id`,
-        [seller.id, product.id, contact.id, consent.id, msg.at],
-      );
-      return { action: 'joined' as const, outs: reply(say(lang, 'joined', { product, position: await waitlistPosition(q, interest.id) }, f)) };
-    }
-
-    // Answer about one product: in stock with the price, or sold out with an alert offer.
-    const answerFor = async (product: ProductRow) => {
-      await q.query('update contacts set awaiting_choice_name = null, awaiting_choice_at = null where id = $1', [contact.id]);
-      const free = await freeStock(q, product.id);
-      if (free > 0) {
-        return { action: 'in_stock' as const, outs: reply(say(lang, 'inStock', { name: contact.name, product, priceMinor: product.price_minor, stock: free }, f)) };
-      }
-      await q.query('update contacts set awaiting_consent_product_id = $2, awaiting_consent_at = $3 where id = $1', [contact.id, product.id, msg.at]);
-      return { action: 'offered' as const, outs: reply(say(lang, 'offerAlert', { name: contact.name, product }, f)) };
-    };
-    const catalog = () => q.query<ProductRow>('select * from products where seller_id = $1', [seller.id]);
-
-    // A short answer to "which one?" ("jet black", "le noir") picks the variant.
-    const choiceLive =
-      contact.awaiting_choice_name &&
-      contact.awaiting_choice_at &&
-      msg.at.getTime() - contact.awaiting_choice_at.getTime() < CONSENT_PROMPT_TTL_MS;
-    if (choiceLive) {
-      const family = (await catalog()).filter((p) => fold(p.name) === contact.awaiting_choice_name);
-      const picked = pickVariant(msg.text, family);
-      if (picked) return answerFor(picked);
-    }
-
-    if (asksAvailability(msg.text) || msg.text.includes('?')) {
-      const products = await catalog();
-      const product = detectProduct(msg.text, products);
-      if (product) return answerFor(product);
-      // The product comes in several variants and the customer didn't say which: list them.
-      const family = productFamily(msg.text, products);
-      if (family) {
-        const options = [];
-        for (const p of family) options.push({ variant: p.variant, free: await freeStock(q, p.id) });
-        await q.query('update contacts set awaiting_choice_name = $2, awaiting_choice_at = $3 where id = $1', [contact.id, fold(family[0].name), msg.at]);
-        return {
-          action: 'asked_variant' as const,
-          outs: reply(say(lang, 'whichVariant', { name: contact.name, product: { name: family[0].name, variant: '' }, options }, f)),
-        };
-      }
-    }
-    return { action: 'unhandled' as const, outs: [] as Outbound[] };
+    await q.query('insert into comment_replies (account_id, commenter_id, post_id, created_at) values ($1, $2, $3, $4)', [account.id, msg.from, comment.postId, msg.at]);
+    return decided;
   });
-
   return { action, sent: await dispatch(ctx, outs, msg.at) };
 }

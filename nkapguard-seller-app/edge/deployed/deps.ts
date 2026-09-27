@@ -30,6 +30,8 @@ const esm = (ns: Record<string, unknown>) => ({ ...ns });
     // NKAPGUARD number that sends sign-in codes. Real Supabase secrets override these.
     WA_VERIFY_TOKEN: '<set at deploy time; never committed>',
     PLATFORM_WA_PHONE_ID: '1317731698091107',
+    // The Meta app (WhatsApp and Messenger). Instagram Login's own id and secret are Supabase secrets.
+    META_APP_ID: '1391270936503479',
     // Operator key, required once DRY_RUN=false.
     ADMIN_TOKEN: '<set at deploy time; never committed>',
   },

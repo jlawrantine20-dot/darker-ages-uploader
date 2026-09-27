@@ -1,23 +1,32 @@
 import type { Config } from '../config.js';
 import type { Db } from '../db.js';
 import type { Channel } from '../channels/whatsapp.js';
+import type { SocialChannel, SocialSender } from '../channels/meta.js';
 import type { makeProvider } from '../payments/providers.js';
 
 export interface Ctx {
   db: Db;
   channel: Channel;
+  /** Instagram and Messenger; defaults to Meta's Graph API, or a recorder in test mode. */
+  social?: SocialSender;
   config: Config;
+  /** Swappable in tests; defaults to the global fetch. Used for Meta sign-in calls. */
+  fetch?: typeof fetch;
   /** Swappable in tests; defaults to the real providers. */
   providerFactory?: typeof makeProvider;
 }
 
 export interface Recipient {
   sellerId: string;
-  /** Seller's WhatsApp Cloud API phone number id. */
+  /** WhatsApp: the seller's Cloud API phone number id. Instagram/Messenger: the channel_accounts row id. */
   from: string;
   contactId: string;
-  /** Customer's WhatsApp id. */
+  /** The customer's id on the channel: a WhatsApp number, or an Instagram/Page-scoped id. */
   to: string;
+  /** Defaults to WhatsApp. */
+  channel?: 'whatsapp' | SocialChannel;
+  /** Instagram/Messenger: answer this comment with a private reply instead of a chat message. */
+  commentId?: string;
   lastInboundAt: Date | null;
   /** Seller's country and language decide the fee estimate and template language. */
   country: string;

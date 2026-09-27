@@ -173,6 +173,44 @@ operator.
 7. Set `DRY_RUN=false`. The server refuses to start live if any required setting is
    missing.
 
+### Instagram and Messenger (optional, per shop)
+
+Each shop turns on only the apps it sells on, in Settings → Channels. WhatsApp is always on,
+because it's the only one that can send a restock alert days later: Meta retired message tags
+and Instagram marketing messages, and Messenger's paid marketing messages aren't open to
+businesses in Africa. So Instagram and Messenger are for answering and capturing:
+
+- DMs asking about a product get the same answers as WhatsApp (price, which colour, sold out),
+  in the customer's language, within Meta's 24-hour reply window. Replies are free.
+- A sold-out answer carries a WhatsApp link with "Bonjour, prévenez-moi quand le modèle …
+  revient" already written. Sending it puts the customer on the waitlist in one step, and
+  their own words are the consent record. The shop page's "Alert me" button does the same.
+- A comment asking about price or stock ("prix ?", "dispo ?") gets one private reply (Meta
+  allows one per comment): the product answer, or the shop page link. At most once per person
+  per post per day, and each shop can switch comment replies off.
+- A paused channel still records nothing and answers nothing; disconnecting keeps past chats.
+
+Setup in the Meta app (developers.facebook.com → NKAPGUARD Seller App):
+
+1. **Instagram:** add the use case "Manage messaging & content on Instagram" (Instagram API
+   with Instagram Login). Copy its **Instagram app ID** and **Instagram app secret** into
+   Supabase secrets as `IG_APP_ID` and `IG_APP_SECRET`. Add the redirect URL
+   `https://psalpplvvygliobywsda.supabase.co/functions/v1/seller-app/oauth/instagram`, and set
+   the webhook to `…/seller-app/webhooks/meta` with the same verify token as WhatsApp,
+   subscribed to `messages` and `comments`.
+2. **Messenger:** add the use case "Engage with customers on Messenger from Meta". Add the
+   Facebook Login redirect URL `…/seller-app/oauth/facebook`, and a Page webhook to
+   `…/seller-app/webhooks/meta` subscribed to `messages`, `messaging_postbacks` and `feed`.
+   `META_APP_ID` is set in the deployed defaults; `META_APP_SECRET` falls back to
+   `WA_APP_SECRET`, since it's the same app.
+3. Until Meta's App Review approves the permissions (it needs business verification), only
+   accounts with a role on the app can connect and message. That's enough to test with your
+   own Instagram account and Page.
+
+Instagram tokens last 60 days; the scheduler refreshes them a week before they expire.
+TikTok DMs need TikTok's Business Messaging API and its data-security review, so for now
+sellers put their shop page link in their TikTok bio.
+
 ### WhatsApp templates
 
 Meta decides each template's category when it reviews it, and that decides the price.

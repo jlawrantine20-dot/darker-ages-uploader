@@ -54,6 +54,8 @@ a.btn.alt{background:var(--surface-2);color:var(--ink);border:1px solid var(--li
       inStock: 'En stock', soldOut: 'En rupture',
       order: 'Commander sur WhatsApp', alert: 'Me prévenir à son retour',
       ask: function (label) { return 'Bonjour, vous avez le modèle ' + label + ' ?'; },
+      // Sending this is the customer's own request for an alert, so it joins the waitlist in one tap.
+      alertMe: function (label) { return 'Bonjour, prévenez-moi quand le modèle ' + label + " revient, s'il vous plaît."; },
       note: function (shop) { return 'Vous écrivez directement à ' + shop + ' sur WhatsApp.'; },
       noShop: "Ce lien de boutique n'existe pas. Vérifiez l'adresse.",
       noPhone: "Cette boutique n'a pas encore ajouté son numéro WhatsApp.",
@@ -65,6 +67,7 @@ a.btn.alt{background:var(--surface-2);color:var(--ink);border:1px solid var(--li
       inStock: 'In stock', soldOut: 'Sold out',
       order: 'Order on WhatsApp', alert: "Alert me when it's back",
       ask: function (label) { return 'Hi, do you have the ' + label + '?'; },
+      alertMe: function (label) { return 'Hi, please let me know when the ' + label + ' is back.'; },
       note: function (shop) { return 'You message ' + shop + ' directly on WhatsApp.'; },
       noShop: "This shop link doesn't exist. Check the address.",
       noPhone: "This shop hasn't added its WhatsApp number yet.",
@@ -145,7 +148,7 @@ a.btn.alt{background:var(--surface-2);color:var(--ink);border:1px solid var(--li
         what.appendChild(el('div', 'price', price(p.priceMinor, lang)));
         row.appendChild(what);
         var a = el('a', 'btn' + (p.available ? '' : ' alt'), p.available ? t.order : t.alert);
-        a.href = 'https://wa.me/' + shop.whatsapp + '?text=' + encodeURIComponent(t.ask(label(p, lang)));
+        a.href = 'https://wa.me/' + shop.whatsapp + '?text=' + encodeURIComponent((p.available ? t.ask : t.alertMe)(label(p, lang)));
         a.target = '_blank';
         a.rel = 'noopener';
         row.appendChild(a);

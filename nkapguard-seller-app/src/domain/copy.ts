@@ -50,7 +50,7 @@ interface Args {
   options: string;
 }
 
-export type Key = 'whichVariant' | 'offerAlert' | 'inStock' | 'joined' | 'alreadyWaiting' | 'stopped' | 'hold' | 'race' | 'soldOut' | 'paid' | 'refund';
+export type Key = 'whichVariant' | 'offerWhatsApp' | 'soldOutPlain' | 'commentReply' | 'offerAlert' | 'inStock' | 'joined' | 'alreadyWaiting' | 'stopped' | 'hold' | 'race' | 'soldOut' | 'paid' | 'refund';
 type Sentences = Record<Key, (a: Args) => string> & { fallbackName: string };
 
 // Each language is written as a native speaker would text a customer, not translated line by
@@ -60,6 +60,10 @@ type Sentences = Record<Key, (a: Args) => string> & { fallbackName: string };
 const en: Sentences = {
   fallbackName: 'there',
   whichVariant: (a) => `Hi ${a.first}, the ${a.label} comes in ${a.options}. Which one would you like?`,
+  offerWhatsApp: (a) =>
+    `Hi ${a.first}, the ${a.label} is sold out at the moment. We send restock alerts on WhatsApp: open this link and send the message, and we'll let you know as soon as it's back.\n${a.url}`,
+  soldOutPlain: (a) => `Hi ${a.first}, the ${a.label} is sold out at the moment.`,
+  commentReply: (a) => `Hi ${a.first}, thanks for your comment! Here's everything we sell, with prices and what's in stock:\n${a.url}\nAsk us anything here.`,
   offerAlert: (a) =>
     `Hi ${a.first}, the ${a.label} is sold out at the moment. Want us to message you here as soon as it's back? Just reply YES. (Reply STOP anytime to opt out.)`,
   inStock: (a) =>
@@ -82,6 +86,10 @@ const en: Sentences = {
 const fr: Sentences = {
   fallbackName: 'cher client',
   whichVariant: (a) => `Bonjour ${a.first} ! Le modèle ${a.label} existe en ${a.options}. Lequel souhaitez-vous ?`,
+  offerWhatsApp: (a) =>
+    `Bonjour ${a.first} ! Le modèle ${a.label} est momentanément en rupture de stock. Nos alertes de retour passent par WhatsApp : ouvrez ce lien et envoyez le message, nous vous préviendrons dès son retour.\n${a.url}`,
+  soldOutPlain: (a) => `Bonjour ${a.first} ! Le modèle ${a.label} est momentanément en rupture de stock.`,
+  commentReply: (a) => `Bonjour ${a.first}, merci pour votre commentaire ! Voici tous nos articles, avec les prix et la disponibilité :\n${a.url}\nPosez-nous vos questions ici.`,
   offerAlert: (a) =>
     `Bonjour ${a.first} ! Le modèle ${a.label} est momentanément en rupture de stock. Souhaitez-vous que nous vous prévenions ici dès son retour ? Répondez simplement OUI. (Répondez STOP à tout moment pour ne plus recevoir de messages.)`,
   inStock: (a) =>

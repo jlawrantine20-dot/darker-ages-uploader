@@ -132,6 +132,14 @@ export function pickVariant<T extends CatalogItem>(text: string, family: T[]): T
   return picked.length === 1 ? picked[0] : null;
 }
 
+/**
+ * "Prévenez-moi quand … revient", "let me know when … is back": the customer asks for an alert
+ * in their own words. This is what the shop page and Instagram/Messenger hand-off links write.
+ */
+export function isAlertRequest(text: string): boolean {
+  return /\b(prevenez[- ]moi|me prevenir|previens[- ]moi|alertez[- ]moi|let me know when|notify me|alert me|tell me when)\b/.test(fold(text).replace(/[’']/g, ' '));
+}
+
 export function isStop(text: string): boolean {
   return /^\s*(stop|unsubscribe|remove me|opt ?out|cancel alerts?|arret(e|er)?|desabonne(r|z)?( moi)?|retirez[- ]moi|desinscri(re|vez)[- ]moi)\b/i.test(fold(text));
 }

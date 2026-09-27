@@ -218,7 +218,7 @@ describe('the scheduler endpoint', () => {
     expect((await post('cron-secret-12X')).status).toBe(403);
     const ok = await post('cron-secret-123');
     expect(ok.status).toBe(200);
-    expect(await ok.json()).toEqual({ sent: 0 });
+    expect(await ok.json()).toEqual({ sent: 0, refreshed: 0 });
     // The secret is not a sign-in: it opens nothing under /api.
     const api = await t.app.request('/api/sellers', { headers: { authorization: 'Bearer cron-secret-123', 'x-cron-secret': 'cron-secret-123' } });
     expect(api.status).toBe(401);
