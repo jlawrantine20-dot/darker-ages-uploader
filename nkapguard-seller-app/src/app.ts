@@ -16,7 +16,7 @@ import { escapeHtml, page, pageText } from './pages.js';
 import { normalizePhone, phoneCountry } from './domain/phone.js';
 import { productLabel } from './domain/copy.js';
 import { AuthError, ForbiddenError, addMember, logout, removeMember, requireRole, shopOf, startLogin, verifyLogin, viewerFor, type Role, type Viewer } from './services/auth.js';
-import { getSeller, money, providerFor, publicSeller, resolveSellerInput, setPaymentProvider, type Seller } from './services/sellers.js';
+import { getSeller, money, providerFor, publicSeller, resolveSellerInput, setPaymentProvider, type Seller, type SellerInput } from './services/sellers.js';
 
 export interface AppOptions {
   /** Serves the seller app's files under /app when the API and the app share one host (the Node server). */
@@ -282,7 +282,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
   app.patch('/api/sellers/:id', async (c) => {
     await guard(c, c.req.param('id'), 'owner');
     const current = await sellerOr404(c.req.param('id'));
-    const b = await c.req.json<{ rate?: number }>();
+    const b = await c.req.json<SellerInput & { rate?: number }>();
     const v = resolveSellerInput(b, current);
     const row = await db.tx(async (q) => {
       // Prices are stored in the currency's smallest unit, so a new currency needs the
