@@ -226,3 +226,42 @@ in.
 - **Other providers:** CinetPay and CamPay.
 - **Automatic refunds:** late payments are flagged for refund, but the refund isn't sent
   through the provider's refund API yet.
+
+## Deployed on Supabase (pilot)
+
+The backend runs as the `seller-app` edge function in the **nkapguard** Supabase project, with
+its data in its own `seller_app` schema. The rest of that project (NKAPGUARD's public tables,
+data and other functions) is not read or changed.
+
+- **API:** `https://psalpplvvygliobywsda.supabase.co/functions/v1/seller-app`
+  (`/health` answers `{"ok":true,...}`)
+- **Seller app:** `https://rawcdn.githack.com/jlawrantine20-dot/darker-ages-uploader/63755347bba36f22f97310d990c1fabfe11ba6a3/nkapguard-seller-app/web/index.html`
+- **Schema:** `deploy/seller_app_schema.sql`, applied as the `seller_app_schema` migration.
+  Every name is schema-qualified, every table has row-level security on, and the public
+  API roles have no access.
+- **Function files:** `edge/deployed/`. The app itself is `edge/dist/remote.js` at the pinned
+  commit, served by jsDelivr.
+
+The app screens are hosted separately because Supabase serves HTML from functions and Storage
+as plain text on its own domain. Customer payment pages are drawn by `web/pay.html` on the app
+host.
+
+**Updating:**
+1. Run `npm run build:edge`, commit and push.
+2. Point `edge/deployed/index.ts` and the `APP_URL` in `deps.ts` at the new commit.
+3. Redeploy the function.
+
+**It runs in test mode:** nothing is sent to WhatsApp and payments are simulated. Sign-in codes
+are shown on screen, so anyone with the link can sign in as any number. Use test data only
+until WhatsApp is connected.
+
+**To go live**, set these in Supabase under Edge Functions › Secrets:
+- `DRY_RUN=false`
+- `ADMIN_TOKEN`
+- `WA_TOKEN`, `WA_APP_SECRET`, `WA_VERIFY_TOKEN`
+- `PLATFORM_WA_PHONE_ID`
+- `APP_SECRET`: optional. It defaults to a key derived from the service role key; set it
+  before sellers save payment keys.
+
+Expired holds are passed on when requests come in, at most once a minute. For exact timing,
+have a scheduler call `POST /api/tick` with the admin token every minute.

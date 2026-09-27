@@ -1,6 +1,5 @@
-// NKAPGUARD Seller App: Supabase edge function entry. Deployed as the `seller-app` function.
-// It loads the libraries, then imports the tested app bundle pinned to one git commit.
-// Deno does not allow npm: imports inside remote modules, so they are passed in here.
+// Libraries for the NKAPGUARD Seller App bundle. Deno does not allow npm: imports inside
+// remote modules, so they are loaded here and passed to the bundle via globalThis.__nkg.
 import postgres from 'npm:postgres@3.4.9';
 import * as hono from 'npm:hono@4.13.9';
 import * as honoCors from 'npm:hono@4.13.9/cors';
@@ -19,7 +18,5 @@ const esm = (ns: Record<string, unknown>) => ({ ...ns });
     'node:buffer': esm(nodeBuffer),
     'node:crypto': esm(nodeCrypto),
   },
-  defaults: { APP_URL: '__APP_URL__' },
+  defaults: { APP_URL: 'https://rawcdn.githack.com/jlawrantine20-dot/darker-ages-uploader/63755347bba36f22f97310d990c1fabfe11ba6a3/nkapguard-seller-app/web' },
 };
-
-await import('__BUNDLE_URL__');
