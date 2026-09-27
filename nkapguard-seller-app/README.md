@@ -235,10 +235,14 @@ data and other functions) is not read or changed.
 
 - **API:** `https://psalpplvvygliobywsda.supabase.co/functions/v1/seller-app`
   (`/health` answers `{"ok":true,...}`)
-- **Seller app:** `https://rawcdn.githack.com/jlawrantine20-dot/darker-ages-uploader/63755347bba36f22f97310d990c1fabfe11ba6a3/nkapguard-seller-app/web/index.html`
+- **Seller app:** `https://rawcdn.githack.com/jlawrantine20-dot/darker-ages-uploader/64f2b0aa25611a6903770b03364aea543e54eda0/nkapguard-seller-app/web/index.html`
 - **Schema:** `deploy/seller_app_schema.sql`, applied as the `seller_app_schema` migration.
   Every name is schema-qualified, every table has row-level security on, and the public
   API roles have no access.
+- **Database user:** the function connects as `seller_app_fn`, which Postgres caps at 10
+  connections, and it can only reach the `seller_app` schema (`deploy/seller_app_role.sql`).
+  Each function instance holds at most one connection and closes it after 2 idle seconds,
+  so the seller app can't use up the connections NKAPGUARD needs.
 - **Function files:** `edge/deployed/`. The app itself is `edge/dist/remote.js` at the pinned
   commit, served by jsDelivr.
 

@@ -18,5 +18,10 @@ const esm = (ns: Record<string, unknown>) => ({ ...ns });
     'node:buffer': esm(nodeBuffer),
     'node:crypto': esm(nodeCrypto),
   },
-  defaults: { APP_URL: 'https://rawcdn.githack.com/jlawrantine20-dot/darker-ages-uploader/63755347bba36f22f97310d990c1fabfe11ba6a3/nkapguard-seller-app/web' },
+  defaults: {
+    APP_URL: 'https://rawcdn.githack.com/jlawrantine20-dot/darker-ages-uploader/64f2b0aa25611a6903770b03364aea543e54eda0/nkapguard-seller-app/web',
+    // The seller app's own database user, capped at 10 connections (see deploy/seller_app_role.sql).
+    DB_USER: 'seller_app_fn',
+    DB_PASSWORD: '<set at deploy time; never committed>',
+  },
 };
