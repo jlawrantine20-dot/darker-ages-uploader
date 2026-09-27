@@ -4,6 +4,8 @@ export interface Config {
   port: number;
   publicUrl: string;
   adminToken: string;
+  /** Lets a scheduler call POST /cron/tick and nothing else. Empty turns the endpoint off. */
+  cronSecret: string;
   /** Encrypts sellers' payment keys. Changing it makes stored keys unreadable. */
   appSecret: string;
   dryRun: boolean;
@@ -38,6 +40,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     port: int(env.PORT, 8787),
     publicUrl: env.PUBLIC_URL ?? 'http://localhost:8787',
     adminToken: env.ADMIN_TOKEN ?? '',
+    cronSecret: env.CRON_SECRET ?? '',
     appSecret: env.APP_SECRET ?? (dryRun ? 'dry-run-only-secret' : ''),
     dryRun,
     serviceRateUsd: Number(env.RATE_SERVICE_USD ?? 0),

@@ -209,3 +209,23 @@ describe('changing a shop currency', () => {
     expect(again.map((p: { price_minor: number }) => p.price_minor).sort()).toEqual([15000, 5994].sort());
   });
 });
+
+describe('the scheduler endpoint', () => {
+  it('runs the hold timer only with the cron secret', async () => {
+    const t = await boot({ CRON_SECRET: 'cron-secret-123' });
+    const post = (secret?: string) => t.app.request('/cron/tick', { method: 'POST', headers: secret ? { 'x-cron-secret': secret } : {} });
+    expect((await post()).status).toBe(403);
+    expect((await post('cron-secret-12X')).status).toBe(403);
+    const ok = await post('cron-secret-123');
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toEqual({ sent: 0 });
+    // The secret is not a sign-in: it opens nothing under /api.
+    const api = await t.app.request('/api/sellers', { headers: { authorization: 'Bearer cron-secret-123', 'x-cron-secret': 'cron-secret-123' } });
+    expect(api.status).toBe(401);
+  });
+
+  it('is off when no secret is set', async () => {
+    const t = await boot();
+    expect((await t.app.request('/cron/tick', { method: 'POST', headers: { 'x-cron-secret': '' } })).status).toBe(403);
+  });
+});

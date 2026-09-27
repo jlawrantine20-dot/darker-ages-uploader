@@ -92,11 +92,12 @@ const ctx = { db, channel, config };
 const root = new Hono();
 root.route(`/${FUNCTION}`, createApp(ctx));
 
-// Edge functions have no timer, so expired holds are passed on at most once a minute when
-// requests come in. An external cron hitting POST /api/tick with the admin token keeps it exact.
+// Edge functions have no timer. A pg_cron job calls POST /cron/tick every minute (see
+// deploy/seller_app_cron.sql); as a backstop, other requests also pass expired holds on at
+// most once a minute. Two runs at once are safe: each restock is locked while it is handled.
 let lastTick = 0;
 Deno.serve((req: Request) => {
-  if (Date.now() - lastTick > 60_000) {
+  if (!new URL(req.url).pathname.endsWith('/cron/tick') && Date.now() - lastTick > 60_000) {
     lastTick = Date.now();
     const run = tick(ctx, new Date()).catch((err) => console.error('tick failed', err));
     // @ts-ignore EdgeRuntime is provided by Supabase

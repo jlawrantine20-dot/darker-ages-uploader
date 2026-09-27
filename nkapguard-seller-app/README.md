@@ -143,7 +143,7 @@ operator.
 | GET | `/api/chats`, `/api/chats/:id` | Inbox, and one conversation |
 | POST | `/api/chats/:id/reply` | Replies, only inside WhatsApp's 24-hour window |
 | GET | `/api/insights`, `/api/consents` | Sales, fees, demand, refunds due; the consent log |
-| POST | `/api/tick` | Expires holds and passes units on. The server does this every minute |
+| POST | `/api/tick` | Expires holds and passes units on. The server does this every minute (on Supabase, pg_cron calls `/cron/tick`) |
 
 ## Going live
 
@@ -267,5 +267,9 @@ until WhatsApp is connected.
 - `APP_SECRET`: optional. It defaults to a key derived from the service role key; set it
   before sellers save payment keys.
 
-Expired holds are passed on when requests come in, at most once a minute. For exact timing,
-have a scheduler call `POST /api/tick` with the admin token every minute.
+Expired holds are passed on every minute by a pg_cron job (`deploy/seller_app_cron.sql`)
+that calls `POST /cron/tick` through pg_net. That endpoint needs the `x-cron-secret` header,
+kept in Supabase Vault as `seller_app_cron_secret` and given to the function as
+`CRON_SECRET`; it can run the hold timer and nothing else. Other requests also pass holds
+on, at most once a minute, as a backstop. To pause the job:
+`select cron.unschedule('seller-app-tick');`

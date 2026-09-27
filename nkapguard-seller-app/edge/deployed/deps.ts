@@ -23,5 +23,7 @@ const esm = (ns: Record<string, unknown>) => ({ ...ns });
     // The seller app's own database user, capped at 10 connections (see deploy/seller_app_role.sql).
     DB_USER: 'seller_app_fn',
     DB_PASSWORD: '<set at deploy time; never committed>',
+    // Must match the Vault secret the pg_cron job sends (see deploy/seller_app_cron.sql).
+    CRON_SECRET: '<set at deploy time; never committed>',
   },
 };

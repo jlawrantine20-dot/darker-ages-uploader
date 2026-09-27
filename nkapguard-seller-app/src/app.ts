@@ -1,3 +1,5 @@
+import { Buffer } from 'node:buffer';
+import { timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
 import type { Context, Next } from 'hono';
 import { cors } from 'hono/cors';
@@ -519,6 +521,15 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     );
     const num = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, Number(v)]));
     return c.json({ monthStart, sales: num(sales), spend: num(spend), demand, refunds });
+  });
+
+  // For a scheduler (Supabase pg_cron): a secret that can only pass expired holds down the
+  // line, so the scheduler never holds the operator's admin token.
+  app.post('/cron/tick', async (c) => {
+    const given = Buffer.from(c.req.header('x-cron-secret') ?? '');
+    const secret = Buffer.from(config.cronSecret);
+    if (!secret.length || given.length !== secret.length || !timingSafeEqual(given, secret)) return c.json({ error: 'Not allowed.' }, 403);
+    return c.json({ sent: (await tick(ctx, clock())).length });
   });
 
   app.post('/api/tick', async (c) => {
