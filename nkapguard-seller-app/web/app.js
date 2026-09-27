@@ -169,6 +169,22 @@ function shopValues(form) {
   const country = v('s-country') === '__other' ? v('s-other').toUpperCase() : v('s-country');
   return { country, language: v('s-lang'), currency: v('s-currency').toUpperCase(), timezone: v('s-tz') };
 }
+/** Settings: changing the currency asks for the exchange rate so prices keep their value. */
+function syncRate(form) {
+  const wrap = $('#s-rate-wrap', form);
+  if (!wrap) return;
+  const from = wrap.dataset.from;
+  const to = $('#s-currency', form).value.trim().toUpperCase();
+  wrap.hidden = !/^[A-Z]{3}$/.test(to) || to === from;
+  if (wrap.hidden) return;
+  $('#s-rate-label', form).textContent = `How many ${to} make 1 ${from}?`;
+  const ex = Number($('#s-rate', form).value) || null;
+  $('#s-rate-hint', form).textContent = ex
+    ? `1 ${from} = ${ex.toLocaleString()} ${to}. A ${priceIn(10, from)} item becomes ${priceIn(10 * ex, to)}.`
+    : `Your prices will be converted with this rate. For example, 1 USD = 600 XAF.`;
+}
+const priceIn = (major, cur) => { try { return new Intl.NumberFormat('en', { style: 'currency', currency: cur, maximumFractionDigits: exponent(cur) }).format(major); } catch { return `${major} ${cur}`; } };
+document.addEventListener('input', (e) => { if (e.target.matches('#s-currency, #s-rate')) syncRate(e.target.closest('form')); });
 document.addEventListener('change', async (e) => {
   if (!e.target.matches('[data-country]')) return;
   const form = e.target.closest('form');
@@ -177,6 +193,7 @@ document.addEventListener('change', async (e) => {
   const m = (await markets()).countries.find((c) => c.code === e.target.value);
   if (m) { $('#s-currency', form).value = m.currency; $('#s-tz', form).value = m.timezone; $('#s-lang', form).value = m.language; }
   if (other) { $('#s-currency', form).value = ''; $('#s-other', form).focus(); }
+  syncRate(form);
 });
 
 views.chats = async () => {
@@ -416,6 +433,7 @@ views.settings = async () => {
     <form class="form" data-form="shop" style="padding-top:4px"${owner ? '' : ' hidden'}>
       <label>Shop name<input id="s-name" value="${esc(s.name)}" required></label>
       ${shopFields(mk, s)}
+      <label id="s-rate-wrap" data-from="${esc(s.currency)}" hidden><span id="s-rate-label">Exchange rate</span><input id="s-rate" type="number" min="0" step="any"><span class="hint" id="s-rate-hint"></span></label>
       <p class="err" hidden></p>
       <button class="btn block">Save shop</button>
     </form>
@@ -564,9 +582,12 @@ document.addEventListener('submit', async (e) => {
         location.hash = '#/products';
         return;
       }
-      case 'shop':
-        setSeller(await api(`/api/sellers/${sellerId()}`, { method: 'PATCH', body: { name: val('s-name'), ...shopValues(form) } }));
-        toast('Shop saved');
+      case 'shop': {
+        const rateWrap = $('#s-rate-wrap', form);
+        const rate = rateWrap && !rateWrap.hidden ? Number(val('s-rate')) : undefined;
+        setSeller(await api(`/api/sellers/${sellerId()}`, { method: 'PATCH', body: { name: val('s-name'), ...shopValues(form), rate } }));
+        toast(rate ? 'Shop saved and prices converted' : 'Shop saved');
+      }
         return route(true);
       case 'payments': {
         const provider = val('pay-provider');

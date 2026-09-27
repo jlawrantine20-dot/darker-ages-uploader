@@ -4,7 +4,7 @@ import { cors } from 'hono/cors';
 import type { MiddlewareHandler } from 'hono';
 import { parseWebhook, verifyMetaSignature } from './channels/whatsapp.js';
 import { LANGS, MARKETS, RATE_GROUPS, ratesFor } from './domain/markets.js';
-import { toMinor } from './domain/money.js';
+import { toMajor, toMinor } from './domain/money.js';
 import { whatsappWindowOpen } from './domain/windows.js';
 import { PROVIDER_INFO } from './payments/providers.js';
 import type { Ctx } from './services/context.js';
@@ -282,11 +282,28 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
   app.patch('/api/sellers/:id', async (c) => {
     await guard(c, c.req.param('id'), 'owner');
     const current = await sellerOr404(c.req.param('id'));
-    const v = resolveSellerInput(await c.req.json(), current);
-    const [row] = await db.query<Seller>(
-      'update sellers set name = $2, country = $3, currency = $4, language = $5, timezone = $6 where id = $1 returning *',
-      [current.id, v.name, v.country, v.currency, v.language, v.timezone],
-    );
+    const b = await c.req.json<{ rate?: number }>();
+    const v = resolveSellerInput(b, current);
+    const row = await db.tx(async (q) => {
+      // Prices are stored in the currency's smallest unit, so a new currency needs the
+      // prices converted too, or $25 (2500 cents) would turn into 2,500 FCFA.
+      if (v.currency !== current.currency) {
+        const [{ n }] = await q.query<{ n: number }>('select count(*)::int as n from products where seller_id = $1', [current.id]);
+        const rate = Number(b.rate);
+        if (n > 0 && !(rate > 0)) throw new InputError(`Enter how many ${v.currency} make 1 ${current.currency}, so your prices can be converted.`);
+        if (n > 0) {
+          const products = await q.query<{ id: string; price_minor: number }>('select id, price_minor from products where seller_id = $1', [current.id]);
+          for (const p of products) {
+            await q.query('update products set price_minor = $2 where id = $1', [p.id, toMinor(toMajor(p.price_minor, current.currency) * rate, v.currency)]);
+          }
+        }
+      }
+      const [s] = await q.query<Seller>(
+        'update sellers set name = $2, country = $3, currency = $4, language = $5, timezone = $6 where id = $1 returning *',
+        [current.id, v.name, v.country, v.currency, v.language, v.timezone],
+      );
+      return s;
+    });
     return c.json(publicSeller(row));
   });
 

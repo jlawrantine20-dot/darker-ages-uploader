@@ -181,3 +181,31 @@ describe('shop teams', () => {
     expect((await t.call('GET', `/api/chats?sellerId=${shop.id}`, undefined, staff)).status).toBe(404);
   });
 });
+
+describe('changing a shop currency', () => {
+  it('converts prices with the exchange rate the owner gives', async () => {
+    const t = await boot();
+    const owner = await t.signIn('677000001');
+    const shop = (await t.call('POST', '/api/sellers', { name: 'Hair Plug', waPhoneNumberId: 'pn-1', country: 'US' }, owner)).body;
+    expect(shop.currency).toBe('USD');
+    await t.call('POST', '/api/products', { sellerId: shop.id, name: 'Claw Clip', price: 25 }, owner);
+    await t.call('POST', '/api/products', { sellerId: shop.id, name: 'Bonnet', price: 9.99 }, owner);
+
+    // Without a rate the prices would silently change value, so it is refused.
+    const noRate = await t.call('PATCH', `/api/sellers/${shop.id}`, { name: 'Hair Plug', country: 'CM', currency: 'XAF' }, owner);
+    expect(noRate.status).toBe(400);
+    expect(noRate.body.error).toMatch(/how many XAF make 1 USD/);
+
+    const ok = await t.call('PATCH', `/api/sellers/${shop.id}`, { name: 'Hair Plug', country: 'CM', currency: 'XAF', rate: 600 }, owner);
+    expect(ok.body).toMatchObject({ currency: 'XAF', country: 'CM' });
+    const products = (await t.call('GET', `/api/products?sellerId=${shop.id}`, undefined, owner)).body;
+    const prices = Object.fromEntries(products.map((p: { name: string; price_minor: number }) => [p.name, p.price_minor]));
+    // XAF has no subunit: $25 × 600 = 15,000 FCFA; $9.99 × 600 = 5,994 FCFA.
+    expect(prices).toEqual({ 'Claw Clip': 15000, Bonnet: 5994 });
+
+    // Saving again without changing the currency leaves prices alone and needs no rate.
+    expect((await t.call('PATCH', `/api/sellers/${shop.id}`, { name: 'Hair Plug 2' }, owner)).status).toBe(200);
+    const again = (await t.call('GET', `/api/products?sellerId=${shop.id}`, undefined, owner)).body;
+    expect(again.map((p: { price_minor: number }) => p.price_minor).sort()).toEqual([15000, 5994].sort());
+  });
+});
