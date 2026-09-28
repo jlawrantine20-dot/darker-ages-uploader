@@ -4,4 +4,4 @@
 // The app does its own authentication (WhatsApp sign-in codes, webhook signatures), so
 // Supabase JWT verification is off for this function.
 import './deps.ts';
-import 'https://cdn.jsdelivr.net/gh/jlawrantine20-dot/darker-ages-uploader@15f6119eb52d6a23136296d351a11760a705d664/nkapguard-seller-app/edge/dist/remote.js';
+import 'https://cdn.jsdelivr.net/gh/jlawrantine20-dot/darker-ages-uploader@c6f6eeacaf64c96c3ca11db823b2ce114d15e958/nkapguard-seller-app/edge/dist/remote.js';
