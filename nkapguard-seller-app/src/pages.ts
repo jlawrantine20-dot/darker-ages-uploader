@@ -28,10 +28,10 @@ const TEXT = {
     tryAgain: 'Réessayez dans une minute.',
     thanks: 'Merci !',
     thanksBody: 'Si votre paiement est passé, vous recevrez une confirmation sur WhatsApp sous peu.',
-    testTitle: 'Paiement test',
+    testTitle: 'Paiement de test',
     testBody: "Cette boutique est en mode test. Aucun argent n'est débité.",
     testPay: 'Payer',
-    testDone: 'Paiement test reçu',
+    testDone: 'Paiement de test reçu',
   },
 };
 

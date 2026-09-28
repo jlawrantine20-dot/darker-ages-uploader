@@ -61,7 +61,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       templates: {
         hold: env.WA_TEMPLATE_HOLD ?? 'restock_hold_v1',
         race: env.WA_TEMPLATE_RACE ?? 'restock_race_v1',
-        soldOut: env.WA_TEMPLATE_SOLD_OUT ?? 'restock_sold_out_v1',
+        soldOut: env.WA_TEMPLATE_SOLD_OUT ?? 'restock_sold_out_v2',
         paid: env.WA_TEMPLATE_PAID ?? 'payment_received_v1',
         refund: env.WA_TEMPLATE_REFUND ?? 'payment_refund_v1',
         priceDrop: env.WA_TEMPLATE_PRICE_DROP ?? 'price_drop_v1',

@@ -94,14 +94,14 @@ const en: Sentences = {
   orderLink: (a) =>
     `Great, ${a.quantity > 1 ? `${a.quantity} × ${a.label} are` : `the ${a.label} is`} yours! We're holding ${a.quantity > 1 ? 'them' : 'it'} for you until ${a.until}. Pay ${a.price}${a.delivery} here to confirm your order:\n${a.url}`,
   orderManual: (a) =>
-    `Great, noted! We're keeping ${a.quantity > 1 ? `${a.quantity} × ${a.label}` : `the ${a.label}`} aside for you until ${a.until}. We'll message you shortly to arrange payment (${a.price}${a.delivery}).`,
+    `Great, noted! We're keeping ${a.quantity > 1 ? `${a.quantity} × ${a.label}` : `the ${a.label}`} aside for you until ${a.until}. We'll message you shortly to arrange payment of ${a.price}${a.delivery}.`,
   orderAgain: (a) => `Your ${a.label} is already held for you until ${a.until}. Pay ${a.price}${a.delivery} here to confirm:\n${a.url}`,
   priceDrop: (a) => `Hi ${a.first}, good news: the ${a.label} is now ${a.price} (it was ${a.oldPrice}). Reply YES to order it. (Reply STOP to opt out.)`,
   priceAlertOffer: (a) =>
     `Hi ${a.first}, the price of the ${a.label} is fixed for now (${a.price}). Want us to tell you here if it drops? Just reply YES. (Reply STOP anytime to opt out.)`,
   priceAlertJoined: (a) => `Noted! We'll tell you here if the price of the ${a.label} drops. Reply STOP anytime to opt out.`,
   deliveryFee: (a) => (a.fee === 'free' ? `${a.zone}: it's free.` : `Delivery to ${a.zone} is ${a.fee}.`),
-  deliveryZones: (a) => `We deliver to ${a.zonesAnd}. Where should we deliver to?`,
+  deliveryZones: (a) => `Our delivery options: ${a.zonesAnd}. Which one suits you?`,
   askZone: (a) => `Great! Where should we deliver to? ${a.zonesOr}.`,
   orderShort: (a) => `We only have ${a.stock} left of the ${a.label}. How many would you like?`,
   followUp: (a) =>
@@ -138,7 +138,7 @@ const fr: Sentences = {
   orderLink: (a) =>
     `Parfait, ${a.quantity > 1 ? `c'est noté pour ${a.quantity} × ${a.label}` : `le modèle ${a.label} est à vous`} ! Nous vous ${a.quantity > 1 ? 'les' : 'le'} réservons jusqu'à ${a.until}. Réglez ${a.price}${a.delivery} ici pour confirmer votre commande :\n${a.url}`,
   orderManual: (a) =>
-    `Parfait, c'est noté ! Nous vous mettons ${a.quantity > 1 ? `${a.quantity} × ${a.label}` : `le modèle ${a.label}`} de côté jusqu'à ${a.until}. Nous vous écrivons très vite pour le paiement (${a.price}${a.delivery}).`,
+    `Parfait, c'est noté ! Nous vous mettons ${a.quantity > 1 ? `${a.quantity} × ${a.label}` : `le modèle ${a.label}`} de côté jusqu'à ${a.until}. Nous vous écrivons très vite pour le paiement de ${a.price}${a.delivery}.`,
   orderAgain: (a) => `Le modèle ${a.label} vous est déjà réservé jusqu'à ${a.until}. Réglez ${a.price}${a.delivery} ici pour confirmer :\n${a.url}`,
   priceDrop: (a) =>
     `Bonjour ${a.first}, bonne nouvelle : le modèle ${a.label} passe à ${a.price} (au lieu de ${a.oldPrice}). Répondez OUI pour le commander. (Répondez STOP pour ne plus recevoir de messages.)`,
@@ -146,7 +146,7 @@ const fr: Sentences = {
     `Bonjour ${a.first} ! Le prix du modèle ${a.label} est fixe pour le moment (${a.price}). Voulez-vous que nous vous prévenions ici s'il baisse ? Répondez simplement OUI. (Répondez STOP à tout moment pour ne plus recevoir de messages.)`,
   priceAlertJoined: (a) => `C'est noté ! Nous vous préviendrons ici si le prix du modèle ${a.label} baisse. Pour ne plus recevoir de messages, répondez STOP.`,
   deliveryFee: (a) => (a.fee === 'gratuit' ? `${a.zone} : c'est gratuit.` : `La livraison à ${a.zone} coûte ${a.fee}.`),
-  deliveryZones: (a) => `Nous livrons à ${a.zonesAnd}. Où faut-il vous livrer ?`,
+  deliveryZones: (a) => `Nos options de livraison : ${a.zonesAnd}. Laquelle vous convient ?`,
   askZone: (a) => `Parfait ! Où faut-il vous livrer ? ${a.zonesOr}.`,
   orderShort: (a) => `Il ne nous en reste que ${a.stock} pour le modèle ${a.label}. Combien en voulez-vous ?`,
   followUp: (a) =>
@@ -163,7 +163,7 @@ const fr: Sentences = {
   race: (a) =>
     `Bonjour ${a.first}, bonne nouvelle : le modèle ${a.label} est de retour ! Arrivage : ${a.units}. Personnes prévenues : ${a.told}. Le premier à régler ${a.price} l'emporte : ${a.url} (Répondez STOP pour quitter la liste.)`,
   soldOut: (a) =>
-    `Désolés ${a.first}, le modèle ${a.label} est parti avant votre paiement. Vous restez sur la liste et nous vous préviendrons au prochain arrivage.`,
+    `Nous sommes désolés, ${a.first} : le modèle ${a.label} a été vendu avant votre paiement. Vous restez sur la liste et nous vous préviendrons au prochain arrivage.`,
   paid: (a) => `Paiement bien reçu, merci ! Le modèle ${a.label} est à vous. Nous revenons très vite vers vous pour la livraison.`,
   refund: (a) =>
     `Nous avons bien reçu votre paiement, mais le dernier modèle ${a.label} a été vendu quelques instants plus tôt. Nous vous remboursons intégralement, et vous gardez votre place sur la liste.`,

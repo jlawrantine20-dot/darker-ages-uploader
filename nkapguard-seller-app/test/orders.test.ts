@@ -133,7 +133,7 @@ describe('Ordering in the chat', () => {
     await handleInbound(env.ctx, inbound(wa(8), 'vous avez le claw clip ponytail noir ?', T0, 'Carine Fouda'));
     const r = await handleInbound(env.ctx, inbound(wa(8), "d'accord je le prends", at(1)));
     expect(r.action).toBe('ordered_manual');
-    expect(last()).toBe(`Parfait, c'est noté ! Nous vous mettons le modèle 12" Claw Clip Ponytail noir de côté jusqu'à 11:01. Nous vous écrivons très vite pour le paiement (${formatMoney(15000, 'XAF', 'fr', 'CM')}).`);
+    expect(last()).toBe(`Parfait, c'est noté ! Nous vous mettons le modèle 12" Claw Clip Ponytail noir de côté jusqu'à 11:01. Nous vous écrivons très vite pour le paiement de ${formatMoney(15000, 'XAF', 'fr', 'CM')}.`);
     const [{ id }] = await env.db.query<{ id: string }>('select id from orders');
     expect((await markOrderPaid(env.ctx, id, at(30))).outcome).toBe('paid');
     expect((await orders())[0]).toMatchObject({ status: 'paid', paid_via: 'manual' });

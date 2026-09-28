@@ -38,7 +38,7 @@ describe('Delivery areas', () => {
     expect((await handleInbound(env.ctx, inbound(wa(1), "La livraison à Bonamoussadi c'est combien ?", T0))).action).toBe('delivery_fee');
     expect(last()).toBe(`La livraison à Bonamoussadi coûte ${fcfa(1500)}.`);
     await handleInbound(env.ctx, inbound(wa(2), 'vous livrez ?', T0));
-    expect(last()).toBe(`Nous livrons à Retrait en boutique (gratuit), Akwa (${fcfa(1000)}) et Bonamoussadi (${fcfa(1500)}). Où faut-il vous livrer ?`);
+    expect(last()).toBe(`Nos options de livraison : Retrait en boutique (gratuit), Akwa (${fcfa(1000)}) et Bonamoussadi (${fcfa(1500)}). Laquelle vous convient ?`);
     await handleInbound(env.ctx, inbound(wa(2), 'je passe récupérer', at(1)));
     expect(last()).toBe("Retrait en boutique : c'est gratuit.");
   });

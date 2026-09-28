@@ -43,9 +43,9 @@ const MESSAGES = {
     fr: () => "Une boutique doit avoir au moins un propriétaire. Nommez d'abord quelqu'un d'autre propriétaire.",
   },
   country_code: { en: () => 'The country must be a two-letter code, like CM or NG.', fr: () => 'Le pays doit être un code à deux lettres, comme CM ou NG.' },
-  currency_for: { en: (p: P) => `Choose a currency for ${p.country}, like XAF or USD.`, fr: (p: P) => `Choisissez une devise pour ${p.country}, comme XAF ou USD.` },
+  currency_for: { en: (p: P) => `Choose a currency for ${p.country}, like XAF or USD.`, fr: (p: P) => `Choisissez une devise pour ce pays (${p.country}), par exemple XAF ou USD.` },
   language_invalid: { en: () => 'Choose French, English or both.', fr: () => "Choisissez le français, l'anglais ou les deux." },
-  timezone_for: { en: (p: P) => `Choose a time zone for ${p.country}, like Africa/Douala.`, fr: (p: P) => `Choisissez un fuseau horaire pour ${p.country}, comme Africa/Douala.` },
+  timezone_for: { en: (p: P) => `Choose a time zone for ${p.country}, like Africa/Douala.`, fr: (p: P) => `Choisissez un fuseau horaire pour ce pays (${p.country}), par exemple Africa/Douala.` },
   shop_name: { en: () => 'Give the shop a name.', fr: () => 'Donnez un nom à la boutique.' },
   slug_invalid: {
     en: () => 'The shop link can use lowercase letters, numbers and dashes, 3 to 40 characters, like hair-plug.',
@@ -68,7 +68,7 @@ const MESSAGES = {
   slug_taken: { en: (p: P) => `The link "${p.slug}" is taken. Try another.`, fr: (p: P) => `Le lien « ${p.slug} » est déjà pris. Essayez-en un autre.` },
   product_required: { en: () => 'A product needs a name and a price.', fr: () => 'Un produit doit avoir un nom et un prix.' },
   stock_whole: { en: () => 'Stock must be a whole number, 0 or more.', fr: () => 'Le stock doit être un nombre entier, 0 ou plus.' },
-  price_min: { en: () => 'The price must be 0 or more.', fr: () => 'Le prix doit être de 0 ou plus.' },
+  price_min: { en: () => 'The price must be 0 or more.', fr: () => 'Le prix ne peut pas être négatif.' },
   type_message: { en: () => 'Type a message first.', fr: () => "Écrivez d'abord un message." },
   message_too_long: {
     en: (p: P) => `${p.app} messages can be at most ${p.limit} characters.`,
@@ -81,7 +81,7 @@ const MESSAGES = {
   },
   from_text_required: { en: () => 'Enter who is writing and their message.', fr: () => "Indiquez qui écrit et son message." },
   connect_first: { en: (p: P) => `Connect ${p.channel} in Settings first.`, fr: (p: P) => `Connectez d'abord ${p.channel} dans les Réglages.` },
-  phone_for_country: { en: (p: P) => `That doesn't look like a valid phone number for ${p.country}.`, fr: (p: P) => `Ce numéro ne semble pas valide pour ${p.country}.` },
+  phone_for_country: { en: (p: P) => `That doesn't look like a valid phone number for ${p.country}.`, fr: (p: P) => `Ce numéro ne semble pas valide pour ce pays (${p.country}).` },
   order_not_found: { en: () => "This order doesn't exist or was deleted.", fr: () => "Cette commande n'existe pas ou a été supprimée." },
   order_closed: { en: () => 'This order is already closed.', fr: () => 'Cette commande est déjà clôturée.' },
   push_invalid: { en: () => "This browser didn't give a valid notification address. Try again.", fr: () => "Ce navigateur n'a pas fourni d'adresse de notification valable. Réessayez." },
@@ -99,7 +99,7 @@ const MESSAGES = {
 export type MessageKey = keyof typeof MESSAGES;
 
 export function render(lang: UiLang, key: MessageKey, params: P = {}): string {
-  return MESSAGES[key][lang](params);
+  return MESSAGES[key][lang](withCountryName(lang, params));
 }
 
 /** The language the app asked for; English when it didn't say. */
@@ -117,3 +117,15 @@ export class AppError extends Error {
 
 /** A problem with what the seller sent. */
 export class InputError extends AppError {}
+
+/** "CM" reads as "Cameroon" / "Cameroun" in the message. */
+function withCountryName(lang: UiLang, params: P): P {
+  const code = params.country;
+  if (typeof code !== 'string' || !/^[A-Z]{2}$/.test(code)) return params;
+  try {
+    const name = new Intl.DisplayNames([lang], { type: 'region' }).of(code);
+    return name && name !== code ? { ...params, country: name } : params;
+  } catch {
+    return params;
+  }
+}

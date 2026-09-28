@@ -291,7 +291,7 @@ describe('restock in race mode', () => {
     env.channel.sent.length = 0;
     await pay(await refFor(wa(1)), at(12));
     expect(env.channel.sent.filter((m) => m.kind === 'template').map((m) => m.to).sort()).toEqual([wa(2), wa(4)]);
-    expect(env.channel.sent.find((m) => m.to === wa(2))?.template?.name).toBe('restock_sold_out_v1');
+    expect(env.channel.sent.find((m) => m.to === wa(2))?.template?.name).toBe('restock_sold_out_v2');
 
     expect((await pay(await refFor(wa(2)), at(13))).outcome).toBe('refund_due');
     const [{ n }] = await env.db.query<{ n: number }>(`select count(*)::int as n from offers where refund_due`);

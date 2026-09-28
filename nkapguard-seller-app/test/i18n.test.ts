@@ -21,6 +21,17 @@ describe('Seller app languages', () => {
       .filter(([, v]) => english.test(v.replace(/Claw Clip Ponytail|claw clip ponytail|Douala Hair Plug|Marron \/ Brown|NKAPGUARD Seller App|DRY_RUN=false|WhatsApp › API Setup/g, '')));
     expect(offenders).toEqual([]);
   });
+
+  it('writes one of something in the singular', () => {
+    const one = { n: 1, units: 1, len: '2 h', left: 1, sold: 1, to: 'XAF', from: 'USD' };
+    for (const lang of ['en', 'fr'] as const) {
+      const bad = Object.entries(DICTS[lang] as Record<string, unknown>)
+        .filter(([, v]) => typeof v === 'function')
+        .map(([k, v]) => [k, String((v as (p: unknown) => string)(one))] as const)
+        .filter(([, v]) => /\b(les|the first) 1\b|\b1 (messages|notes|alertes|alerts|premiers)\b/.test(v));
+      expect(bad).toEqual([]);
+    }
+  });
 });
 
 describe('Error messages follow the app language', () => {
