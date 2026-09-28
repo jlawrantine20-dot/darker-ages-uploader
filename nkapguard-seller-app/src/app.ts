@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { timingSafeEqual } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
 import type { Context, Next } from 'hono';
 import { cors } from 'hono/cors';
@@ -14,7 +14,7 @@ import { InputError } from './services/errors.js';
 import { handleInbound, handleSocialInbound } from './services/inbound.js';
 import { parseMetaWebhook } from './channels/meta.js';
 import { encryptSecret } from './crypto.js';
-import { CHANNEL_NAMES, appBase, channelAvailable, choosePendingPage, completeFacebook, completeInstagram, connectUrl, listPendingPages, refreshInstagramTokens } from './services/channels.js';
+import { CHANNEL_NAMES, appBase, channelAvailable, choosePendingPage, completeFacebook, completeInstagram, connectUrl, deleteMetaUser, listPendingPages, parseSignedRequest, refreshInstagramTokens } from './services/channels.js';
 import { dispatch } from './services/outbound.js';
 import { baseRef, handlePayment, previewRestock, startRestock, tick } from './services/restock.js';
 import { escapeHtml, page, pageText } from './pages.js';
@@ -667,6 +667,27 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     await guard(c, sellerId, 'owner');
     await choosePendingPage(ctx, c.req.param('id'), sellerId, pageId);
     return c.json({ connected: true });
+  });
+
+  // Meta's data deletion and deauthorize callbacks (App settings, and Instagram business login
+  // settings). Both carry a signed_request naming the person; their data is deleted at once.
+  const metaSigned = async (c: Context) => {
+    const form = await c.req.parseBody().catch(() => ({} as Record<string, unknown>));
+    return parseSignedRequest(String(form.signed_request ?? ''), [config.meta.appSecret, config.meta.igAppSecret]);
+  };
+  app.post('/meta/data-deletion', async (c) => {
+    const req = await metaSigned(c);
+    if (!req?.user_id) return c.json({ error: 'Invalid signed_request.' }, 400);
+    await deleteMetaUser(ctx, String(req.user_id));
+    const code = randomBytes(6).toString('hex');
+    console.log(`Meta data deletion ${code}: removed data for a user`);
+    return c.json({ url: `${appBase(config)}/data-deletion.html?code=${code}`, confirmation_code: code });
+  });
+  app.post('/meta/deauthorize', async (c) => {
+    const req = await metaSigned(c);
+    if (!req?.user_id) return c.json({ error: 'Invalid signed_request.' }, 400);
+    await deleteMetaUser(ctx, String(req.user_id));
+    return c.json({ ok: true });
   });
 
   // Instagram and Facebook send the seller back here after they approve (or cancel).

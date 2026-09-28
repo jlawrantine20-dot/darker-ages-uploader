@@ -175,3 +175,35 @@ export async function refreshInstagramTokens(ctx: Ctx, now: Date): Promise<numbe
   }
   return refreshed;
 }
+
+/**
+ * Meta's signed_request: "<signature>.<payload>", both base64url, signed with the app secret
+ * (the Meta app's, or Instagram's for Instagram Login). Returns the payload, or null if no
+ * secret we hold signed it.
+ */
+export function parseSignedRequest(signed: string | undefined, secrets: string[]): { user_id?: string } | null {
+  const [sig, payload] = (signed ?? '').split('.');
+  if (!sig || !payload) return null;
+  const given = Buffer.from(sig, 'base64url');
+  const ok = secrets.filter(Boolean).some((s) => {
+    const expected = createHmac('sha256', s).update(payload).digest();
+    return given.length === expected.length && timingSafeEqual(given, expected);
+  });
+  if (!ok) return null;
+  try {
+    return JSON.parse(Buffer.from(payload, 'base64url').toString());
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A person asked Meta to delete their data, or removed the app from their Instagram or
+ * Facebook account. Delete their chats with every shop (messages, consents and waitlist places
+ * go with them) and any account of theirs a shop connected. Returns how many records went.
+ */
+export async function deleteMetaUser(ctx: Ctx, userId: string): Promise<number> {
+  const chats = await ctx.db.query(`delete from contacts where channel in ('instagram', 'facebook') and wa_id = $1 returning id`, [userId]);
+  const accounts = await ctx.db.query('delete from channel_accounts where external_id = $1 returning id', [userId]);
+  return chats.length + accounts.length;
+}

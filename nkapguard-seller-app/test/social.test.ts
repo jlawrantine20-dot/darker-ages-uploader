@@ -270,3 +270,30 @@ function clientWithApp(now: () => Date) {
   };
   return { call, app };
 }
+
+describe('Meta data deletion callback', () => {
+  const signed = (secret: string, payload: object) => {
+    const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+    return `${createHmac('sha256', secret).update(body).digest('base64url')}.${body}`;
+  };
+
+  it("deletes a person's Instagram chats when Meta asks, and refuses unsigned requests", async () => {
+    await shop();
+    env.ctx.config.meta.appSecret = 'meta-secret';
+    env.ctx.config.appUrl = 'https://seller.example';
+    await handleSocialInbound(env.ctx, dm('instagram', 'igsid-del', 'vous avez le bonnet satin ?'));
+    await handleSocialInbound(env.ctx, dm('instagram', 'igsid-keep', 'vous avez le bonnet satin ?'));
+    const app = createApp(env.ctx);
+    const post = (sr: string) => app.request('/meta/data-deletion', {
+      method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ signed_request: sr }).toString(),
+    });
+
+    expect((await post(signed('wrong-secret', { user_id: 'igsid-del' }))).status).toBe(400);
+    const ok = await post(signed('meta-secret', { algorithm: 'HMAC-SHA256', user_id: 'igsid-del', issued_at: 1 }));
+    const body = await ok.json();
+    expect(body).toEqual({ url: expect.stringMatching(/^https:\/\/seller\.example\/data-deletion\.html\?code=[a-f0-9]{12}$/), confirmation_code: expect.stringMatching(/^[a-f0-9]{12}$/) });
+    const left = await env.db.query<{ wa_id: string }>('select wa_id from contacts');
+    expect(left).toEqual([{ wa_id: 'igsid-keep' }]);
+    expect(await env.db.query(`select 1 from messages m join contacts c on c.id = m.contact_id where c.wa_id = 'igsid-del'`)).toHaveLength(0);
+  });
+});

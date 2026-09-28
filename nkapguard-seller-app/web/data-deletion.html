@@ -14,6 +14,17 @@ h1{font-size:26px;line-height:1.2;margin:0 0 12px}.muted{color:var(--muted)}a{co
 </head>
 <body>
 <main>
+<p id="done" hidden style="background:#DFF3E6;color:#1D7A43;border-radius:12px;padding:12px 16px;font-weight:600"></p>
+<script>
+// Meta sends people here after a deletion request, with its confirmation code.
+(function () {
+  var code = new URLSearchParams(location.search).get('code');
+  if (!code || !/^[a-f0-9]{6,32}$/.test(code)) return;
+  var p = document.getElementById('done');
+  p.textContent = 'Demande ' + code + ' : vos données ont été supprimées. / Request ' + code + ': your data has been deleted.';
+  p.hidden = false;
+})();
+</script>
 <section lang="fr">
 <h1>Supprimer vos données</h1>
 <ol>

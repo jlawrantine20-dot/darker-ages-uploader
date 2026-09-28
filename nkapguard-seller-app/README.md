@@ -207,6 +207,13 @@ Setup in the Meta app (developers.facebook.com → NKAPGUARD Seller App):
    accounts with a role on the app can connect and message. That's enough to test with your
    own Instagram account and Page.
 
+Data deletion: in App settings → Basic, set "User data deletion" to **Data deletion callback
+URL** `…/seller-app/meta/data-deletion`. In Instagram business login settings, use the same
+URL for "Data deletion request URL" and `…/seller-app/meta/deauthorize` for "Deauthorize
+callback URL". Both check Meta's signed_request and delete that person's Instagram/Messenger
+chats (with their consents and waitlist places) straight away; the deletion one answers with
+a confirmation code and a status page on seller.nkapguard.com/data-deletion.html.
+
 Instagram tokens last 60 days; the scheduler refreshes them a week before they expire.
 TikTok DMs need TikTok's Business Messaging API and its data-security review, so for now
 sellers put their shop page link in their TikTok bio.
