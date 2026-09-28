@@ -67,10 +67,20 @@ India and Brazil. Any other country works once you enter its currency and time z
   noir"). When it isn't sure, it stays quiet and leaves the reply to you.
 - **Shop page:** each shop gets a public page, `seller.nkapguard.com/shop.html?s=<link name>`,
   listing what it sells and whether each item is in stock (never how many), in French or
-  English. Every item has a WhatsApp button that opens a chat with the question already
-  written ("Bonjour, vous avez le modèle … ?"), which the app answers like any other message.
+  English. Every item in stock has an order button that opens WhatsApp with the order already
+  written ("Bonjour, je voudrais commander le modèle …"); sold-out items have an alert button.
+  The app answers these like any other message.
   Settings shows the link and a QR code to print. Customers start the chat themselves, which
   keeps the seller within WhatsApp's rules on contacting people.
+- **Ordering in the chat:** an in-stock answer ends with "reply YES to order". A yes, or
+  "je le prends" / "I'll take two" / "make I buy am", places an order:
+  - The units are held for 1 hour, so nobody else can buy them while the customer pays.
+  - With a payment provider connected, the customer gets a payment link. Paid: stock goes
+    down and they get a confirmation. Unpaid after an hour: the units go back on sale.
+  - Asking for more than is left gets "we only have N left, how many would you like?".
+  - Without a provider, the customer is told the shop will contact them about payment, and
+    the seller marks the order paid by hand (cash, or mobile money sent to their number).
+  - A payment that lands after the hold ended and the units sold is flagged for refund.
 - **Consent:** a clear yes ("yes", "oui", "d'accord") is recorded with the customer's exact
   words and the time. Hedged replies ("oui mais c'est combien ?") don't count. STOP (or
   "arrêter") removes them from every list.
@@ -91,11 +101,14 @@ India and Brazil. Any other country works once you enter its currency and time z
   - After that, a message goes out only as an approved template, or it's skipped.
   - Payment confirmations fall back to a template automatically.
 - **Seller app:** at `/app`, mobile first.
-  - Chats, with unread counts and waitlist tags.
+  - In French or English, with a FR/EN switch on every screen.
+  - Chats, with unread counts, waitlist and order tags.
+  - Orders: to be paid (with the hold's countdown), paid, and closed; mark paid by hand or cancel.
   - Replies, blocked with an explanation when the 24-hour window has closed.
   - Stock, and restocks with a live preview of the exact message and the estimated fees.
   - A live restock view showing each hold's countdown.
-  - Insights: sales from alerts, fees, what to reorder, refunds due, and the consent log.
+  - Insights: sales from chat orders and from alerts, fees in the shop's currency, what to
+    reorder, refunds due, and the consent log.
   - Settings for the shop and for payments.
 - **Test mode (the default):** nothing is sent and payments are simulated. The app can load
   a sample shop in the country you pick, and lets you message the shop as a customer.
@@ -285,8 +298,8 @@ in.
 
 ## Not built yet
 
-- **Instagram, Facebook and TikTok DMs:** the data model and inbox are already
-  channel-aware, but these need Meta app review and TikTok Business Messaging API access.
+- **TikTok DMs:** need TikTok Business Messaging API access.
+- **Delivery fees by area** in chat orders.
 - **More languages:** a translation set per language, plus an LLM classifier for messages
   the rule-based matcher misses.
 - **Other providers:** CinetPay and CamPay.

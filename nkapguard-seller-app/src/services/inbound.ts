@@ -1,15 +1,18 @@
 import type { SocialChannel, SocialInbound } from '../channels/meta.js';
 import type { InboundText } from '../channels/whatsapp.js';
 import { parts, productLabel, say } from '../domain/copy.js';
-import { asksAvailability, detectLanguage, detectProduct, fold, isAlertRequest, isConsentYes, isStop, pickVariant, productFamily } from '../domain/intent.js';
+import { asksAvailability, detectLanguage, detectProduct, fold, isAlertRequest, isConsentYes, isOrderRequest, isStop, orderQuantity, pickVariant, productFamily } from '../domain/intent.js';
 import { CONSENT_PROMPT_TTL_MS } from '../domain/windows.js';
 import type { Q } from '../db.js';
 import type { Ctx, DispatchResult, Outbound, Recipient } from './context.js';
 import { appBase } from './channels.js';
 import { dispatch, socialAccount, socialFor } from './outbound.js';
+import { HELD_BY_ORDERS_SQL, createOrder, heldOrder, takesPaymentsOnline } from './orders.js';
 import { fmt, type Seller } from './sellers.js';
 
-export type InboundAction = 'unknown_seller' | 'stopped' | 'joined' | 'already_waiting' | 'offered' | 'in_stock' | 'asked_variant' | 'sold_out' | 'shop_link' | 'unhandled';
+export type InboundAction =
+  | 'unknown_seller' | 'stopped' | 'joined' | 'already_waiting' | 'offered' | 'in_stock' | 'asked_variant' | 'sold_out' | 'shop_link' | 'unhandled'
+  | 'ordered' | 'ordered_manual' | 'order_again' | 'asked_quantity';
 
 interface ContactRow {
   id: string;
@@ -22,6 +25,8 @@ interface ContactRow {
   language: 'en' | 'fr' | null;
   awaiting_choice_name: string | null;
   awaiting_choice_at: Date | null;
+  awaiting_order_product_id: string | null;
+  awaiting_order_at: Date | null;
   channel: string;
 }
 
@@ -34,11 +39,12 @@ interface ProductRow {
   stock: number;
 }
 
-/** Units on the shelf that are not already held for someone on the waitlist. */
+/** Units on the shelf not already held for someone: a waitlister's restock hold or an unpaid chat order. */
 export async function freeStock(q: Q, productId: string): Promise<number> {
   const [row] = await q.query<{ free: number }>(
     `select p.stock - coalesce((select count(*)::int from offers o join restocks r on r.id = o.restock_id
-                                 where r.product_id = p.id and o.status = 'held'), 0) as free
+                                 where r.product_id = p.id and o.status = 'held'), 0)
+                    - ${HELD_BY_ORDERS_SQL} as free
        from products p where p.id = $1`,
     [productId],
   );
@@ -150,7 +156,7 @@ async function handle(ctx: Ctx, seller: Seller, account: AccountRow | null, msg:
       lastInboundAt: contact.last_inbound_at, country: seller.country, language: lang, channel: msg.channel,
     };
     const reply = (body: string): Outbound[] => [{ ...to, kind: 'text', body }];
-    return decide(q, seller, contact, msg, lang, f, reply);
+    return decide(ctx, q, seller, contact, msg, lang, f, reply);
   });
 
   return { action, sent: await dispatch(ctx, outs, msg.at) };
@@ -158,7 +164,7 @@ async function handle(ctx: Ctx, seller: Seller, account: AccountRow | null, msg:
 
 /** What to answer. Waitlists and consent live on WhatsApp; Instagram and Messenger hand off to it. */
 async function decide(
-  q: Q, seller: Seller, contact: ContactRow, msg: Incoming, lang: string, f: ReturnType<typeof fmt>,
+  ctx: Ctx, q: Q, seller: Seller, contact: ContactRow, msg: Incoming, lang: string, f: ReturnType<typeof fmt>,
   reply: (body: string) => Outbound[],
 ): Promise<{ action: InboundAction; outs: Outbound[] }> {
   const whatsapp = msg.channel === 'whatsapp';
@@ -207,12 +213,14 @@ async function decide(
     await q.query('update contacts set awaiting_choice_name = null, awaiting_choice_at = null where id = $1', [contact.id]);
     const free = await freeStock(q, product.id);
     if (free > 0) {
+      // "To order, reply YES": remember what a yes would be for.
+      await q.query('update contacts set awaiting_order_product_id = $2, awaiting_order_at = $3, awaiting_consent_product_id = null, awaiting_consent_at = null where id = $1', [contact.id, product.id, msg.at]);
       return { action: 'in_stock' as const, outs: reply(say(lang, 'inStock', { name: contact.name, product, priceMinor: product.price_minor, stock: free }, f)) };
     }
     if (whatsapp) {
       // "Prévenez-moi quand … revient" (from the shop page or an Instagram hand-off) is a clear yes already.
       if (isAlertRequest(msg.text)) return joinWaitlist(product);
-      await q.query('update contacts set awaiting_consent_product_id = $2, awaiting_consent_at = $3 where id = $1', [contact.id, product.id, msg.at]);
+      await q.query('update contacts set awaiting_consent_product_id = $2, awaiting_consent_at = $3, awaiting_order_product_id = null, awaiting_order_at = null where id = $1', [contact.id, product.id, msg.at]);
       return { action: 'offered' as const, outs: reply(say(lang, 'offerAlert', { name: contact.name, product }, f)) };
     }
     // Instagram and Messenger can't send an alert days later, so the alert moves to WhatsApp.
@@ -222,6 +230,48 @@ async function decide(
       : { action: 'sold_out' as const, outs: reply(say(lang, 'soldOutPlain', { name: contact.name, product }, f)) };
   };
   const catalog = () => q.query<ProductRow>('select * from products where seller_id = $1', [seller.id]);
+
+  /** Hold the units for an hour and send the payment link, or say how many are left. */
+  const placeOrder = async (product: ProductRow, quantity: number) => {
+    const free = await freeStock(q, product.id);
+    const again = await heldOrder(q, contact.id, product.id);
+    const until = (o: { expires_at: Date }) => o.expires_at;
+    const link = (ref: string) => `${ctx.config.publicUrl.replace(/\/$/, '')}/pay/${ref}`;
+    if (again && takesPaymentsOnline(ctx, seller)) {
+      const facts = { product, priceMinor: Number(again.amount_minor), until: until(again), url: link(again.payment_ref) };
+      return { action: 'order_again' as const, outs: reply(say(lang, 'orderAgain', facts, f)) };
+    }
+    if (free <= 0) return answerFor(product);
+    if (quantity > free) {
+      await q.query('update contacts set awaiting_order_product_id = $2, awaiting_order_at = $3 where id = $1', [contact.id, product.id, msg.at]);
+      return { action: 'asked_quantity' as const, outs: reply(say(lang, 'orderShort', { product, stock: free }, f)) };
+    }
+    await q.query('update contacts set awaiting_order_product_id = null, awaiting_order_at = null, awaiting_choice_name = null, awaiting_choice_at = null where id = $1', [contact.id]);
+    const order = await createOrder(q, seller.id, contact.id, product, quantity, msg.channel, msg.at);
+    const facts = { product, quantity, priceMinor: Number(order.amount_minor), until: order.expires_at, url: link(order.payment_ref) };
+    // Without an online payment provider, the seller arranges payment (cash, mobile money transfer) and marks it paid.
+    return takesPaymentsOnline(ctx, seller)
+      ? { action: 'ordered' as const, outs: reply(say(lang, 'orderLink', facts, f)) }
+      : { action: 'ordered_manual' as const, outs: reply(say(lang, 'orderManual', facts, f)) };
+  };
+
+  // "Oui", "je le prends" or "2" right after "to order, reply YES".
+  const orderLive =
+    contact.awaiting_order_product_id &&
+    contact.awaiting_order_at &&
+    msg.at.getTime() - contact.awaiting_order_at.getTime() < CONSENT_PROMPT_TTL_MS;
+  const quantity = orderQuantity(msg.text);
+  if (orderLive && (isConsentYes(msg.text) || isOrderRequest(msg.text) || /^\s*\d{1,2}\s*$/.test(msg.text))) {
+    // "Je prends plutôt le noir" names another product: that one wins.
+    const named = isOrderRequest(msg.text) ? detectProduct(msg.text, await catalog()) : null;
+    const [product] = named ? [named] : await q.query<ProductRow>('select * from products where id = $1', [contact.awaiting_order_product_id]);
+    if (product) return placeOrder(product, quantity ?? 1);
+  }
+  // "Je voudrais commander le modèle … noir" in one message, as the shop page writes it.
+  if (isOrderRequest(msg.text)) {
+    const product = detectProduct(msg.text, await catalog());
+    if (product) return placeOrder(product, quantity ?? 1);
+  }
 
   // A short answer to "which one?" ("jet black", "le noir") picks the variant.
   const choiceLive =
@@ -285,7 +335,7 @@ async function handleComment(
       lastInboundAt: contact.last_inbound_at, country: seller.country, language: lang, channel: msg.channel, commentId: comment.id,
     };
     const reply = (body: string): Outbound[] => [{ ...to, kind: 'text', body }];
-    let decided = await decide(q, seller, contact, msg, lang, f, reply);
+    let decided = await decide(ctx, q, seller, contact, msg, lang, f, reply);
     if (decided.action === 'unhandled') {
       // No product named ("prix ?"): send the shop page, which lists everything with prices.
       if (!seller.slug) return { action: 'ignored' as const, outs: [] as Outbound[] };

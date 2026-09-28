@@ -150,3 +150,39 @@ export function isConsentYes(text: string): boolean {
   if (/\b(but|how much|price|no|not|mais|combien|prix|non|pas)\b/.test(t)) return false;
   return /^(yes|yeah|yea|yep|ok|okay|sure|please do|alert me|notify me|abeg yes|yes o|oui|ouais|ouai|d ?accord|dac|bien sur|volontiers|oui svp|oui stp)\b/.test(t);
 }
+
+/**
+ * The customer wants to buy: "je le prends", "je voudrais commander le modèle …", "I'll take
+ * two", "make I buy am". Questions about ordering ("comment commander ?") count too: the
+ * answer is the same payment link.
+ */
+export function isOrderRequest(text: string): boolean {
+  const t = fold(text).replace(/[’']/g, ' ');
+  return (
+    /\b(je (le |la |les |l |en )?(prends|prend|commande|reserve|achete)|j (en |l )?(prends|achete)|je vais (le |la |les |en )?(prendre|acheter|commander)|je (le |la |les )?(veux|voudrais|souhaite) (le |la |les |l |un |une |\d+ |deux |trois )?|je voudrais (commander|acheter)|commander|reservez[- ]moi|mettez[- ]moi|envoyez[- ]moi le lien)/.test(t) ||
+    /\b(i ?ll take|i will take|i take|i d like to (order|buy)|i would like to (order|buy)|i want to (order|buy)|i want (it|one|this|that|the|two|three|\d+)|can i (order|buy)|place an order|buy (it|one|this|that)|i go take|make i buy|i wan buy|i dey buy|reserve (it|one) for me|send me the (payment )?link)\b/.test(t)
+  );
+}
+
+const NUMBER_WORDS: Record<string, number> = {
+  un: 1, une: 1, deux: 2, trois: 3, quatre: 4, cinq: 5, six: 6, sept: 7, huit: 8, neuf: 9, dix: 10,
+  one: 1, two: 2, three: 3, four: 4, five: 5, seven: 7, eight: 8, nine: 9, ten: 10,
+};
+const NUM = `(\\d{1,2}|${Object.keys(NUMBER_WORDS).join('|')})`;
+
+/**
+ * How many units an order message asks for, or null when it doesn't say. Only numbers next to
+ * an order word or a unit word count, so a product named "20 pouces" is not read as 20.
+ */
+export function orderQuantity(text: string): number | null {
+  const t = fold(text).replace(/[’']/g, ' ').trim();
+  const val = (s: string) => (/^\d+$/.test(s) ? Number(s) : NUMBER_WORDS[s]);
+  const m =
+    t.match(/^(\d{1,2})$/) ??
+    t.match(new RegExp(`\\b(?:prends|prend|prendre|veux|voudrais|commande|commander|achete|take|want|order|buy|need)\\s+(?:en\\s+|les\\s+)?${NUM}\\b`)) ??
+    t.match(new RegExp(`\\b${NUM}\\s*(?:x|pieces?|pcs|unites?|units?|exemplaires?)\\b`)) ??
+    t.match(/\bx\s?(\d{1,2})\b/);
+  if (!m) return null;
+  const n = val(m[1]);
+  return n >= 1 && n <= 50 ? n : null;
+}

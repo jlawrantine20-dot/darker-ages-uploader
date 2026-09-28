@@ -123,6 +123,7 @@ const sellerId = () => get('nkg.seller');
 // ---------- chrome ----------
 const ICON = {
   chats: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>',
+  orders: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M5 8h14l-1 12H6z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>',
   stock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 8l9-4 9 4v8l-9 4-9-4z"/><path d="M3 8l9 4 9-4M12 12v8"/></svg>',
   insights: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 20V11M12 20V4M19 20v-6"/></svg>',
   settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>',
@@ -138,6 +139,7 @@ function setNav(active, unread = 0) {
   const item = (k, href, text, extra = '') => `<a href="${href}" class="${active === k ? 'on' : ''}">${ICON[k]}<span>${text}</span>${extra}</a>`;
   nav.innerHTML =
     item('chats', '#/chats', t('nav.chats'), unread ? `<span class="dot">${unread}</span>` : '') +
+    item('orders', '#/orders', t('nav.orders')) +
     item('stock', '#/products', t('nav.stock')) + item('insights', '#/insights', t('nav.insights')) + item('settings', '#/settings', t('nav.settings'));
 }
 
@@ -256,6 +258,8 @@ views.chats = async () => {
     ${list.map((c) => {
       const tags = c.waiting_for.map((w) => `<span class="tag">${t('chats.waitingFor', { item: label(w) })}</span>`);
       if (c.awaiting_consent) tags.push(`<span class="tag hold">${t('chats.askedAlert')}</span>`);
+      if (c.order_status === 'held') tags.push(`<span class="tag hold">${t('chats.orderHeld')}</span>`);
+      if (c.order_status === 'paid') tags.push(`<span class="tag">${t('chats.orderPaid')}</span>`);
       return `<a class="row" href="#/chat/${esc(c.id)}">
         <span class="av">${initials(c.name ?? c.wa_id)}</span>
         <span style="min-width:0"><span class="name"><span class="n">${esc(who(c))}</span>${chip(c.channel)}</span>
@@ -311,6 +315,36 @@ views.chat = async ([id]) => {
     ${S.dryRun ? `<form class="composer test" data-form="as-this-customer" data-wa="${esc(c.wa_id)}" data-name="${esc(c.name ?? '')}" data-channel="${esc(c.channel)}">
       <input id="as-cust" placeholder="${esc(t('test.replyAs', { name: c.name ? c.name.split(' ')[0] : t('test.customer') }))}" autocomplete="off"><button>${t('chat.send')}</button></form>` : ''}`;
   if (stickToBottom) window.scrollTo(0, document.body.scrollHeight);
+};
+
+/** Orders placed in chats: waiting for payment, paid, or closed. */
+views.orders = async () => {
+  const list = await api(`/api/orders?sellerId=${sellerId()}`);
+  const toPay = list.filter((o) => o.status === 'held');
+  header(t('ord.title'), { sub: t('ord.sub', { n: toPay.length }) });
+  setNav('orders');
+  S.orderFilter ??= 'toPay';
+  const shown = S.orderFilter === 'toPay' ? list.filter((o) => ['held', 'expired', 'refund_due'].includes(o.status)) : S.orderFilter === 'paid' ? list.filter((o) => o.status === 'paid') : list;
+  const f = (k, text) => `<button class="chip ${S.orderFilter === k ? 'on' : ''}" data-ofilter="${k}">${text}</button>`;
+  const pill = (o) => {
+    if (o.status === 'held') return `<span class="pill held">${t('ord.held', { left: mins(Math.round((new Date(o.expires_at) - Date.now()) / 6e4)) })}</span>`;
+    if (o.status === 'paid') return `<span class="pill paid">${t('ord.paid', { at: when(o.paid_at) })}${o.paid_via === 'manual' ? ` · ${t('ord.byHand')}` : ''}</span>`;
+    if (o.status === 'refund_due') return `<span class="pill refund">${t('ord.refund')}</span>`;
+    if (o.status === 'cancelled') return `<span class="pill expired">${t('ord.cancelled')}</span>`;
+    return `<span class="pill expired">${t('ord.expired')}</span>`;
+  };
+  const customer = (o) => who({ channel: o.contact_channel, name: o.name, username: o.username, wa_id: o.wa_id });
+  main.innerHTML = `
+    <p class="note pad" style="margin:0">${t('ord.how')}</p>
+    ${!S.dryRun && !S.seller?.payments_connected ? `<div class="banner">${t('ord.manualNote')}</div>` : ''}
+    <div class="chips">${f('toPay', `${t('ord.toPay')}${toPay.length ? ` · ${toPay.length}` : ''}`)}${f('paid', t('ord.paidTab'))}${f('all', t('ord.all'))}</div>
+    ${shown.map((o) => `<div class="order">
+      <div class="order-top"><a href="#/chat/${esc(o.contact_id)}" class="order-who">${esc(customer(o))}</a>${chip(o.contact_channel)}<span class="order-pill">${pill(o)}</span></div>
+      <div class="order-what"><b>${o.quantity} × ${label({ name: o.product, variant: o.variant })}</b><span class="num">${money(o.amount_minor)}</span></div>
+      <div class="order-when">${when(o.created_at)}</div>
+      ${['held', 'expired'].includes(o.status) ? `<div class="btns"><button class="btn sm" data-order-paid="${esc(o.id)}" data-name="${esc(customer(o))}">${t('ord.markPaid')}</button><button class="btn sm" data-order-cancel="${esc(o.id)}">${t('ord.cancel')}</button></div>` : ''}
+    </div>`).join('')
+      || `<p class="empty">${list.length ? t('ord.nothing') : t('ord.empty')}</p>`}`;
 };
 
 views.products = async () => {
@@ -439,6 +473,8 @@ views.insights = async () => {
   const q = (text) => (lang() === 'fr' ? `« ${text} »` : `“${text}”`);
   main.innerHTML = `
     <div class="tiles">
+      <div><span>${t('ins.chatSales')}</span><b class="num">${money(ins.chatSales?.revenue_minor ?? 0)}</b></div>
+      <div><span>${t('ins.chatOrders')}</span><b class="num">${ins.chatSales?.orders ?? 0}</b></div>
       <div><span>${t('ins.sales')}</span><b class="num">${money(ins.sales.revenue_minor)}</b></div>
       <div><span>${t('ins.orders')}</span><b class="num">${ins.sales.orders}</b></div>
       <div><span>${t('ins.messages')}</span><b class="num">${ins.spend.messages}</b></div>
@@ -575,7 +611,7 @@ document.addEventListener('change', async (e) => {
 const routes = [
   [/^#\/login$/, 'login'], [/^#\/setup$/, 'setup'], [/^#\/chats$/, 'chats'], [/^#\/chat\/([\w-]+)$/, 'chat'], [/^#\/products$/, 'products'],
   [/^#\/products\/new$/, 'newProduct'], [/^#\/product\/([\w-]+)$/, 'product'], [/^#\/restock\/([\w-]+)$/, 'restock'],
-  [/^#\/insights$/, 'insights'], [/^#\/settings$/, 'settings'],
+  [/^#\/insights$/, 'insights'], [/^#\/settings$/, 'settings'], [/^#\/orders$/, 'orders'],
 ];
 async function route(quiet = false) {
   let hash = location.hash || '#/chats';
@@ -605,7 +641,7 @@ window.addEventListener('hashchange', () => route());
 // while the tab is visible: every refresh is a round trip to the database.
 setInterval(() => {
   const busy = document.activeElement?.matches('input, textarea, select') || S.confirm;
-  const live = /^#\/(chats|chat\/|restock\/)/.test(location.hash);
+  const live = /^#\/(chats|chat\/|restock\/|orders)/.test(location.hash);
   if (live && !busy && document.visibilityState === 'visible' && sellerId() && get('nkg.token')) route(true);
 }, 15000);
 
@@ -619,8 +655,19 @@ document.addEventListener('click', (e) => {
 });
 
 document.addEventListener('click', async (e) => {
-  const el = e.target.closest('[data-pick],[data-filter],[data-cfg],[data-mode],[data-hold],[data-act],[data-pay],[data-remove-member]');
+  const el = e.target.closest('[data-pick],[data-filter],[data-ofilter],[data-order-paid],[data-order-cancel],[data-cfg],[data-mode],[data-hold],[data-act],[data-pay],[data-remove-member]');
   if (!el) return;
+  if (el.dataset.ofilter) { S.orderFilter = el.dataset.ofilter; return route(true); }
+  if (el.dataset.orderPaid) {
+    if (!confirm(t('ord.markPaidAsk', { name: el.dataset.name }))) return;
+    try { await api(`/api/orders/${el.dataset.orderPaid}/paid`, { method: 'POST' }); toast(t('ord.markedPaid')); } catch (err) { toast(err.message); }
+    return route(true);
+  }
+  if (el.dataset.orderCancel) {
+    if (!confirm(t('ord.cancelAsk'))) return;
+    try { await api(`/api/orders/${el.dataset.orderCancel}/cancel`, { method: 'POST' }); toast(t('ord.cancelledToast')); } catch (err) { toast(err.message); }
+    return route(true);
+  }
   if (el.dataset.pick) { set('nkg.seller', el.dataset.pick); setSeller(null); return; }
   if (el.dataset.filter) { S.chatFilter = el.dataset.filter; return route(true); }
   if (el.dataset.removeMember) {

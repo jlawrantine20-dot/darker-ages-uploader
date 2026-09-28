@@ -43,7 +43,7 @@ a{color:var(--accent)}
 .back{border:0;background:var(--surface-2);width:36px;height:36px;border-radius:50%;font-size:20px;line-height:1;flex:none;text-decoration:none;color:var(--ink);display:grid;place-items:center}
 main{flex:1;padding-bottom:84px}
 main:focus{outline:none}
-.nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:560px;display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line);background:var(--surface);padding:6px 8px calc(10px + env(safe-area-inset-bottom,0px));z-index:5}
+.nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:560px;display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--line);background:var(--surface);padding:6px 8px calc(10px + env(safe-area-inset-bottom,0px));z-index:5}
 .nav a{padding:6px 4px;border-radius:10px;font-size:12px;font-weight:600;color:var(--muted);display:grid;justify-items:center;gap:2px;text-decoration:none;position:relative}
 .nav a svg{width:22px;height:22px}
 .nav a.on{color:var(--accent)}
@@ -170,3 +170,12 @@ details.test .form{padding:0 12px 12px}
 .langtog{flex:none;display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--surface-2)}
 .langtog button{border:0;background:none;color:var(--muted);font:600 12px/1 var(--body);padding:8px 10px;min-width:38px;cursor:pointer}
 .langtog button[aria-pressed="true"]{background:var(--ink);color:var(--surface)}
+/* Orders */
+.order{padding:14px 16px;border-bottom:1px solid var(--line);display:grid;gap:6px}
+.order-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.order-who{font-weight:700;color:var(--ink);text-decoration:none}
+.order-pill{margin-left:auto}
+.order-what{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+.order-what b{font-weight:600;min-width:0}
+.order-when{font-size:12.5px;color:var(--muted)}
+.order .btns{margin:4px 0 0}

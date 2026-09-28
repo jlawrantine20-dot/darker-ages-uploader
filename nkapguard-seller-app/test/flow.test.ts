@@ -65,7 +65,7 @@ describe('chat to waitlist', () => {
     expect(env.channel.sent.at(-1)?.body).toContain("Vous êtes n°1 sur la liste d'attente");
 
     await handleInbound(env.ctx, inbound(wa(2), 'la claw clip ponytail noir est dispo ?', at(2), 'Paul'));
-    expect(env.channel.sent.at(-1)?.body).toBe(`Bonjour Paul ! Oui, le modèle 12" Claw Clip Ponytail noir est disponible au prix de ${formatMoney(15000, 'XAF', 'fr', 'CM')}. Il nous en reste 6.`);
+    expect(env.channel.sent.at(-1)?.body).toBe(`Bonjour Paul ! Oui, le modèle 12" Claw Clip Ponytail noir est disponible au prix de ${formatMoney(15000, 'XAF', 'fr', 'CM')}. Il nous en reste 6. Pour le commander, répondez simplement OUI.`);
   });
 
   it('answers each customer in the language they write in', async () => {
@@ -122,7 +122,7 @@ describe('chat to waitlist', () => {
     env = await setup();
     const r = await handleInbound(env.ctx, inbound(wa(1), 'una get the jet black claw clip?', T0, 'Tunde'));
     expect(r.action).toBe('in_stock');
-    expect(env.channel.sent.at(-1)?.body).toBe('Hi Tunde, yes, we have the jet black 12" Claw Clip Ponytail in stock at FCFA\u00a015,000. We\'ve got 6 left.');
+    expect(env.channel.sent.at(-1)?.body).toBe('Hi Tunde, yes, we have the jet black 12" Claw Clip Ponytail in stock at FCFA\u00a015,000. We\'ve got 6 left. To order, just reply YES.');
   });
 
   it('uses the right currency for a shop in another country', async () => {

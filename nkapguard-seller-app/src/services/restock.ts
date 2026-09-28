@@ -4,6 +4,8 @@ import type { Q } from '../db.js';
 import type { PaymentEvent } from '../payments/providers.js';
 import type { Ctx, DispatchResult, Outbound, Recipient } from './context.js';
 import { InputError } from './errors.js';
+import { freeStock } from './inbound.js';
+import { handleOrderPayment, isOrderRef } from './orders.js';
 import { dispatch, messageCost } from './outbound.js';
 import { fmt, type Seller } from './sellers.js';
 
@@ -259,6 +261,8 @@ export const baseRef = (providerRef: string) => providerRef.split('.')[0];
 
 export async function handlePayment(ctx: Ctx, rawEvent: PaymentEvent, now: Date): Promise<{ outcome: PaymentOutcome; sent: DispatchResult[] }> {
   const event = { ...rawEvent, reference: baseRef(rawEvent.reference) };
+  // Chat orders have their own references ("ord_…").
+  if (isOrderRef(event.reference)) return handleOrderPayment(ctx, event, now);
   const res = await ctx.db.tx(async (q) => {
     const [ref] = await q.query<{ restock_id: string }>('select restock_id from offers where payment_ref = $1', [event.reference]);
     if (!ref) return { outcome: 'unknown' as const, outs: [] as Outbound[] };
@@ -280,7 +284,7 @@ export async function handlePayment(ctx: Ctx, rawEvent: PaymentEvent, now: Date)
 
     const c = await offerCounts(q, restock.id);
     const unitReserved = offer.status === 'held';
-    const unitFree = restock.units - c.paid - c.held > 0 && product.stock > 0;
+    const unitFree = restock.units - c.paid - c.held > 0 && (await freeStock(q, product.id)) > 0;
     if (!unitReserved && !unitFree) {
       await q.query(`update offers set status = 'missed', refund_due = true where id = $1`, [offer.id]);
       return {

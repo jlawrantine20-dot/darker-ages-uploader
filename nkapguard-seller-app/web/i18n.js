@@ -182,6 +182,22 @@ const EN = {
   'out.in_stock': 'NKAPGUARD said it’s in stock', 'out.asked_variant': 'NKAPGUARD asked which colour', 'out.sold_out': 'NKAPGUARD said it’s sold out',
   'out.shop_link': 'NKAPGUARD replied privately with your shop page', 'out.ignored': 'No reply: channel paused, or not a price or stock question',
   'out.stopped': 'Customer opted out', 'out.unhandled': 'Left for you to reply',
+  // Orders
+  'nav.orders': 'Orders', 'ord.title': 'Orders', 'ord.toPay': 'To be paid', 'ord.paidTab': 'Paid', 'ord.all': 'All',
+  'ord.sub': (p) => (p.n === 1 ? '1 waiting for payment' : `${p.n} waiting for payment`),
+  'ord.how': 'Customers order by replying YES about an item in stock, or from your shop page. Each order holds the item for 1 hour while they pay.',
+  'ord.manualNote': "Your shop doesn't take online payments yet, so customers are told you'll contact them about payment. Connect a payment provider in Settings to send payment links automatically.",
+  'ord.empty': 'No orders yet. They show up here as soon as a customer orders in a chat.', 'ord.nothing': 'Nothing here.',
+  'ord.held': (p) => `Held · ${p.left} left`, 'ord.expired': 'Hold ended', 'ord.paid': (p) => `Paid ${p.at}`, 'ord.byHand': 'marked by you',
+  'ord.cancelled': 'Cancelled', 'ord.refund': 'Paid late · refund',
+  'ord.markPaid': 'Mark as paid', 'ord.cancel': 'Cancel order',
+  'ord.markPaidAsk': (p) => `Mark this order as paid? Only do this once you have the money (cash, or a transfer to your number). ${p.name} will get a payment confirmation.`,
+  'ord.cancelAsk': "Cancel this order? The item goes back on sale. The customer isn't messaged.",
+  'ord.markedPaid': 'Order marked as paid', 'ord.cancelledToast': 'Order cancelled',
+  'chats.orderHeld': 'Order to be paid', 'chats.orderPaid': 'Order paid',
+  'ins.chatSales': 'Sales from chat orders', 'ins.chatOrders': 'Chat orders paid',
+  'out.ordered': 'NKAPGUARD sent a payment link', 'out.ordered_manual': 'Order noted: you arrange the payment',
+  'out.order_again': 'NKAPGUARD sent the payment link again', 'out.asked_quantity': 'NKAPGUARD asked how many',
 };
 
 const FR = {
@@ -351,6 +367,21 @@ const FR = {
   'out.in_stock': 'NKAPGUARD a répondu que c’est en stock', 'out.asked_variant': 'NKAPGUARD a demandé la couleur', 'out.sold_out': 'NKAPGUARD a répondu que c’est en rupture',
   'out.shop_link': 'NKAPGUARD a répondu en privé avec votre page boutique', 'out.ignored': 'Pas de réponse : canal en pause, ou pas une question de prix ou de stock',
   'out.stopped': 'Le client ne veut plus d’alertes', 'out.unhandled': 'Laissé pour que vous répondiez',
+  'nav.orders': 'Commandes', 'ord.title': 'Commandes', 'ord.toPay': 'À encaisser', 'ord.paidTab': 'Payées', 'ord.all': 'Toutes',
+  'ord.sub': (p) => `${p.n} en attente de paiement`,
+  'ord.how': "Les clients commandent en répondant OUI pour un article en stock, ou depuis votre page boutique. Chaque commande réserve l'article pendant 1 heure, le temps de payer.",
+  'ord.manualNote': "Votre boutique n'accepte pas encore le paiement en ligne : les clients sont informés que vous les contacterez pour le paiement. Connectez un moyen de paiement dans les Réglages pour envoyer automatiquement les liens de paiement.",
+  'ord.empty': "Aucune commande pour l'instant. Elles apparaissent ici dès qu'un client commande dans une discussion.", 'ord.nothing': 'Rien ici.',
+  'ord.held': (p) => `Réservée · encore ${p.left}`, 'ord.expired': 'Réservation expirée', 'ord.paid': (p) => `Payée à ${p.at}`, 'ord.byHand': 'encaissée par vous',
+  'ord.cancelled': 'Annulée', 'ord.refund': 'Payée trop tard · à rembourser',
+  'ord.markPaid': 'Marquer comme payée', 'ord.cancel': 'Annuler la commande',
+  'ord.markPaidAsk': (p) => `Marquer cette commande comme payée ? Faites-le uniquement une fois l'argent reçu (espèces, ou transfert sur votre numéro). ${p.name} recevra une confirmation de paiement.`,
+  'ord.cancelAsk': "Annuler cette commande ? L'article est remis en vente. Le client n'est pas prévenu.",
+  'ord.markedPaid': 'Commande marquée comme payée', 'ord.cancelledToast': 'Commande annulée',
+  'chats.orderHeld': 'Commande à payer', 'chats.orderPaid': 'Commande payée',
+  'ins.chatSales': 'Ventes des commandes', 'ins.chatOrders': 'Commandes payées',
+  'out.ordered': 'NKAPGUARD a envoyé un lien de paiement', 'out.ordered_manual': 'Commande notée : vous gérez le paiement',
+  'out.order_again': 'NKAPGUARD a renvoyé le lien de paiement', 'out.asked_quantity': 'NKAPGUARD a demandé la quantité',
 };
 
 export const DICTS = { en: EN, fr: FR };

@@ -53,7 +53,8 @@ a.btn.alt{background:var(--surface-2);color:var(--ink);border:1px solid var(--li
       sub: 'Touchez un article pour le demander sur WhatsApp.',
       inStock: 'En stock', soldOut: 'En rupture',
       order: 'Commander sur WhatsApp', alert: 'Me prévenir à son retour',
-      ask: function (label) { return 'Bonjour, vous avez le modèle ' + label + ' ?'; },
+      // Sending this places the order: the shop answers with a payment link right away.
+      ask: function (label) { return 'Bonjour, je voudrais commander le modèle ' + label + ", s'il vous plaît."; },
       // Sending this is the customer's own request for an alert, so it joins the waitlist in one tap.
       alertMe: function (label) { return 'Bonjour, prévenez-moi quand le modèle ' + label + " revient, s'il vous plaît."; },
       note: function (shop) { return 'Vous écrivez directement à ' + shop + ' sur WhatsApp.'; },
@@ -66,7 +67,7 @@ a.btn.alt{background:var(--surface-2);color:var(--ink);border:1px solid var(--li
       sub: 'Tap an item to ask about it on WhatsApp.',
       inStock: 'In stock', soldOut: 'Sold out',
       order: 'Order on WhatsApp', alert: "Alert me when it's back",
-      ask: function (label) { return 'Hi, do you have the ' + label + '?'; },
+      ask: function (label) { return "Hi, I'd like to order the " + label + ', please.'; },
       alertMe: function (label) { return 'Hi, please let me know when the ' + label + ' is back.'; },
       note: function (shop) { return 'You message ' + shop + ' directly on WhatsApp.'; },
       noShop: "This shop link doesn't exist. Check the address.",

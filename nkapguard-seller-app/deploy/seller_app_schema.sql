@@ -220,6 +220,27 @@ create table if not exists seller_app.fx_rates (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists seller_app.orders (
+  id uuid primary key default gen_random_uuid(),
+  seller_id uuid not null references seller_app.sellers(id) on delete cascade,
+  contact_id uuid not null references seller_app.contacts(id) on delete cascade,
+  product_id uuid not null references seller_app.products(id) on delete cascade,
+  quantity integer not null default 1 check (quantity between 1 and 50),
+  amount_minor bigint not null check (amount_minor >= 0),
+  status text not null check (status in ('held', 'paid', 'expired', 'cancelled', 'refund_due')),
+  channel text not null,
+  payment_ref text not null unique,
+  paid_via text check (paid_via in ('online', 'manual')),
+  created_at timestamptz not null,
+  expires_at timestamptz not null,
+  paid_at timestamptz
+);
+create index if not exists orders_held on seller_app.orders (product_id) where status = 'held';
+create index if not exists orders_seller on seller_app.orders (seller_id, created_at desc);
+create index if not exists orders_contact on seller_app.orders (contact_id, created_at desc);
+alter table seller_app.contacts add column if not exists awaiting_order_product_id uuid references seller_app.products(id) on delete set null;
+alter table seller_app.contacts add column if not exists awaiting_order_at timestamptz;
+
 -- Defence in depth: row-level security on, with no policies, so even if the schema were
 -- exposed later, the anon and authenticated roles would see nothing.
 do $$

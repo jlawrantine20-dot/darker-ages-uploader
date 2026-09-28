@@ -18,6 +18,7 @@ import { CHANNEL_NAMES, appBase, stateLang, channelAvailable, choosePendingPage,
 import { dispatch } from './services/outbound.js';
 import { listTemplates, submitTemplates } from './services/templates.js';
 import { fxRates, refreshFx } from './services/fx.js';
+import { HELD_BY_ORDERS_SQL, cancelOrder, expireOrders, handleOrderPayment, isOrderRef, markOrderPaid, orderForCheckout } from './services/orders.js';
 import { baseRef, handlePayment, previewRestock, startRestock, tick } from './services/restock.js';
 import { escapeHtml, page, pageText } from './pages.js';
 import { normalizePhone, phoneCountry } from './domain/phone.js';
@@ -151,7 +152,38 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
       [baseRef(ref)],
     ))[0];
 
+  /** A chat order's payment link: live while its hold runs. */
+  const payOrder = async (c: Context, ref: string) => {
+    const oc = await orderForCheckout(ctx, baseRef(ref));
+    if (!oc) return customerPage(c, 'en', pageText('en').ended, pageText('en').orderEnded, 404);
+    const { order, seller, product, contact } = oc;
+    const lang = contact.language ?? seller.language;
+    const t = pageText(lang);
+    const now = clock();
+    if (order.status !== 'held' || order.expires_at <= now) {
+      return customerPage(c, lang, t.ended, order.status === 'paid' ? t.endedPaid : t.orderEnded, 410);
+    }
+    try {
+      const label = productLabel(product, lang);
+      const { url } = await providerFor(ctx, seller).createLink({
+        reference: `${order.payment_ref}.${now.getTime().toString(36)}`,
+        amountMinor: Number(order.amount_minor),
+        currency: seller.currency,
+        description: `${seller.name}: ${order.quantity > 1 ? `${order.quantity} × ` : ''}${label}`,
+        waId: contact.wa_id,
+        name: contact.name,
+        metadata: { order_id: order.id, seller_id: seller.id },
+        language: lang,
+      });
+      return c.redirect(url, 302);
+    } catch (err) {
+      console.error(err);
+      return customerPage(c, lang, t.unavailable, t.tryAgain, 503);
+    }
+  };
+
   app.get('/pay/:ref', async (c) => {
+    if (isOrderRef(c.req.param('ref'))) return payOrder(c, c.req.param('ref'));
     const o = await loadOffer(c.req.param('ref'));
     if (!o) return customerPage(c, 'en', pageText('en').ended, pageText('en').endedSold, 404);
     const seller = (await getSeller(db, o.seller_id))!;
@@ -191,7 +223,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     const products = await db.query<{ name: string; variant: string; price_minor: number; free: number }>(
       `select p.name, p.variant, p.price_minor,
               p.stock - coalesce((select count(*)::int from offers o join restocks r on r.id = o.restock_id
-                                   where r.product_id = p.id and o.status = 'held'), 0) as free
+                                   where r.product_id = p.id and o.status = 'held'), 0) - ${HELD_BY_ORDERS_SQL} as free
          from products p where p.seller_id = $1 order by p.name, p.variant`,
       [seller.id],
     );
@@ -212,6 +244,15 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
 
   if (config.dryRun) {
     app.get('/pay/:ref/test', async (c) => {
+      if (isOrderRef(c.req.param('ref'))) {
+        const oc = await orderForCheckout(ctx, baseRef(c.req.param('ref')));
+        if (!oc) return c.notFound();
+        const lang = oc.contact.language ?? oc.seller.language;
+        const t = pageText(lang);
+        const amount = money(oc.seller, Number(oc.order.amount_minor));
+        const label = productLabel(oc.product, lang);
+        return customerPage(c, lang, t.testTitle, `${oc.seller.name} · ${oc.order.quantity > 1 ? `${oc.order.quantity} × ` : ''}${label} · ${amount}. ${t.testBody}`, 200, { ref: c.req.param('ref'), pay: `${t.testPay} ${amount}` });
+      }
       const o = await loadOffer(c.req.param('ref'));
       if (!o) return c.notFound();
       const seller = (await getSeller(db, o.seller_id))!;
@@ -222,10 +263,11 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
       return customerPage(c, lang, t.testTitle, `${seller.name} · ${label} · ${amount}. ${t.testBody}`, 200, { ref: c.req.param('ref'), pay: `${t.testPay} ${amount}` });
     });
     app.post('/pay/:ref/test', async (c) => {
-      const o = await loadOffer(c.req.param('ref'));
-      if (!o) return c.notFound();
-      const seller = (await getSeller(db, o.seller_id))!;
-      const r = await handlePayment(ctx, { reference: c.req.param('ref'), amountMinor: Number(o.price_minor) }, clock());
+      const oc = isOrderRef(c.req.param('ref')) ? await orderForCheckout(ctx, baseRef(c.req.param('ref'))) : null;
+      const o = oc ? null : await loadOffer(c.req.param('ref'));
+      if (!o && !oc) return c.notFound();
+      const seller = oc ? oc.seller : (await getSeller(db, o!.seller_id))!;
+      const r = await handlePayment(ctx, { reference: c.req.param('ref'), amountMinor: oc ? Number(oc.order.amount_minor) : Number(o!.price_minor) }, clock());
       const t = pageText(seller.language);
       const title = r.outcome === 'paid' ? t.testDone : t.ended;
       const body = r.outcome === 'paid' ? t.thanksBody : t.endedSold;
@@ -493,7 +535,8 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
               coalesce((select json_agg(json_build_object('name', p.name, 'variant', p.variant) order by i.created_at, i.seq)
                           from interests i join products p on p.id = i.product_id
                          where i.contact_id = c.id and i.status = 'waiting'), '[]'::json) as waiting_for,
-              (c.awaiting_consent_product_id is not null) as awaiting_consent
+              (c.awaiting_consent_product_id is not null) as awaiting_consent,
+              (select o.status from orders o where o.contact_id = c.id order by o.created_at desc limit 1) as order_status
          from contacts c
          left join lateral (select body, direction, created_at from messages where contact_id = c.id order by created_at desc, seq desc limit 1) m on true
         where ($1::uuid is null or c.seller_id = $1)
@@ -567,6 +610,34 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     return c.json(rows);
   });
 
+  // ---- Chat orders: what customers ordered, what's paid, what's waiting for payment ----
+  app.get('/api/orders', async (c) => {
+    const sellerId = await scoped(c);
+    const rows = await db.query(
+      `select o.id, o.quantity, o.amount_minor, o.status, o.channel, o.paid_via, o.created_at, o.expires_at, o.paid_at,
+              c.id as contact_id, c.name, c.username, c.wa_id, c.channel as contact_channel, p.name as product, p.variant
+         from orders o join contacts c on c.id = o.contact_id join products p on p.id = o.product_id
+        where ($1::uuid is null or o.seller_id = $1) order by o.created_at desc limit 200`,
+      [sellerId],
+    );
+    return c.json(rows.map((r: Record<string, unknown>) => ({ ...r, amount_minor: Number(r.amount_minor) })));
+  });
+  const orderShop = async (c: C, id: string) => {
+    const [row] = await db.query<{ seller_id: string }>('select seller_id from orders where id = $1', [id]);
+    if (!row) throw new ForbiddenError('not_found');
+    await guard(c, row.seller_id);
+  };
+  app.post('/api/orders/:id/paid', async (c) => {
+    await orderShop(c, c.req.param('id'));
+    const r = await markOrderPaid(ctx, c.req.param('id'), clock());
+    return c.json({ outcome: r.outcome });
+  });
+  app.post('/api/orders/:id/cancel', async (c) => {
+    await orderShop(c, c.req.param('id'));
+    await cancelOrder(ctx, c.req.param('id'));
+    return c.json({ ok: true });
+  });
+
   app.get('/api/insights', async (c) => {
     const sellerId = await scoped(c);
     const monthStart = new Date(clock());
@@ -576,6 +647,11 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
       `select count(*)::int as orders, coalesce(sum(p.price_minor), 0)::bigint as revenue_minor
          from offers o join restocks r on r.id = o.restock_id join products p on p.id = r.product_id
         where o.status = 'paid' and o.paid_at >= $2 and ($1::uuid is null or p.seller_id = $1)`,
+      [sellerId, monthStart],
+    );
+    const [chatSales] = await db.query(
+      `select count(*)::int as orders, coalesce(sum(amount_minor), 0)::bigint as revenue_minor
+         from orders where status = 'paid' and paid_at >= $2 and ($1::uuid is null or seller_id = $1)`,
       [sellerId, monthStart],
     );
     const [spend] = await db.query(
@@ -600,7 +676,13 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
       [sellerId],
     );
     const num = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, Number(v)]));
-    return c.json({ monthStart, sales: num(sales), spend: num(spend), demand, refunds });
+    const orderRefunds = await db.query(
+      `select c.name, c.wa_id, p.name as product, p.variant, o.amount_minor as price_minor, o.payment_ref
+         from orders o join contacts c on c.id = o.contact_id join products p on p.id = o.product_id
+        where o.status = 'refund_due' and ($1::uuid is null or o.seller_id = $1)`,
+      [sellerId],
+    );
+    return c.json({ monthStart, sales: num(sales), chatSales: num(chatSales), spend: num(spend), demand, refunds: [...refunds, ...orderRefunds] });
   });
 
   // For a scheduler (Supabase pg_cron): a secret that can only pass expired holds down the
@@ -611,6 +693,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     if (!secret.length || given.length !== secret.length || !timingSafeEqual(given, secret)) return c.json({ error: 'Not allowed.' }, 403);
     const now = clock();
     const sent = (await tick(ctx, now)).length;
+    await expireOrders(ctx, now);
     // Once an hour is plenty for tokens that last 60 days.
     const refreshed = now.getUTCMinutes() === 0 ? await refreshInstagramTokens(ctx, now) : 0;
     // Exchange rates for showing fees in local money; refreshFx only fetches twice a day.
@@ -737,6 +820,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
 
   app.post('/api/tick', async (c) => {
     if (c.get('viewer').kind !== 'admin' && !config.dryRun) return c.json({ error: 'Only the operator can run this.' }, 403);
+    await expireOrders(ctx, clock());
     return c.json({ sent: (await tick(ctx, clock())).length });
   });
 
@@ -779,10 +863,12 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     });
 
     app.post('/dev/pay/:ref', async (c) => {
-      const [o] = await db.query<{ price_minor: string; seller_id: string }>(
-        `select p.price_minor, p.seller_id from offers o join restocks r on r.id = o.restock_id join products p on p.id = r.product_id where o.payment_ref = $1`,
-        [c.req.param('ref')],
-      );
+      const [o] = isOrderRef(c.req.param('ref'))
+        ? await db.query<{ price_minor: string; seller_id: string }>('select amount_minor as price_minor, seller_id from orders where payment_ref = $1', [c.req.param('ref')])
+        : await db.query<{ price_minor: string; seller_id: string }>(
+            `select p.price_minor, p.seller_id from offers o join restocks r on r.id = o.restock_id join products p on p.id = r.product_id where o.payment_ref = $1`,
+            [c.req.param('ref')],
+          );
       if (!o) return c.json({ error: 'No offer with that payment reference.' }, 404);
       await guard(c, o.seller_id);
       const r = await handlePayment(ctx, { reference: c.req.param('ref'), amountMinor: Number(o.price_minor) }, clock());

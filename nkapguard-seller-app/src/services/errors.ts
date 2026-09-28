@@ -82,6 +82,8 @@ const MESSAGES = {
   from_text_required: { en: () => 'Enter who is writing and their message.', fr: () => "Indiquez qui écrit et son message." },
   connect_first: { en: (p: P) => `Connect ${p.channel} in Settings first.`, fr: (p: P) => `Connectez d'abord ${p.channel} dans les Réglages.` },
   phone_for_country: { en: (p: P) => `That doesn't look like a valid phone number for ${p.country}.`, fr: (p: P) => `Ce numéro ne semble pas valide pour ${p.country}.` },
+  order_not_found: { en: () => "This order doesn't exist or was deleted.", fr: () => "Cette commande n'existe pas ou a été supprimée." },
+  order_closed: { en: () => 'This order is already closed.', fr: () => 'Cette commande est déjà clôturée.' },
   server_error: { en: () => 'Something went wrong on our side. Try again in a moment.', fr: () => 'Un problème est survenu de notre côté. Réessayez dans un instant.' },
 } satisfies Record<string, Record<UiLang, (p: P) => string>>;
 
