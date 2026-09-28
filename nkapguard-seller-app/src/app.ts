@@ -14,7 +14,7 @@ import { InputError, render, uiLang } from './services/errors.js';
 import { handleInbound, handleSocialInbound } from './services/inbound.js';
 import { parseMetaWebhook } from './channels/meta.js';
 import { encryptSecret } from './crypto.js';
-import { CHANNEL_NAMES, appBase, stateLang, channelAvailable, choosePendingPage, completeFacebook, completeInstagram, connectUrl, deleteMetaUser, listPendingPages, parseSignedRequest, refreshInstagramTokens } from './services/channels.js';
+import { CHANNEL_NAMES, appBase, stateLang, channelAvailable, confirmPending, completeFacebook, completeInstagram, connectUrl, deleteMetaUser, describePending, parseSignedRequest, refreshInstagramTokens } from './services/channels.js';
 import { dispatch } from './services/outbound.js';
 import { listTemplates, submitTemplates } from './services/templates.js';
 import { fxRates, refreshFx } from './services/fx.js';
@@ -133,6 +133,8 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
   app.post('/webhooks/payments/:sellerId', async (c) => {
     const seller = await getSeller(db, c.req.param('sellerId'));
     if (!seller) return c.text('Unknown seller.', 404);
+    // The test provider signs nothing, so it only exists in test mode.
+    if (!config.dryRun && seller.payment_provider === 'test') return c.text('This shop has no payment provider.', 404);
     const raw = await c.req.text();
     const provider = providerFor(ctx, seller);
     const parsed = provider.parseWebhook(raw, (h) => c.req.header(h));
@@ -140,7 +142,8 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     if (!parsed.event) return c.json({ ignored: true });
     const event = provider.confirm ? await provider.confirm(parsed.event) : parsed.event;
     if (!event) return c.json({ ignored: true, reason: 'The payment provider did not confirm this payment.' });
-    const r = await handlePayment(ctx, event, clock());
+    // Only this shop's own orders and offers: a signature from one shop can't pay another's.
+    const r = await handlePayment(ctx, event, clock(), seller.id);
     return c.json({ outcome: r.outcome });
   });
 
@@ -401,15 +404,27 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     const row = await db.tx(async (q) => {
       // Prices are stored in the currency's smallest unit, so a new currency needs the
       // prices converted too, or $25 (2500 cents) would turn into 2,500 FCFA.
+      // Every stored amount moves to the new currency: prices, the last price cut's old price,
+      // delivery fees and unpaid orders.
       if (v.currency !== current.currency) {
-        const [{ n }] = await q.query<{ n: number }>('select count(*)::int as n from products where seller_id = $1', [current.id]);
+        const [{ n }] = await q.query<{ n: number }>(
+          `select (select count(*) from products where seller_id = $1)
+                + (select count(*) from delivery_zones where seller_id = $1)
+                + (select count(*) from orders where seller_id = $1 and status = 'held') as n`,
+          [current.id],
+        );
         const rate = Number(b.rate);
-        if (n > 0 && !(rate > 0)) throw new InputError('rate_needed', { to: v.currency, from: current.currency });
-        if (n > 0) {
-          const products = await q.query<{ id: string; price_minor: number }>('select id, price_minor from products where seller_id = $1', [current.id]);
+        if (Number(n) > 0 && !(rate > 0)) throw new InputError('rate_needed', { to: v.currency, from: current.currency });
+        const conv = (minor: number | string | null) => (minor === null ? null : toMinor(toMajor(Number(minor), current.currency) * rate, v.currency));
+        if (Number(n) > 0) {
+          const products = await q.query<{ id: string; price_minor: string; previous_price_minor: string | null }>('select id, price_minor, previous_price_minor from products where seller_id = $1', [current.id]);
           for (const p of products) {
-            await q.query('update products set price_minor = $2 where id = $1', [p.id, toMinor(toMajor(p.price_minor, current.currency) * rate, v.currency)]);
+            await q.query('update products set price_minor = $2, previous_price_minor = $3 where id = $1', [p.id, conv(p.price_minor), conv(p.previous_price_minor)]);
           }
+          const zones = await q.query<{ id: string; fee_minor: string }>('select id, fee_minor from delivery_zones where seller_id = $1', [current.id]);
+          for (const z of zones) await q.query('update delivery_zones set fee_minor = $2 where id = $1', [z.id, conv(z.fee_minor)]);
+          const held = await q.query<{ id: string; amount_minor: string; delivery_fee_minor: string }>(`select id, amount_minor, delivery_fee_minor from orders where seller_id = $1 and status = 'held'`, [current.id]);
+          for (const o of held) await q.query('update orders set amount_minor = $2, delivery_fee_minor = $3 where id = $1', [o.id, conv(o.amount_minor), conv(o.delivery_fee_minor)]);
         }
       }
       if (v.slug && v.slug !== current.slug) {
@@ -756,7 +771,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     monthStart.setUTCDate(1);
     monthStart.setUTCHours(0, 0, 0, 0);
     const [sales] = await db.query(
-      `select count(*)::int as orders, coalesce(sum(p.price_minor), 0)::bigint as revenue_minor
+      `select count(*)::int as orders, coalesce(sum(coalesce(o.amount_minor, p.price_minor)), 0)::bigint as revenue_minor
          from offers o join restocks r on r.id = o.restock_id join products p on p.id = r.product_id
         where o.status = 'paid' and o.paid_at >= $2 and ($1::uuid is null or p.seller_id = $1)`,
       [sellerId, monthStart],
@@ -848,7 +863,8 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     if (channel !== 'instagram' && channel !== 'facebook') throw new InputError('channel_param');
     const { sellerId } = await c.req.json<{ sellerId: string }>();
     await guard(c, sellerId, 'owner');
-    return c.json({ url: connectUrl(ctx, channel, sellerId, uiLang(c.req.header('x-lang'))) });
+    const v = c.get('viewer');
+    return c.json({ url: connectUrl(ctx, channel, sellerId, uiLang(c.req.header('x-lang')), v.kind === 'user' ? v.userId : null) });
   });
 
   app.patch('/api/channels/:id', async (c) => {
@@ -869,16 +885,18 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     return c.json({ removed: true });
   });
 
+  // A finished sign-in waits here for the person who pressed Connect to confirm it.
+  const viewerId = (c: C) => { const v = c.get('viewer'); return v.kind === 'user' ? v.userId : null; };
   app.get('/api/channels/pending/:id', async (c) => {
     const sellerId = await scoped(c);
-    return c.json(await listPendingPages(ctx, c.req.param('id'), sellerId!));
+    return c.json(await describePending(ctx, c.req.param('id'), sellerId!, viewerId(c)));
   });
 
   app.post('/api/channels/pending/:id', async (c) => {
-    const { sellerId, pageId } = await c.req.json<{ sellerId: string; pageId: string }>();
+    const { sellerId, pageId } = await c.req.json<{ sellerId: string; pageId?: string }>();
     await guard(c, sellerId, 'owner');
-    await choosePendingPage(ctx, c.req.param('id'), sellerId, pageId);
-    return c.json({ connected: true });
+    const channel = await confirmPending(ctx, c.req.param('id'), sellerId, viewerId(c), pageId);
+    return c.json({ connected: true, channel });
   });
 
   // Meta's data deletion and deauthorize callbacks (App settings, and Instagram business login
@@ -912,12 +930,9 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     const failed = render(lang, 'channel_not_connected', { channel: CHANNEL_NAMES[channel] });
     if (!code) return backToSettings(c, { channel_error: why ? `${failed} (${why})` : failed });
     try {
-      if (channel === 'instagram') {
-        await completeInstagram(ctx, code, state);
-        return backToSettings(c, { connected: channel });
-      }
-      const r = await completeFacebook(ctx, code, state);
-      return backToSettings(c, r.pendingId ? { pick_page: r.pendingId } : { connected: channel });
+      const r = channel === 'instagram' ? await completeInstagram(ctx, code, state) : await completeFacebook(ctx, code, state);
+      // Finish in the app, where we know who is signed in.
+      return backToSettings(c, { confirm_channel: r.pendingId });
     } catch (err) {
       console.error(err);
       return backToSettings(c, { channel_error: err instanceof InputError ? err.in(lang) : failed });

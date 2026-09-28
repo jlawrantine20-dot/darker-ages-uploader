@@ -168,7 +168,9 @@ const NUMBER_WORDS: Record<string, number> = {
   un: 1, une: 1, deux: 2, trois: 3, quatre: 4, cinq: 5, six: 6, sept: 7, huit: 8, neuf: 9, dix: 10,
   one: 1, two: 2, three: 3, four: 4, five: 5, seven: 7, eight: 8, nine: 9, ten: 10,
 };
-const NUM = `(\\d{1,2}|${Object.keys(NUMBER_WORDS).join('|')})`;
+// A number followed by a size unit is a size, not a quantity: "12 pouces", "20 inch", "50 ml".
+const NOT_SIZE = `(?!\\s*(?:pouces?|inch(?:es)?|in\\b|cm|mm|m\\b|ml|cl|l\\b|litres?|liters?|g\\b|kg|ans|years?|yrs|"|”))`;
+const NUM = `(\\d{1,2}|${Object.keys(NUMBER_WORDS).join('|')})\\b${NOT_SIZE}`;
 
 /**
  * How many units an order message asks for, or null when it doesn't say. Only numbers next to
@@ -179,7 +181,7 @@ export function orderQuantity(text: string): number | null {
   const val = (s: string) => (/^\d+$/.test(s) ? Number(s) : NUMBER_WORDS[s]);
   const m =
     t.match(/^(\d{1,2})$/) ??
-    t.match(new RegExp(`\\b(?:prends|prend|prendre|veux|voudrais|commande|commander|achete|take|want|order|buy|need)\\s+(?:en\\s+|les\\s+)?${NUM}\\b`)) ??
+    t.match(new RegExp(`\\b(?:prends|prend|prendre|veux|voudrais|commande|commander|achete|take|want|order|buy|need)\\s+(?:en\\s+|les\\s+)?${NUM}`)) ??
     t.match(new RegExp(`\\b${NUM}\\s*(?:x|pieces?|pcs|unites?|units?|exemplaires?)\\b`)) ??
     t.match(/\bx\s?(\d{1,2})\b/);
   if (!m) return null;

@@ -206,7 +206,12 @@ describe('connecting channels', () => {
 
     const back = await app.request(`/oauth/instagram?code=abc&state=${encodeURIComponent(stateOf(url))}`);
     expect(back.status).toBe(302);
-    expect(back.headers.get('location')).toBe('https://seller.example/?connected=instagram#/settings');
+    const pendingId = new URL(back.headers.get('location')!).searchParams.get('confirm_channel')!;
+    expect(back.headers.get('location')).toBe(`https://seller.example/?confirm_channel=${pendingId}#/settings`);
+    // Nothing is connected until the seller confirms in the app.
+    expect(await env.db.query('select 1 from channel_accounts')).toHaveLength(0);
+    expect((await call('GET', `/api/channels/pending/${pendingId}?sellerId=${env.sellerId}`)).body).toEqual({ channel: 'instagram', account: { name: 'Douala Hair', username: 'doualahair' } });
+    expect((await call('POST', `/api/channels/pending/${pendingId}`, { sellerId: env.sellerId })).body).toEqual({ connected: true, channel: 'instagram' });
     expect(calls).toContain('POST https://graph.instagram.com/v23.0/me/subscribed_apps');
     const [row] = await env.db.query<{ external_id: string; username: string; token_enc: string; token_expires_at: Date }>('select * from channel_accounts');
     expect(row).toMatchObject({ external_id: 'ig-777', username: 'doualahair' });
@@ -226,9 +231,9 @@ describe('connecting channels', () => {
     const { call, app } = clientWithApp(() => T0);
     const { url } = (await call('POST', '/api/channels/facebook/connect', { sellerId: env.sellerId })).body;
     const back = await app.request(`/oauth/facebook?code=abc&state=${encodeURIComponent(stateOf(url))}`);
-    const pending = new URL(back.headers.get('location')!).searchParams.get('pick_page')!;
+    const pending = new URL(back.headers.get('location')!).searchParams.get('confirm_channel')!;
     const choices = (await call('GET', `/api/channels/pending/${pending}?sellerId=${env.sellerId}`)).body;
-    expect(choices).toEqual([{ id: 'page-1', name: 'Douala Hair' }, { id: 'page-2', name: 'Yaoundé Wigs' }]);
+    expect(choices).toEqual({ channel: 'facebook', pages: [{ id: 'page-1', name: 'Douala Hair' }, { id: 'page-2', name: 'Yaoundé Wigs' }] });
     expect((await call('POST', `/api/channels/pending/${pending}`, { sellerId: env.sellerId, pageId: 'page-2' })).status).toBe(200);
     expect(calls).toContain('POST https://graph.facebook.com/v23.0/page-2/subscribed_apps');
     const accounts = (await call('GET', `/api/channels?sellerId=${env.sellerId}`)).body.accounts;
@@ -239,6 +244,25 @@ describe('connecting channels', () => {
     expect((await call('PATCH', `/api/channels/${accounts[0].id}`, { enabled: false })).body).toMatchObject({ enabled: false });
     expect((await call('DELETE', `/api/channels/${accounts[0].id}`)).status).toBe(200);
     expect((await call('GET', `/api/channels?sellerId=${env.sellerId}`)).body.accounts).toEqual([]);
+  });
+
+  it('only the person who pressed Connect can finish it, so a sent link cannot steal an account', async () => {
+    env = await setup();
+    fakeMeta();
+    const { app } = clientWithApp(() => T0);
+    // The attacker, signed in to their own shop, starts a connection...
+    const [attacker] = await env.db.query<{ id: string }>(`insert into users (wa_id) values ('237699000009') returning id`);
+    await env.db.query(`insert into shop_members (seller_id, user_id, role) values ($1, $2, 'owner')`, [env.sellerId, attacker.id]);
+    const { connectUrl } = await import('../src/services/channels.js');
+    const url = connectUrl(env.ctx, 'instagram', env.sellerId, 'en', attacker.id);
+    // ...and a real seller opens that link and approves with their own Instagram.
+    const back = await app.request(`/oauth/instagram?code=abc&state=${encodeURIComponent(stateOf(url))}`);
+    const pendingId = new URL(back.headers.get('location')!).searchParams.get('confirm_channel')!;
+    // The seller's browser lands on the app signed in as the seller, not the attacker: refused.
+    const { confirmPending } = await import('../src/services/channels.js');
+    const [seller] = await env.db.query<{ id: string }>(`insert into users (wa_id) values ('237699000010') returning id`);
+    await expect(confirmPending(env.ctx, pendingId, env.sellerId, seller.id)).rejects.toThrow();
+    expect(await env.db.query('select 1 from channel_accounts')).toHaveLength(0);
   });
 
   it("won't connect an account that another shop already uses", async () => {

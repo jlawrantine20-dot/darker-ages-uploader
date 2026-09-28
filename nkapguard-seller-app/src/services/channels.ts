@@ -51,10 +51,11 @@ function unsign<T>(config: Config, state: string | undefined): T {
 }
 
 /** The Instagram or Facebook sign-in page for a shop. */
-export function connectUrl(ctx: Ctx, channel: SocialChannel, sellerId: string, lang: UiLang = 'en'): string {
+export function connectUrl(ctx: Ctx, channel: SocialChannel, sellerId: string, lang: UiLang = 'en', startedBy: string | null = null): string {
   const { config } = ctx;
   if (!channelAvailable(config, channel)) throw new InputError('channel_unavailable', { channel: CHANNEL_NAMES[channel] });
-  const state = sign(config, { s: sellerId, c: channel, e: Date.now() + STATE_TTL_MS, l: lang });
+  // u: who pressed Connect. Only they can confirm the result (see confirmPending).
+  const state = sign(config, { s: sellerId, c: channel, e: Date.now() + STATE_TTL_MS, l: lang, u: startedBy });
   const q = (o: Record<string, string>) => new URLSearchParams(o).toString();
   if (channel === 'instagram') {
     return `https://www.instagram.com/oauth/authorize?${q({ client_id: config.meta.igAppId, redirect_uri: redirectUri(config, channel), response_type: 'code', scope: IG_SCOPES.join(','), state })}`;
@@ -90,10 +91,24 @@ async function saveAccount(
   );
 }
 
-/** Instagram sign-in came back: swap the code for a 60-day token and start receiving DMs and comments. */
-export async function completeInstagram(ctx: Ctx, code: string, state: string): Promise<string> {
+/** Park a finished sign-in until the person who started it confirms it in the app. */
+async function hold(ctx: Ctx, sellerId: string, kind: SocialChannel, startedBy: string | null, data: unknown): Promise<string> {
+  const [row] = await ctx.db.query<{ id: string }>(
+    'insert into channel_pending (seller_id, kind, started_by, pages_enc, expires_at) values ($1, $2, $3, $4, $5) returning id',
+    [sellerId, kind, startedBy, encryptSecret(JSON.stringify(data), ctx.config.appSecret), new Date(Date.now() + STATE_TTL_MS)],
+  );
+  return row.id;
+}
+
+interface IgAccount { externalId: string; name: string | null; username: string | null; token: string; expiresAt: string | null }
+
+/**
+ * Instagram sign-in came back: swap the code for a 60-day token. The account is held until
+ * the seller confirms it in the app; see confirmPending.
+ */
+export async function completeInstagram(ctx: Ctx, code: string, state: string): Promise<{ sellerId: string; pendingId: string }> {
   const { config } = ctx;
-  const { s: sellerId } = unsign<{ s: string }>(config, state);
+  const { s: sellerId, u: startedBy } = unsign<{ s: string; u?: string | null }>(config, state);
   const short = await getJson(ctx, 'https://api.instagram.com/oauth/access_token', {
     method: 'POST',
     body: new URLSearchParams({ client_id: config.meta.igAppId, client_secret: config.meta.igAppSecret, grant_type: 'authorization_code', redirect_uri: redirectUri(config, 'instagram'), code }),
@@ -103,12 +118,14 @@ export async function completeInstagram(ctx: Ctx, code: string, state: string): 
   const token: string = long.access_token;
   const v = config.meta.graphVersion;
   const me = await getJson(ctx, `https://graph.instagram.com/${v}/me?fields=user_id,username,name&access_token=${encodeURIComponent(token)}`);
-  await getJson(ctx, `https://graph.instagram.com/${v}/me/subscribed_apps?subscribed_fields=messages,comments&access_token=${encodeURIComponent(token)}`, { method: 'POST' });
-  await saveAccount(ctx, sellerId, {
-    channel: 'instagram', externalId: String(me.user_id), name: me.name ?? null, username: me.username ?? null, token,
-    expiresAt: long.expires_in ? new Date(Date.now() + Number(long.expires_in) * 1000) : null,
-  });
-  return sellerId;
+  // Say it now, rather than after the seller confirms, if another shop already has this account.
+  const [other] = await ctx.db.query<{ seller_id: string }>(`select seller_id from channel_accounts where channel = 'instagram' and external_id = $1`, [String(me.user_id)]);
+  if (other && other.seller_id !== sellerId) throw new InputError('channel_taken', { channel: CHANNEL_NAMES.instagram });
+  const account: IgAccount = {
+    externalId: String(me.user_id), name: me.name ?? null, username: me.username ?? null, token,
+    expiresAt: long.expires_in ? new Date(Date.now() + Number(long.expires_in) * 1000).toISOString() : null,
+  };
+  return { sellerId, pendingId: await hold(ctx, sellerId, 'instagram', startedBy ?? null, account) };
 }
 
 interface Page { id: string; name: string; access_token: string }
@@ -120,43 +137,57 @@ async function connectPage(ctx: Ctx, sellerId: string, page: Page) {
   await saveAccount(ctx, sellerId, { channel: 'facebook', externalId: page.id, name: page.name, username: null, token: page.access_token, expiresAt: null });
 }
 
-/** Facebook sign-in came back. One Page connects at once; with several, the seller picks one. */
-export async function completeFacebook(ctx: Ctx, code: string, state: string): Promise<{ sellerId: string; pendingId?: string }> {
+/** Facebook sign-in came back. The Pages are held until the seller confirms one in the app. */
+export async function completeFacebook(ctx: Ctx, code: string, state: string): Promise<{ sellerId: string; pendingId: string }> {
   const { config } = ctx;
-  const { s: sellerId } = unsign<{ s: string }>(config, state);
+  const { s: sellerId, u: startedBy } = unsign<{ s: string; u?: string | null }>(config, state);
   const v = config.meta.graphVersion;
   const q = (o: Record<string, string>) => new URLSearchParams(o).toString();
   const short = await getJson(ctx, `https://graph.facebook.com/${v}/oauth/access_token?${q({ client_id: config.meta.appId, client_secret: config.meta.appSecret, redirect_uri: redirectUri(config, 'facebook'), code })}`);
   const long = await getJson(ctx, `https://graph.facebook.com/${v}/oauth/access_token?${q({ grant_type: 'fb_exchange_token', client_id: config.meta.appId, client_secret: config.meta.appSecret, fb_exchange_token: short.access_token })}`);
   const pages: Page[] = (await getJson(ctx, `https://graph.facebook.com/${v}/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(long.access_token)}`)).data ?? [];
   if (!pages.length) throw new InputError('no_pages');
-  if (pages.length === 1) {
-    await connectPage(ctx, sellerId, pages[0]);
-    return { sellerId };
-  }
-  const [pending] = await ctx.db.query<{ id: string }>(
-    'insert into channel_pending (seller_id, pages_enc, expires_at) values ($1, $2, $3) returning id',
-    [sellerId, encryptSecret(JSON.stringify(pages), config.appSecret), new Date(Date.now() + STATE_TTL_MS)],
+  return { sellerId, pendingId: await hold(ctx, sellerId, 'facebook', startedBy ?? null, pages) };
+}
+
+/**
+ * A held sign-in, for the person who started it only. Anyone else (another member, or a
+ * seller who was sent someone else's Connect link) sees nothing.
+ */
+async function pending(ctx: Ctx, pendingId: string, sellerId: string, viewerUserId: string | null) {
+  const [row] = await ctx.db.query<{ kind: SocialChannel; started_by: string | null; pages_enc: string }>(
+    'select kind, started_by, pages_enc from channel_pending where id = $1 and seller_id = $2 and expires_at > now()',
+    [pendingId, sellerId],
   );
-  return { sellerId, pendingId: pending.id };
+  if (!row || (row.started_by ?? null) !== viewerUserId) throw new InputError('page_choice_expired');
+  return { kind: row.kind, data: JSON.parse(decryptSecret(row.pages_enc, ctx.config.appSecret)) as Page[] | IgAccount };
 }
 
-async function pendingPages(ctx: Ctx, pendingId: string, sellerId: string): Promise<Page[]> {
-  const [row] = await ctx.db.query<{ pages_enc: string }>('select pages_enc from channel_pending where id = $1 and seller_id = $2 and expires_at > now()', [pendingId, sellerId]);
-  if (!row) throw new InputError('page_choice_expired');
-  return JSON.parse(decryptSecret(row.pages_enc, ctx.config.appSecret)) as Page[];
+/** What the sign-in found, without tokens: the Instagram account, or the Pages to choose from. */
+export async function describePending(ctx: Ctx, pendingId: string, sellerId: string, viewerUserId: string | null) {
+  const p = await pending(ctx, pendingId, sellerId, viewerUserId);
+  if (p.kind === 'instagram') {
+    const a = p.data as IgAccount;
+    return { channel: 'instagram' as const, account: { name: a.name, username: a.username } };
+  }
+  return { channel: 'facebook' as const, pages: (p.data as Page[]).map((x) => ({ id: x.id, name: x.name })) };
 }
 
-/** The Pages to choose from, without their tokens. */
-export async function listPendingPages(ctx: Ctx, pendingId: string, sellerId: string) {
-  return (await pendingPages(ctx, pendingId, sellerId)).map((p) => ({ id: p.id, name: p.name }));
-}
-
-export async function choosePendingPage(ctx: Ctx, pendingId: string, sellerId: string, pageId: string) {
-  const page = (await pendingPages(ctx, pendingId, sellerId)).find((p) => p.id === pageId);
-  if (!page) throw new InputError('pick_listed_page');
-  await connectPage(ctx, sellerId, page);
+/** The seller confirms in the app: connect the Instagram account, or the Page they picked. */
+export async function confirmPending(ctx: Ctx, pendingId: string, sellerId: string, viewerUserId: string | null, pageId?: string) {
+  const p = await pending(ctx, pendingId, sellerId, viewerUserId);
+  if (p.kind === 'instagram') {
+    const a = p.data as IgAccount;
+    await getJson(ctx, `https://graph.instagram.com/${ctx.config.meta.graphVersion}/me/subscribed_apps?subscribed_fields=messages,comments&access_token=${encodeURIComponent(a.token)}`, { method: 'POST' });
+    await saveAccount(ctx, sellerId, { channel: 'instagram', externalId: a.externalId, name: a.name, username: a.username, token: a.token, expiresAt: a.expiresAt ? new Date(a.expiresAt) : null });
+  } else {
+    const pages = p.data as Page[];
+    const page = pageId ? pages.find((x) => x.id === pageId) : pages.length === 1 ? pages[0] : undefined;
+    if (!page) throw new InputError('pick_listed_page');
+    await connectPage(ctx, sellerId, page);
+  }
   await ctx.db.query('delete from channel_pending where id = $1', [pendingId]);
+  return p.kind;
 }
 
 /**

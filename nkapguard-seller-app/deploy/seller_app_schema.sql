@@ -304,6 +304,13 @@ create index if not exists price_alert_sends_lookup on seller_app.price_alert_se
 alter table seller_app.products add column if not exists previous_price_minor bigint;
 alter table seller_app.products add column if not exists price_lowered_at timestamptz;
 
+alter table seller_app.channel_pending add column if not exists kind text not null default 'facebook' check (kind in ('instagram', 'facebook'));
+alter table seller_app.channel_pending add column if not exists started_by uuid references seller_app.users(id) on delete cascade;
+
+create unique index if not exists messages_inbound_once on seller_app.messages (seller_id, channel, provider_id)
+  where direction = 'in' and provider_id is not null;
+alter table seller_app.offers add column if not exists amount_minor bigint;
+
 -- Defence in depth: row-level security on, with no policies, so even if the schema were
 -- exposed later, the anon and authenticated roles would see nothing.
 do $$

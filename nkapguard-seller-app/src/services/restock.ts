@@ -260,13 +260,20 @@ export type PaymentOutcome = 'paid' | 'duplicate' | 'unknown' | 'underpaid' | 'r
 /** Each checkout attempt uses "<payment_ref>.<attempt>" with the provider, since references must be unique per attempt. */
 export const baseRef = (providerRef: string) => providerRef.split('.')[0];
 
-export async function handlePayment(ctx: Ctx, rawEvent: PaymentEvent, now: Date): Promise<{ outcome: PaymentOutcome; sent: DispatchResult[] }> {
+/**
+ * A payment from a provider. sellerId is the shop whose webhook received it: a reference
+ * belonging to another shop is treated as unknown.
+ */
+export async function handlePayment(ctx: Ctx, rawEvent: PaymentEvent, now: Date, sellerId?: string): Promise<{ outcome: PaymentOutcome; sent: DispatchResult[] }> {
   const event = { ...rawEvent, reference: baseRef(rawEvent.reference) };
   // Chat orders have their own references ("ord_…").
-  if (isOrderRef(event.reference)) return handleOrderPayment(ctx, event, now);
+  if (isOrderRef(event.reference)) return handleOrderPayment(ctx, event, now, sellerId);
   const res = await ctx.db.tx(async (q) => {
-    const [ref] = await q.query<{ restock_id: string }>('select restock_id from offers where payment_ref = $1', [event.reference]);
-    if (!ref) return { outcome: 'unknown' as const, outs: [] as Outbound[] };
+    const [ref] = await q.query<{ restock_id: string; seller_id: string }>(
+      'select o.restock_id, p.seller_id from offers o join restocks r on r.id = o.restock_id join products p on p.id = r.product_id where o.payment_ref = $1',
+      [event.reference],
+    );
+    if (!ref || (sellerId && ref.seller_id !== sellerId)) return { outcome: 'unknown' as const, outs: [] as Outbound[] };
     // Lock the restock first so two payments for the last unit cannot both win.
     const loaded = (await load(q, ref.restock_id, true))!;
     const { restock, product, seller } = loaded;
@@ -298,7 +305,7 @@ export async function handlePayment(ctx: Ctx, rawEvent: PaymentEvent, now: Date)
       };
     }
 
-    await q.query(`update offers set status = 'paid', paid_at = $2 where id = $1`, [offer.id, now]);
+    await q.query(`update offers set status = 'paid', paid_at = $2, amount_minor = $3 where id = $1`, [offer.id, now, product.price_minor]);
     await q.query(`update interests set status = 'bought' where id = $1`, [offer.interest_id]);
     await q.query('update products set stock = stock - 1 where id = $1', [product.id]);
     const outs: Outbound[] = [{

@@ -15,7 +15,7 @@ import { fmt, type Seller } from './sellers.js';
 export type InboundAction =
   | 'unknown_seller' | 'stopped' | 'joined' | 'already_waiting' | 'offered' | 'in_stock' | 'asked_variant' | 'sold_out' | 'shop_link' | 'unhandled'
   | 'ordered' | 'ordered_manual' | 'order_again' | 'asked_quantity' | 'asked_zone' | 'delivery_fee'
-  | 'price_alert_offered' | 'price_alert_joined';
+  | 'price_alert_offered' | 'price_alert_joined' | 'duplicate';
 
 interface ContactRow {
   id: string;
@@ -161,11 +161,15 @@ async function handle(ctx: Ctx, seller: Seller, account: AccountRow | null, msg:
 
   const { action, outs, contact } = await ctx.db.tx(async (q) => {
     const contact = await upsertContact(q, seller, account, msg, true);
-    await q.query(
+    const logged = await q.query(
       `insert into messages (seller_id, contact_id, channel, direction, kind, body, provider_id, created_at)
-       values ($1, $2, $3, 'in', 'text', $4, $5, $6)`,
+       values ($1, $2, $3, 'in', 'text', $4, $5, $6)
+       on conflict (seller_id, channel, provider_id) where direction = 'in' and provider_id is not null do nothing
+       returning id`,
       [seller.id, contact.id, msg.channel, msg.text, msg.providerId, msg.at],
     );
+    // A second delivery of a message we already handled: answer nothing.
+    if (!logged.length) return { action: 'duplicate' as const, outs: [] as Outbound[], contact };
     // Answer in the language the customer writes in; it's remembered for later alerts.
     const lang = contact.language ?? seller.language;
     const to: Recipient = {
@@ -176,6 +180,7 @@ async function handle(ctx: Ctx, seller: Seller, account: AccountRow | null, msg:
     return { ...(await decide(ctx, q, seller, contact, msg, lang, f, reply)), contact };
   });
 
+  if (action === 'duplicate') return { action, sent: [] };
   const sent = await dispatch(ctx, outs, msg.at);
   // Tell the seller's phones: a new order, or simply a new message.
   const who = contact.name ?? (whatsapp ? `+${contact.wa_id}` : msg.username ? `@${msg.username}` : contact.wa_id);
@@ -299,10 +304,11 @@ async function decide(
     const again = await heldOrder(q, contact.id, product.id);
     const until = (o: { expires_at: Date }) => o.expires_at;
     const link = (ref: string) => `${ctx.config.publicUrl.replace(/\/$/, '')}/pay/${ref}`;
-    if (again && takesPaymentsOnline(ctx, seller)) {
+    // Already held for them: repeat it rather than holding more units.
+    if (again) {
       const againZone = again.delivery_zone ? { name: again.delivery_zone, fee_minor: Number(again.delivery_fee_minor) } : undefined;
-      const facts = { product, priceMinor: Number(again.amount_minor), until: until(again), url: link(again.payment_ref), zone: againZone };
-      return { action: 'order_again' as const, outs: reply(say(lang, 'orderAgain', facts, f)) };
+      const facts = { product, quantity: again.quantity, priceMinor: Number(again.amount_minor), until: until(again), url: link(again.payment_ref), zone: againZone };
+      return { action: 'order_again' as const, outs: reply(say(lang, takesPaymentsOnline(ctx, seller) ? 'orderAgain' : 'orderManual', facts, f)) };
     }
     if (free <= 0) return answerFor(product);
     if (quantity > free) {
@@ -453,7 +459,8 @@ async function handleComment(
     const contact = await upsertContact(q, seller, account, msg, false);
     await q.query(
       `insert into messages (seller_id, contact_id, channel, direction, kind, body, provider_id, created_at)
-       values ($1, $2, $3, 'in', 'text', $4, $5, $6)`,
+       values ($1, $2, $3, 'in', 'text', $4, $5, $6)
+       on conflict (seller_id, channel, provider_id) where direction = 'in' and provider_id is not null do nothing`,
       [seller.id, contact.id, msg.channel, `Comment on your post: ${msg.text}`, msg.providerId, msg.at],
     );
     const lang = contact.language ?? seller.language;

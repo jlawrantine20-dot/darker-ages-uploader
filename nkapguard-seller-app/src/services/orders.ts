@@ -136,10 +136,10 @@ async function settle(q: Q, c: OrderContext, via: 'online' | 'manual', now: Date
 export type OrderPaymentOutcome = 'paid' | 'duplicate' | 'unknown' | 'underpaid' | 'refund_due';
 
 /** A payment for a chat order, from the provider's webhook (or the test checkout). */
-export async function handleOrderPayment(ctx: Ctx, event: PaymentEvent, now: Date): Promise<{ outcome: OrderPaymentOutcome; sent: DispatchResult[] }> {
+export async function handleOrderPayment(ctx: Ctx, event: PaymentEvent, now: Date, sellerId?: string): Promise<{ outcome: OrderPaymentOutcome; sent: DispatchResult[] }> {
   const res = await ctx.db.tx(async (q) => {
     const c = await loadOrder(q, 'payment_ref', event.reference, true);
-    if (!c) return { outcome: 'unknown' as const, outs: [] as Outbound[] };
+    if (!c || (sellerId && c.order.seller_id !== sellerId)) return { outcome: 'unknown' as const, outs: [] as Outbound[] };
     if (c.order.status === 'paid' || c.order.status === 'refund_due') return { outcome: 'duplicate' as const, outs: [] };
     if (event.amountMinor < Number(c.order.amount_minor) || (event.currency && event.currency.toUpperCase() !== c.seller.currency)) {
       return { outcome: 'underpaid' as const, outs: [] };

@@ -547,8 +547,22 @@ views.settings = async () => {
   const connected = (on) => (on ? `<span class="pill paid">${t('set.connected')}</span>` : `<span class="pill expired">${t('set.notConnected')}</span>`);
   const chRow = (ch, title, note, on) => `<div class="line"><span class="pos"><span class="ch ${ch}" style="padding:4px"><i></i></span></span><span>${title}<span class="q">${note}</span></span>${connected(on)}</div>`;
   const owner = s.role === 'owner';
-  const [members, me, channels] = await Promise.all([api(`/api/sellers/${s.id}/members`), api('/api/me'), api(`/api/channels?sellerId=${s.id}`)]);
-  const pagePicker = S.pickPage ? await api(`/api/channels/pending/${S.pickPage}?sellerId=${s.id}`).catch(() => null) : null;
+  const [members, me] = await Promise.all([api(`/api/sellers/${s.id}/members`), api('/api/me')]);
+  // Back from Instagram or Facebook: confirm the sign-in here, where we know who is signed in.
+  // An Instagram account or a single Page connects at once; several Pages need a pick.
+  let pagePicker = null;
+  if (S.pickPage) {
+    const pending = await api(`/api/channels/pending/${S.pickPage}?sellerId=${s.id}`).catch((err) => { toast(err.message); return null; });
+    if (!pending) S.pickPage = null;
+    else if (pending.channel === 'instagram' || pending.pages.length === 1) {
+      try {
+        await api(`/api/channels/pending/${S.pickPage}`, { method: 'POST', body: { sellerId: s.id } });
+        toast(t('ch.connected', { app: chName[pending.channel] }));
+      } catch (err) { toast(err.message); }
+      S.pickPage = null;
+    } else pagePicker = pending.pages;
+  }
+  const channels = await api(`/api/channels?sellerId=${s.id}`);
   const team = `<div class="sect">${t('team.title')}</div>
     ${members.map((mb) => `<div class="line"><span class="pos">${mb.role === 'owner' ? '★' : '·'}</span>
       <span>${me.user?.id === mb.user_id ? t('you') : esc(mb.name ?? '+' + mb.wa_id)}<span class="q">${mb.name || me.user?.id === mb.user_id ? `+${esc(mb.wa_id)} · ` : ''}${mb.role === 'owner' ? t('team.owner') : t('team.staff')}</span></span>
@@ -1094,7 +1108,7 @@ try { S.dryRun = (await api('/health')).dryRun; } catch { /* server down: views 
   const q = new URLSearchParams(location.search);
   if (q.get('connected')) setTimeout(() => toast(t('ch.connected', { app: chName[q.get('connected')] ?? q.get('connected') })), 300);
   if (q.get('channel_error')) setTimeout(() => toast(q.get('channel_error')), 300);
-  if (q.get('pick_page')) S.pickPage = q.get('pick_page');
+  if (q.get('confirm_channel')) S.pickPage = q.get('confirm_channel');
   if (q.get('shop') && q.get('shop') !== sellerId()) { set('nkg.seller', q.get('shop')); }
   if ([...q.keys()].length) history.replaceState(null, '', location.pathname + location.hash);
 }
