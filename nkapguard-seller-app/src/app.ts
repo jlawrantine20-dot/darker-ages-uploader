@@ -172,7 +172,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
         reference: `${order.payment_ref}.${now.getTime().toString(36)}`,
         amountMinor: Number(order.amount_minor),
         currency: seller.currency,
-        description: `${seller.name}: ${order.quantity > 1 ? `${order.quantity} × ` : ''}${label}`,
+        description: `${seller.name}: ${order.quantity > 1 ? `${order.quantity} × ` : ''}${label}${order.delivery_zone ? ` + ${order.delivery_zone}` : ''}`,
         waId: contact.wa_id,
         name: contact.name,
         metadata: { order_id: order.id, seller_id: seller.id },
@@ -654,17 +654,44 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     return c.json({ ok: true });
   });
 
+  // ---- Delivery areas and fees ----
+  app.get('/api/delivery-zones', async (c) => {
+    const sellerId = await scoped(c);
+    const rows = await db.query<{ fee_minor: string }>('select * from delivery_zones where ($1::uuid is null or seller_id = $1) order by fee_minor, name', [sellerId]);
+    return c.json(rows.map((r) => ({ ...r, fee_minor: Number(r.fee_minor) })));
+  });
+  app.post('/api/delivery-zones', async (c) => {
+    const b = await c.req.json<{ sellerId?: string; name?: string; fee?: number; aliases?: string[] }>();
+    await guard(c, b.sellerId, 'owner');
+    const seller = await sellerOr404(b.sellerId!);
+    const name = b.name?.trim() ?? '';
+    if (!name || !(Number(b.fee) >= 0)) throw new InputError('zone_required');
+    const aliases = (b.aliases ?? []).map((a) => String(a).trim()).filter(Boolean).slice(0, 20);
+    const [row] = await db.query<{ fee_minor: string }>(
+      'insert into delivery_zones (seller_id, name, aliases, fee_minor) values ($1, $2, $3, $4) returning *',
+      [seller.id, name.slice(0, 60), aliases, toMinor(Number(b.fee), seller.currency)],
+    );
+    return c.json({ ...row, fee_minor: Number(row.fee_minor) });
+  });
+  app.delete('/api/delivery-zones/:id', async (c) => {
+    const [row] = await db.query<{ seller_id: string }>('select seller_id from delivery_zones where id = $1', [c.req.param('id')]);
+    if (!row) throw new ForbiddenError('not_found');
+    await guard(c, row.seller_id, 'owner');
+    await db.query('delete from delivery_zones where id = $1', [c.req.param('id')]);
+    return c.json({ ok: true });
+  });
+
   // ---- Chat orders: what customers ordered, what's paid, what's waiting for payment ----
   app.get('/api/orders', async (c) => {
     const sellerId = await scoped(c);
     const rows = await db.query(
-      `select o.id, o.quantity, o.amount_minor, o.status, o.channel, o.paid_via, o.created_at, o.expires_at, o.paid_at,
+      `select o.id, o.quantity, o.amount_minor, o.status, o.channel, o.paid_via, o.created_at, o.expires_at, o.paid_at, o.delivery_zone, o.delivery_fee_minor,
               c.id as contact_id, c.name, c.username, c.wa_id, c.channel as contact_channel, p.name as product, p.variant
          from orders o join contacts c on c.id = o.contact_id join products p on p.id = o.product_id
         where ($1::uuid is null or o.seller_id = $1) order by o.created_at desc limit 200`,
       [sellerId],
     );
-    return c.json(rows.map((r: Record<string, unknown>) => ({ ...r, amount_minor: Number(r.amount_minor) })));
+    return c.json(rows.map((r: Record<string, unknown>) => ({ ...r, amount_minor: Number(r.amount_minor), delivery_fee_minor: Number(r.delivery_fee_minor) })));
   });
   const orderShop = async (c: C, id: string) => {
     const [row] = await db.query<{ seller_id: string }>('select seller_id from orders where id = $1', [id]);

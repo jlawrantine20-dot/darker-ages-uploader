@@ -28,6 +28,10 @@ export interface Facts {
   options?: { variant: string; free: number }[];
   /** Units in a chat order. */
   quantity?: number;
+  /** A delivery area and its fee; with an order, the fee is already in priceMinor. */
+  zone?: { name: string; fee_minor: number };
+  /** The shop's delivery areas, for "which area are you in?". */
+  zones?: { name: string; fee_minor: number }[];
 }
 
 /** Shop settings needed to format money and time. */
@@ -51,13 +55,21 @@ interface Args {
   seller: string;
   options: string;
   quantity: number;
+  zone: string;
+  fee: string;
+  /** "Akwa (1 000 FCFA), Bonamoussadi (1 500 FCFA) et …" */
+  zonesAnd: string;
+  zonesOr: string;
+  /** Added after an order's price: " (livraison à Akwa comprise)", or "" without delivery. */
+  delivery: string;
 }
 
 export type Key =
   | 'whichVariant' | 'offerWhatsApp' | 'soldOutPlain' | 'commentReply' | 'offerAlert' | 'inStock' | 'joined' | 'alreadyWaiting' | 'stopped'
   | 'hold' | 'race' | 'soldOut' | 'paid' | 'refund'
   | 'orderLink' | 'orderManual' | 'orderAgain' | 'orderShort' | 'orderRefund'
-  | 'followUp' | 'orderExpired';
+  | 'followUp' | 'orderExpired'
+  | 'deliveryFee' | 'deliveryZones' | 'askZone';
 type Sentences = Record<Key, (a: Args) => string> & { fallbackName: string };
 
 // Each language is written as a native speaker would text a customer, not translated line by
@@ -76,10 +88,13 @@ const en: Sentences = {
   inStock: (a) =>
     `Hi ${a.first}, yes, we have the ${a.label} in stock at ${a.price}. ${a.stock === 1 ? "It's the last one!" : `We've got ${a.stock} left.`} To order, just reply YES.`,
   orderLink: (a) =>
-    `Great, ${a.quantity > 1 ? `${a.quantity} × ${a.label} are` : `the ${a.label} is`} yours! We're holding ${a.quantity > 1 ? 'them' : 'it'} for you until ${a.until}. Pay ${a.price} here to confirm your order:\n${a.url}`,
+    `Great, ${a.quantity > 1 ? `${a.quantity} × ${a.label} are` : `the ${a.label} is`} yours! We're holding ${a.quantity > 1 ? 'them' : 'it'} for you until ${a.until}. Pay ${a.price}${a.delivery} here to confirm your order:\n${a.url}`,
   orderManual: (a) =>
-    `Great, noted! We're keeping ${a.quantity > 1 ? `${a.quantity} × ${a.label}` : `the ${a.label}`} aside for you until ${a.until}. We'll message you shortly to arrange payment (${a.price}).`,
-  orderAgain: (a) => `Your ${a.label} is already held for you until ${a.until}. Pay ${a.price} here to confirm:\n${a.url}`,
+    `Great, noted! We're keeping ${a.quantity > 1 ? `${a.quantity} × ${a.label}` : `the ${a.label}`} aside for you until ${a.until}. We'll message you shortly to arrange payment (${a.price}${a.delivery}).`,
+  orderAgain: (a) => `Your ${a.label} is already held for you until ${a.until}. Pay ${a.price}${a.delivery} here to confirm:\n${a.url}`,
+  deliveryFee: (a) => (a.fee === 'free' ? `${a.zone}: it's free.` : `Delivery to ${a.zone} is ${a.fee}.`),
+  deliveryZones: (a) => `We deliver to ${a.zonesAnd}. Where should we deliver to?`,
+  askZone: (a) => `Great! Where should we deliver to? ${a.zonesOr}.`,
   orderShort: (a) => `We only have ${a.stock} left of the ${a.label}. How many would you like?`,
   followUp: (a) =>
     `Hi ${a.first}, still interested in the ${a.label}? ${a.stock === 1 ? `It's the last one, at ${a.price}.` : `We've got ${a.stock} left at ${a.price}.`} Just reply YES and it's yours.`,
@@ -113,10 +128,13 @@ const fr: Sentences = {
   inStock: (a) =>
     `Bonjour ${a.first} ! Oui, le modèle ${a.label} est disponible au prix de ${a.price}. ${a.stock === 1 ? "C'est le dernier !" : `Il nous en reste ${a.stock}.`} Pour le commander, répondez simplement OUI.`,
   orderLink: (a) =>
-    `Parfait, ${a.quantity > 1 ? `c'est noté pour ${a.quantity} × ${a.label}` : `le modèle ${a.label} est à vous`} ! Nous vous ${a.quantity > 1 ? 'les' : 'le'} réservons jusqu'à ${a.until}. Réglez ${a.price} ici pour confirmer votre commande :\n${a.url}`,
+    `Parfait, ${a.quantity > 1 ? `c'est noté pour ${a.quantity} × ${a.label}` : `le modèle ${a.label} est à vous`} ! Nous vous ${a.quantity > 1 ? 'les' : 'le'} réservons jusqu'à ${a.until}. Réglez ${a.price}${a.delivery} ici pour confirmer votre commande :\n${a.url}`,
   orderManual: (a) =>
-    `Parfait, c'est noté ! Nous vous mettons ${a.quantity > 1 ? `${a.quantity} × ${a.label}` : `le modèle ${a.label}`} de côté jusqu'à ${a.until}. Nous vous écrivons très vite pour le paiement (${a.price}).`,
-  orderAgain: (a) => `Le modèle ${a.label} vous est déjà réservé jusqu'à ${a.until}. Réglez ${a.price} ici pour confirmer :\n${a.url}`,
+    `Parfait, c'est noté ! Nous vous mettons ${a.quantity > 1 ? `${a.quantity} × ${a.label}` : `le modèle ${a.label}`} de côté jusqu'à ${a.until}. Nous vous écrivons très vite pour le paiement (${a.price}${a.delivery}).`,
+  orderAgain: (a) => `Le modèle ${a.label} vous est déjà réservé jusqu'à ${a.until}. Réglez ${a.price}${a.delivery} ici pour confirmer :\n${a.url}`,
+  deliveryFee: (a) => (a.fee === 'gratuit' ? `${a.zone} : c'est gratuit.` : `La livraison à ${a.zone} coûte ${a.fee}.`),
+  deliveryZones: (a) => `Nous livrons à ${a.zonesAnd}. Où faut-il vous livrer ?`,
+  askZone: (a) => `Parfait ! Où faut-il vous livrer ? ${a.zonesOr}.`,
   orderShort: (a) => `Il ne nous en reste que ${a.stock} pour le modèle ${a.label}. Combien en voulez-vous ?`,
   followUp: (a) =>
     `Bonjour ${a.first}, le modèle ${a.label} vous intéresse toujours ? ${a.stock === 1 ? `C'est le dernier, à ${a.price}.` : `Il nous en reste ${a.stock}, à ${a.price}.`} Répondez simplement OUI pour le commander.`,
@@ -189,6 +207,14 @@ function options(l: Base, list: { variant: string; free: number }[]): string {
   return new Intl.ListFormat(l, { type: 'disjunction' }).format(items);
 }
 
+function feeText(l: Base, minor: number, fmt: Fmt): string {
+  if (minor <= 0) return l === 'fr' ? 'gratuit' : 'free';
+  return formatMoney(minor, fmt.currency, l, fmt.country);
+}
+function zoneList(l: Base, zones: { name: string; fee_minor: number }[], fmt: Fmt, type: 'conjunction' | 'disjunction'): string {
+  return new Intl.ListFormat(l, { type }).format(zones.map((z) => `${z.name} (${feeText(l, Number(z.fee_minor), fmt)})`));
+}
+
 function args(l: Base, f: Facts, fmt: Fmt): Args {
   return {
     first: firstName(f.name, l),
@@ -204,6 +230,13 @@ function args(l: Base, f: Facts, fmt: Fmt): Args {
     seller: f.seller ?? '',
     options: options(l, f.options ?? []),
     quantity: f.quantity ?? 1,
+    zone: f.zone?.name ?? '',
+    fee: f.zone ? feeText(l, f.zone.fee_minor, fmt) : '',
+    zonesAnd: zoneList(l, f.zones ?? [], fmt, 'conjunction'),
+    zonesOr: zoneList(l, f.zones ?? [], fmt, 'disjunction'),
+    delivery: !f.zone ? '' : f.zone.fee_minor > 0
+      ? l === 'fr' ? ` (livraison à ${f.zone.name} comprise)` : ` (including delivery to ${f.zone.name})`
+      : l === 'fr' ? ` (${f.zone.name}, gratuit)` : ` (${f.zone.name}, free)`,
   };
 }
 

@@ -85,6 +85,7 @@ const MESSAGES = {
   order_not_found: { en: () => "This order doesn't exist or was deleted.", fr: () => "Cette commande n'existe pas ou a été supprimée." },
   order_closed: { en: () => 'This order is already closed.', fr: () => 'Cette commande est déjà clôturée.' },
   push_invalid: { en: () => "This browser didn't give a valid notification address. Try again.", fr: () => "Ce navigateur n'a pas fourni d'adresse de notification valable. Réessayez." },
+  zone_required: { en: () => 'An area needs a name and a fee (0 for free).', fr: () => 'Une zone doit avoir un nom et un tarif (0 si gratuit).' },
   server_error: { en: () => 'Something went wrong on our side. Try again in a moment.', fr: () => 'Un problème est survenu de notre côté. Réessayez dans un instant.' },
 } satisfies Record<string, Record<UiLang, (p: P) => string>>;
 

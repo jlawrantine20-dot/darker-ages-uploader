@@ -31,6 +31,8 @@ export interface OrderRow {
   created_at: Date;
   expires_at: Date;
   paid_at: Date | null;
+  delivery_zone: string | null;
+  delivery_fee_minor: number;
 }
 
 export const isOrderRef = (ref: string) => ref.startsWith('ord_');
@@ -43,12 +45,16 @@ export const takesPaymentsOnline = (ctx: Ctx, s: Seller) => ctx.config.dryRun ||
 
 export async function createOrder(
   q: Q, sellerId: string, contactId: string, product: { id: string; price_minor: number }, quantity: number, channel: string, now: Date,
+  zone?: { id: string; name: string; fee_minor: number } | null,
 ): Promise<OrderRow> {
   const ref = 'ord_' + randomBytes(9).toString('base64url');
+  const fee = zone ? Number(zone.fee_minor) : 0;
   const [o] = await q.query<OrderRow>(
-    `insert into orders (seller_id, contact_id, product_id, quantity, amount_minor, status, channel, payment_ref, created_at, expires_at)
-     values ($1, $2, $3, $4, $5, 'held', $6, $7, $8, $9) returning *`,
-    [sellerId, contactId, product.id, quantity, Number(product.price_minor) * quantity, channel, ref, now, new Date(now.getTime() + ORDER_HOLD_MINUTES * 60_000)],
+    `insert into orders (seller_id, contact_id, product_id, quantity, amount_minor, status, channel, payment_ref, created_at, expires_at,
+                         delivery_zone_id, delivery_zone, delivery_fee_minor)
+     values ($1, $2, $3, $4, $5, 'held', $6, $7, $8, $9, $10, $11, $12) returning *`,
+    [sellerId, contactId, product.id, quantity, Number(product.price_minor) * quantity + fee, channel, ref, now, new Date(now.getTime() + ORDER_HOLD_MINUTES * 60_000),
+      zone?.id ?? null, zone?.name ?? null, fee],
   );
   return o;
 }

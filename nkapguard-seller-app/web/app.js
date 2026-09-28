@@ -341,7 +341,7 @@ views.orders = async () => {
     ${shown.map((o) => `<div class="order">
       <div class="order-top"><a href="#/chat/${esc(o.contact_id)}" class="order-who">${esc(customer(o))}</a>${chip(o.contact_channel)}<span class="order-pill">${pill(o)}</span></div>
       <div class="order-what"><b>${o.quantity} × ${label({ name: o.product, variant: o.variant })}</b><span class="num">${money(o.amount_minor)}</span></div>
-      <div class="order-when">${when(o.created_at)}</div>
+      <div class="order-when">${when(o.created_at)}${o.delivery_zone ? ` · ${t('ord.delivery', { zone: esc(o.delivery_zone), fee: o.delivery_fee_minor > 0 ? money(o.delivery_fee_minor) : t('dl.free') })}` : ''}</div>
       ${['held', 'expired'].includes(o.status) ? `<div class="btns"><button class="btn sm" data-order-paid="${esc(o.id)}" data-name="${esc(customer(o))}">${t('ord.markPaid')}</button><button class="btn sm" data-order-cancel="${esc(o.id)}">${t('ord.cancel')}</button></div>` : ''}
     </div>`).join('')
       || `<p class="empty">${list.length ? t('ord.nothing') : t('ord.empty')}</p>`}`;
@@ -539,6 +539,7 @@ views.settings = async () => {
       <p class="err" hidden></p>
       <button class="btn block">${t('set.saveShop')}</button>
     </form>
+    ${owner ? await deliverySection(s) : ''}
     ${team}
     <div class="sect">${t('ch.title')}</div>
     ${S.dryRun
@@ -551,6 +552,22 @@ views.settings = async () => {
     <div class="line"><span class="pos"><span class="ch tiktok" style="padding:4px"><i></i></span></span><span>TikTok<span class="q">${t('ch.tiktok')}</span></span>${s.slug ? `<button class="btn sm" data-act="copy-shop">${t('ch.copyLink')}</button>` : '<span></span>'}</div>
     <div class="pad btns" style="margin:0"><a class="btn" href="#/setup">${t('set.switchShop')}</a><button class="btn danger" data-act="signout">${t('set.signOut')}</button></div>`;
 };
+/** Delivery areas and fees (owner only). */
+async function deliverySection(s) {
+  const zones = await api(`/api/delivery-zones?sellerId=${s.id}`);
+  const fee = (z) => (z.fee_minor > 0 ? money(z.fee_minor) : t('dl.free'));
+  return `<div class="sect">${t('dl.title')}</div>
+    <p class="note pad" style="margin:0">${t('dl.intro')}</p>
+    ${zones.map((z) => `<div class="line"><span class="pos">⌂</span><span>${esc(z.name)}<span class="q">${fee(z)}${z.aliases.length ? ` · ${esc(z.aliases.join(', '))}` : ''}</span></span><button class="btn sm" data-zone-remove="${esc(z.id)}">${t('dl.remove')}</button></div>`).join('')
+      || `<p class="note pad" style="margin:0;padding-top:0">${t('dl.none')}</p>`}
+    <form class="form" data-form="zone">
+      <label>${t('dl.name')}<input id="z-name" required maxlength="60" placeholder="${esc(t('dl.namePh'))}"></label>
+      <label>${t('dl.fee', { cur: esc(s.currency) })}<input id="z-fee" type="number" min="0" step="any" required></label>
+      <label>${t('dl.aliases')}<input id="z-aliases"><span class="hint">${t('product.aliasesHint')}</span></label>
+      <p class="err" hidden></p>
+      <button class="btn block">${t('dl.add')}</button></form>`;
+}
+
 // ---------- this phone: install and notifications ----------
 const standalone = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
 const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
@@ -724,8 +741,12 @@ document.addEventListener('click', (e) => {
 });
 
 document.addEventListener('click', async (e) => {
-  const el = e.target.closest('[data-pick],[data-filter],[data-ofilter],[data-order-paid],[data-order-cancel],[data-cfg],[data-mode],[data-hold],[data-act],[data-pay],[data-remove-member]');
+  const el = e.target.closest('[data-zone-remove],[data-pick],[data-filter],[data-ofilter],[data-order-paid],[data-order-cancel],[data-cfg],[data-mode],[data-hold],[data-act],[data-pay],[data-remove-member]');
   if (!el) return;
+  if (el.dataset.zoneRemove) {
+    try { await api(`/api/delivery-zones/${el.dataset.zoneRemove}`, { method: 'DELETE' }); toast(t('dl.removed')); } catch (err) { toast(err.message); }
+    return route(true);
+  }
   if (el.dataset.ofilter) { S.orderFilter = el.dataset.ofilter; return route(true); }
   if (el.dataset.orderPaid) {
     if (!confirm(t('ord.markPaidAsk', { name: el.dataset.name }))) return;
@@ -889,6 +910,10 @@ document.addEventListener('submit', async (e) => {
         if (provider !== 'test') $('#pay-hook').innerHTML = t('set.webhookUrl', { url: esc(r.webhookUrl) });
         return;
       }
+      case 'zone':
+        await api('/api/delivery-zones', { method: 'POST', body: { sellerId: sellerId(), name: val('z-name'), fee: Number(val('z-fee')), aliases: val('z-aliases').split(',').map((a) => a.trim()).filter(Boolean) } });
+        toast(t('dl.added'));
+        return route(true);
       case 'product': {
         const p = await api('/api/products', {
           method: 'POST',
@@ -950,6 +975,16 @@ async function loadDemo() {
   await add('Claw Clip Ponytail', both ? 'Noir / Black' : fr ? 'Noir' : 'Jet black', prices[0], 6, ['ponytail']);
   await add(fr ? 'Bonnet satin' : 'Satin Bonnet', fr ? 'Bordeaux' : 'Wine', prices[1], 0, fr ? ['bonnet en soie'] : ['silk bonnet']);
   await add(fr ? 'Perruque lisse 20 pouces' : 'Bone Straight Wig 20"', fr ? 'Noir naturel' : 'Natural black', prices[2], 2, fr ? ['perruque'] : ['bone straight']);
+  // Sample delivery areas for the country picked, plus free pickup.
+  const zoneSets = {
+    CM: [['Akwa', 1000], ['Bonamoussadi', 1500, ['bonamou']], ['Bonabéri', 2000]],
+    CI: [['Cocody', 1000], ['Yopougon', 1500, ['yop']]], SN: [['Plateau', 1000], ['Almadies', 1500]],
+    NG: [['Lekki', 2500], ['Ikeja', 2000], ['Outside Lagos (waybill)', 6000, ['waybill', 'interstate']]],
+    GH: [['East Legon', 30], ['Osu', 25]], KE: [['Westlands', 300], ['Kilimani', 250]],
+  }[s.country] ?? [['Local delivery', prices[1]], ['Nationwide', prices[1] * 2]];
+  for (const [name, fee, aliases = []] of [...zoneSets, fr ? ['Retrait en boutique', 0, ['retrait', 'je passe']] : ['Pickup at the shop', 0, ['pickup', 'pick up', 'collect']]]) {
+    await api('/api/delivery-zones', { method: 'POST', body: { sellerId: s.id, name, fee, aliases } });
+  }
   const chat = async (name, ...texts) => { const from = samplePhone(); for (const text of texts) await api('/dev/inbound', { method: 'POST', body: { sellerId: s.id, from, name, text } }); };
   if (fr) {
     await chat('Nadège Mballa', 'Bonsoir, vous avez encore la claw clip ponytail marron ?', "Oui d'accord");

@@ -263,6 +263,23 @@ create table if not exists seller_app.follow_ups (
 );
 create index if not exists follow_ups_contact on seller_app.follow_ups (contact_id, product_id, sent_at);
 
+create table if not exists seller_app.delivery_zones (
+  id uuid primary key default gen_random_uuid(),
+  seller_id uuid not null references seller_app.sellers(id) on delete cascade,
+  name text not null,
+  aliases text[] not null default '{}',
+  fee_minor bigint not null check (fee_minor >= 0),
+  created_at timestamptz not null default now()
+);
+create index if not exists delivery_zones_seller on seller_app.delivery_zones (seller_id);
+alter table seller_app.orders add column if not exists delivery_zone_id uuid references seller_app.delivery_zones(id) on delete set null;
+alter table seller_app.orders add column if not exists delivery_zone text;
+alter table seller_app.orders add column if not exists delivery_fee_minor bigint not null default 0;
+alter table seller_app.contacts add column if not exists delivery_zone_id uuid references seller_app.delivery_zones(id) on delete set null;
+alter table seller_app.contacts add column if not exists awaiting_zone_at timestamptz;
+alter table seller_app.contacts add column if not exists pending_order_product_id uuid references seller_app.products(id) on delete set null;
+alter table seller_app.contacts add column if not exists pending_order_quantity integer;
+
 -- Defence in depth: row-level security on, with no policies, so even if the schema were
 -- exposed later, the anon and authenticated roles would see nothing.
 do $$

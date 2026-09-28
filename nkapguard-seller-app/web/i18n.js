@@ -215,6 +215,14 @@ const EN = {
   'fu.label': 'Remind customers who go quiet',
   'fu.hint': "One message, about 3 hours after an “in stock” answer with no reply, or when an order's hold runs out unpaid. Only inside WhatsApp's 24-hour window, never between 9 PM and 8 AM, and never twice for the same item.",
   'ins.followUps': 'Reminders sent', 'ins.followUpOrders': 'Orders after a reminder',
+  // Delivery
+  'dl.title': 'Delivery',
+  'dl.intro': "The areas you deliver to and what each costs: neighbourhoods, cities or regions. Customers get the fee when they ask, and it's added to their order. Use 0 for free, for example pickup at your shop.",
+  'dl.none': 'No delivery areas yet, so customers order without choosing one.',
+  'dl.name': 'Area', 'dl.namePh': 'Lekki, Westlands, Pickup at the shop…', 'dl.fee': (p) => `Fee (${p.cur})`,
+  'dl.aliases': 'Other ways customers write it', 'dl.add': 'Add area', 'dl.remove': 'Remove', 'dl.free': 'Free',
+  'dl.added': 'Area added', 'dl.removed': 'Area removed',
+  'ord.delivery': (p) => `Delivery: ${p.zone} (${p.fee})`,
 };
 
 const FR = {
@@ -414,6 +422,13 @@ const FR = {
   'fu.label': 'Relancer les clients qui ne répondent plus',
   'fu.hint': "Un seul message, environ 3 heures après une réponse « disponible » restée sans suite, ou quand la réservation d'une commande expire sans paiement. Uniquement dans la fenêtre de 24 heures de WhatsApp, jamais entre 21 h et 8 h, et jamais deux fois pour le même article.",
   'ins.followUps': 'Relances envoyées', 'ins.followUpOrders': 'Commandes après relance',
+  'dl.title': 'Livraison',
+  'dl.intro': "Les zones où vous livrez et leur tarif : quartiers, villes ou régions. Les clients reçoivent le tarif quand ils le demandent, et il s'ajoute à leur commande. Mettez 0 pour la gratuité, par exemple le retrait en boutique.",
+  'dl.none': "Aucune zone de livraison pour l'instant : les clients commandent sans en choisir.",
+  'dl.name': 'Zone', 'dl.namePh': 'Akwa, Cocody, Retrait en boutique…', 'dl.fee': (p) => `Tarif (${p.cur})`,
+  'dl.aliases': "Autres façons de l'écrire", 'dl.add': 'Ajouter la zone', 'dl.remove': 'Retirer', 'dl.free': 'Gratuit',
+  'dl.added': 'Zone ajoutée', 'dl.removed': 'Zone retirée',
+  'ord.delivery': (p) => `Livraison : ${p.zone} (${p.fee})`,
 };
 
 export const DICTS = { en: EN, fr: FR };

@@ -1,7 +1,7 @@
 import type { SocialChannel, SocialInbound } from '../channels/meta.js';
 import type { InboundText } from '../channels/whatsapp.js';
 import { parts, productLabel, say } from '../domain/copy.js';
-import { asksAvailability, detectLanguage, detectProduct, fold, isAlertRequest, isConsentYes, isOrderRequest, isStop, orderQuantity, pickVariant, productFamily } from '../domain/intent.js';
+import { asksAvailability, asksDelivery, detectZone, detectLanguage, detectProduct, fold, isAlertRequest, isConsentYes, isOrderRequest, isStop, orderQuantity, pickVariant, productFamily } from '../domain/intent.js';
 import { CONSENT_PROMPT_TTL_MS } from '../domain/windows.js';
 import type { Q } from '../db.js';
 import type { Ctx, DispatchResult, Outbound, Recipient } from './context.js';
@@ -13,7 +13,7 @@ import { fmt, type Seller } from './sellers.js';
 
 export type InboundAction =
   | 'unknown_seller' | 'stopped' | 'joined' | 'already_waiting' | 'offered' | 'in_stock' | 'asked_variant' | 'sold_out' | 'shop_link' | 'unhandled'
-  | 'ordered' | 'ordered_manual' | 'order_again' | 'asked_quantity';
+  | 'ordered' | 'ordered_manual' | 'order_again' | 'asked_quantity' | 'asked_zone' | 'delivery_fee';
 
 interface ContactRow {
   id: string;
@@ -28,7 +28,18 @@ interface ContactRow {
   awaiting_choice_at: Date | null;
   awaiting_order_product_id: string | null;
   awaiting_order_at: Date | null;
+  delivery_zone_id: string | null;
+  awaiting_zone_at: Date | null;
+  pending_order_product_id: string | null;
+  pending_order_quantity: number | null;
   channel: string;
+}
+
+interface ZoneRow {
+  id: string;
+  name: string;
+  aliases: string[];
+  fee_minor: number;
 }
 
 interface ProductRow {
@@ -245,6 +256,9 @@ async function decide(
   };
   const catalog = () => q.query<ProductRow>('select * from products where seller_id = $1', [seller.id]);
 
+  const zones = await q.query<ZoneRow>('select * from delivery_zones where seller_id = $1 order by fee_minor, name', [seller.id]);
+  const knownZone = () => zones.find((z) => z.id === contact.delivery_zone_id) ?? null;
+
   /** Hold the units for an hour and send the payment link, or say how many are left. */
   const placeOrder = async (product: ProductRow, quantity: number) => {
     const free = await freeStock(q, product.id);
@@ -252,7 +266,8 @@ async function decide(
     const until = (o: { expires_at: Date }) => o.expires_at;
     const link = (ref: string) => `${ctx.config.publicUrl.replace(/\/$/, '')}/pay/${ref}`;
     if (again && takesPaymentsOnline(ctx, seller)) {
-      const facts = { product, priceMinor: Number(again.amount_minor), until: until(again), url: link(again.payment_ref) };
+      const againZone = again.delivery_zone ? { name: again.delivery_zone, fee_minor: Number(again.delivery_fee_minor) } : undefined;
+      const facts = { product, priceMinor: Number(again.amount_minor), until: until(again), url: link(again.payment_ref), zone: againZone };
       return { action: 'order_again' as const, outs: reply(say(lang, 'orderAgain', facts, f)) };
     }
     if (free <= 0) return answerFor(product);
@@ -260,14 +275,52 @@ async function decide(
       await q.query('update contacts set awaiting_order_product_id = $2, awaiting_order_at = $3 where id = $1', [contact.id, product.id, msg.at]);
       return { action: 'asked_quantity' as const, outs: reply(say(lang, 'orderShort', { product, stock: free }, f)) };
     }
-    await q.query('update contacts set awaiting_order_product_id = null, awaiting_order_at = null, awaiting_choice_name = null, awaiting_choice_at = null where id = $1', [contact.id]);
-    const order = await createOrder(q, seller.id, contact.id, product, quantity, msg.channel, msg.at);
-    const facts = { product, quantity, priceMinor: Number(order.amount_minor), until: order.expires_at, url: link(order.payment_ref) };
+    // A shop that delivers needs the customer's area first; it's remembered for next time.
+    const zone = zones.length ? detectZone(msg.text, zones) ?? knownZone() : null;
+    if (zones.length && !zone) {
+      await q.query(
+        `update contacts set awaiting_order_product_id = null, awaiting_order_at = null, awaiting_zone_at = $2,
+                pending_order_product_id = $3, pending_order_quantity = $4 where id = $1`,
+        [contact.id, msg.at, product.id, quantity],
+      );
+      return { action: 'asked_zone' as const, outs: reply(say(lang, 'askZone', { zones }, f)) };
+    }
+    await q.query(
+      `update contacts set awaiting_order_product_id = null, awaiting_order_at = null, awaiting_choice_name = null, awaiting_choice_at = null,
+              awaiting_zone_at = null, pending_order_product_id = null, pending_order_quantity = null, delivery_zone_id = coalesce($2, delivery_zone_id)
+        where id = $1`,
+      [contact.id, zone?.id ?? null],
+    );
+    const order = await createOrder(q, seller.id, contact.id, product, quantity, msg.channel, msg.at, zone);
+    const facts = { product, quantity, priceMinor: Number(order.amount_minor), until: order.expires_at, url: link(order.payment_ref), zone: zone ?? undefined };
     // Without an online payment provider, the seller arranges payment (cash, mobile money transfer) and marks it paid.
     return takesPaymentsOnline(ctx, seller)
       ? { action: 'ordered' as const, outs: reply(say(lang, 'orderLink', facts, f)) }
       : { action: 'ordered_manual' as const, outs: reply(say(lang, 'orderManual', facts, f)) };
   };
+
+  // The answer to "which area?": finish the waiting order, or give that area's fee.
+  const zoneLive = contact.awaiting_zone_at && msg.at.getTime() - contact.awaiting_zone_at.getTime() < CONSENT_PROMPT_TTL_MS;
+  const namedZone = zones.length ? detectZone(msg.text, zones) : null;
+  if (zoneLive && namedZone) {
+    await q.query('update contacts set delivery_zone_id = $2, awaiting_zone_at = null where id = $1', [contact.id, namedZone.id]);
+    contact.delivery_zone_id = namedZone.id;
+    if (contact.pending_order_product_id) {
+      const [product] = await q.query<ProductRow>('select * from products where id = $1', [contact.pending_order_product_id]);
+      if (product) return placeOrder(product, contact.pending_order_quantity ?? 1);
+    }
+    return { action: 'delivery_fee' as const, outs: reply(say(lang, 'deliveryFee', { zone: namedZone }, f)) };
+  }
+  // "La livraison à Akwa c'est combien ?" on its own; a product question gets the fee added below.
+  const deliveryQuestion = zones.length > 0 && asksDelivery(msg.text);
+  if (deliveryQuestion && !detectProduct(msg.text, await catalog()) && !isOrderRequest(msg.text)) {
+    if (namedZone) {
+      await q.query('update contacts set delivery_zone_id = $2 where id = $1', [contact.id, namedZone.id]);
+      return { action: 'delivery_fee' as const, outs: reply(say(lang, 'deliveryFee', { zone: namedZone }, f)) };
+    }
+    await q.query('update contacts set awaiting_zone_at = $2, pending_order_product_id = null, pending_order_quantity = null where id = $1', [contact.id, msg.at]);
+    return { action: 'delivery_fee' as const, outs: reply(say(lang, 'deliveryZones', { zones }, f)) };
+  }
 
   // "Oui", "je le prends" or "2" right after "to order, reply YES".
   const orderLive =
@@ -301,7 +354,16 @@ async function decide(
   if (asksAvailability(msg.text) || isAlertRequest(msg.text) || msg.text.includes('?')) {
     const products = await catalog();
     const product = detectProduct(msg.text, products);
-    if (product) return answerFor(product);
+    if (product) {
+      const answer = await answerFor(product);
+      // "Vous avez le noir ? Et la livraison à Akwa ?": one reply answers both.
+      const first = answer.outs[0];
+      if (deliveryQuestion && namedZone && first?.kind === 'text') {
+        first.body = `${first.body} ${say(lang, 'deliveryFee', { zone: namedZone }, f)}`;
+        await q.query('update contacts set delivery_zone_id = $2 where id = $1', [contact.id, namedZone.id]);
+      }
+      return answer;
+    }
     // The product comes in several variants and the customer didn't say which: list them.
     const family = productFamily(msg.text, products);
     if (family) {

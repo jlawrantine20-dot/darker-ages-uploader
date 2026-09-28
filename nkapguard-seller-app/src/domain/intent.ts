@@ -186,3 +186,34 @@ export function orderQuantity(text: string): number | null {
   const n = val(m[1]);
   return n >= 1 && n <= 50 ? n : null;
 }
+
+/** "La livraison c'est combien ?", "vous livrez à Akwa ?", "how much is delivery?". */
+export function asksDelivery(text: string): boolean {
+  return /\b(livraison|livrer|livrez|livre[sz]?|livreur|delivery|deliver|delivering|shipping|ship|dispatch|waybill|transport)\b/.test(fold(text).replace(/[’']/g, ' '));
+}
+
+export interface Zone {
+  id: string;
+  name: string;
+  aliases: string[];
+}
+
+/**
+ * The delivery area a message names, by its name or one of the seller's other spellings
+ * ("Bonamoussadi", "bonamou"). The most specific match wins; a tie names nothing.
+ */
+export function detectZone<T extends Zone>(text: string, zones: T[]): T | null {
+  const words = new Set(tokens(text));
+  const scored = zones
+    .map((z) => ({
+      z,
+      score: Math.max(0, ...[z.name, ...z.aliases].map((n) => {
+        const nw = tokens(n);
+        return nw.length && nw.every((w) => words.has(w)) ? nw.length : 0;
+      })),
+    }))
+    .filter((s) => s.score > 0)
+    .sort((a, b) => b.score - a.score);
+  if (!scored.length || (scored[1] && scored[1].score === scored[0].score)) return null;
+  return scored[0].z;
+}

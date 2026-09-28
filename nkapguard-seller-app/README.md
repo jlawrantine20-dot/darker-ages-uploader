@@ -81,6 +81,11 @@ India and Brazil. Any other country works once you enter its currency and time z
   - Without a provider, the customer is told the shop will contact them about payment, and
     the seller marks the order paid by hand (cash, or mobile money sent to their number).
   - A payment that lands after the hold ended and the units sold is flagged for refund.
+- **Delivery by area:** the seller lists areas (a neighbourhood, a city or a region, in any
+  country) with a fee, 0 for pickup. "La livraison à Akwa c'est combien ?" or "how much is
+  dispatch to Lekki?" gets the fee; without an area named, the list. An order asks where to
+  deliver when it doesn't know yet, adds the fee to the payment link, and remembers the area.
+  Shops without areas skip all of this.
 - **Follow-ups:** one reminder when a sale stalls: about 3 hours after an unanswered "in
   stock, reply YES to order", or when an order's hold runs out unpaid. Only inside the
   24-hour reply window, never between 21:00 and 08:00 shop time, never twice for the same
@@ -310,7 +315,6 @@ in.
 ## Not built yet
 
 - **TikTok DMs:** need TikTok Business Messaging API access.
-- **Delivery fees by area** in chat orders.
 - **More languages:** a translation set per language, plus an LLM classifier for messages
   the rule-based matcher misses.
 - **Other providers:** CinetPay and CamPay.
