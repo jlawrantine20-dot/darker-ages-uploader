@@ -16,6 +16,7 @@ import { parseMetaWebhook } from './channels/meta.js';
 import { encryptSecret } from './crypto.js';
 import { CHANNEL_NAMES, appBase, channelAvailable, choosePendingPage, completeFacebook, completeInstagram, connectUrl, deleteMetaUser, listPendingPages, parseSignedRequest, refreshInstagramTokens } from './services/channels.js';
 import { dispatch } from './services/outbound.js';
+import { listTemplates, submitTemplates } from './services/templates.js';
 import { baseRef, handlePayment, previewRestock, startRestock, tick } from './services/restock.js';
 import { escapeHtml, page, pageText } from './pages.js';
 import { normalizePhone, phoneCountry } from './domain/phone.js';
@@ -708,6 +709,21 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
       console.error(err);
       return backToSettings(c, { channel_error: err instanceof InputError ? err.message : `${CHANNEL_NAMES[channel]} was not connected. Try again.` });
     }
+  });
+
+  // ---- Operator: submit the WhatsApp templates to Meta and see their review status ----
+  const wabaOf = (c: Context) => {
+    const id = c.req.query('wabaId') ?? '';
+    if (!/^\d{5,20}$/.test(id)) throw new InputError('Pass ?wabaId=, the WhatsApp Business Account id from API Setup.');
+    return id;
+  };
+  app.get('/api/admin/templates', async (c) => {
+    if (c.get('viewer').kind !== 'admin') return c.json({ error: 'Only the operator can do this.' }, 403);
+    return c.json({ templates: await listTemplates(ctx, wabaOf(c)) });
+  });
+  app.post('/api/admin/templates', async (c) => {
+    if (c.get('viewer').kind !== 'admin') return c.json({ error: 'Only the operator can do this.' }, 403);
+    return c.json({ templates: await submitTemplates(ctx, wabaOf(c)) });
   });
 
   app.post('/api/tick', async (c) => {
