@@ -47,6 +47,8 @@ export type Outbound =
   | (Recipient & {
       kind: 'text';
       body: string;
+      /** A product photo sent with the text (as its caption on WhatsApp). Inside the window only. */
+      imageUrl?: string;
       /** Sent instead when the 24h window has closed. Without one, the message is skipped. */
       fallback?: TemplatePart;
     })

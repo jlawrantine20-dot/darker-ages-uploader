@@ -223,6 +223,11 @@ const EN = {
   'dl.aliases': 'Other ways customers write it', 'dl.add': 'Add area', 'dl.remove': 'Remove', 'dl.free': 'Free',
   'dl.added': 'Area added', 'dl.removed': 'Area removed',
   'ord.delivery': (p) => `Delivery: ${p.zone} (${p.fee})`,
+  // Photos
+  'ph.title': 'Photo', 'ph.add': 'Add a photo', 'ph.change': 'Change photo', 'ph.remove': 'Remove photo',
+  'ph.why': 'Customers buy what they can see. The photo appears on your shop page and is sent with the answer when someone asks about this item.',
+  'ph.saving': 'Saving the photo…', 'ph.saved': 'Photo saved', 'ph.removed': 'Photo removed',
+  'ph.unreadable': "This photo couldn't be opened. Try another one.", 'ph.optional': 'Optional. You can add it later.',
 };
 
 const FR = {
@@ -429,6 +434,10 @@ const FR = {
   'dl.aliases': "Autres façons de l'écrire", 'dl.add': 'Ajouter la zone', 'dl.remove': 'Retirer', 'dl.free': 'Gratuit',
   'dl.added': 'Zone ajoutée', 'dl.removed': 'Zone retirée',
   'ord.delivery': (p) => `Livraison : ${p.zone} (${p.fee})`,
+  'ph.title': 'Photo', 'ph.add': 'Ajouter une photo', 'ph.change': 'Changer la photo', 'ph.remove': 'Retirer la photo',
+  'ph.why': "Les clients achètent ce qu'ils voient. La photo s'affiche sur votre page boutique et part avec la réponse quand quelqu'un demande cet article.",
+  'ph.saving': 'Enregistrement de la photo…', 'ph.saved': 'Photo enregistrée', 'ph.removed': 'Photo retirée',
+  'ph.unreadable': "Impossible d'ouvrir cette photo. Essayez-en une autre.", 'ph.optional': "Facultatif. Vous pourrez l'ajouter plus tard.",
 };
 
 export const DICTS = { en: EN, fr: FR };

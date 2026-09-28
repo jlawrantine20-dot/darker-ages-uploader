@@ -137,8 +137,8 @@ describe('public shop page', () => {
 
     const page = (await call('GET', '/shop/douala-hair')).body;
     expect(page).toMatchObject({ name: 'Douala Hair Plug', currency: 'XAF', whatsapp: '237677123456' });
-    expect(page.products).toContainEqual({ name: '12" Claw Clip Ponytail', variant: 'Jet black', priceMinor: 15000, available: true });
-    expect(page.products).toContainEqual({ name: '12" Claw Clip Ponytail', variant: 'Brown', priceMinor: 15000, available: false });
+    expect(page.products).toContainEqual({ name: '12" Claw Clip Ponytail', variant: 'Jet black', priceMinor: 15000, available: true, photo: null });
+    expect(page.products).toContainEqual({ name: '12" Claw Clip Ponytail', variant: 'Brown', priceMinor: 15000, available: false, photo: null });
     // Stock counts, ids and payment settings stay private.
     expect(JSON.stringify(page)).not.toMatch(/stock|payment|"id"|secret/);
     expect((await call('GET', '/shop/nobody')).status).toBe(404);

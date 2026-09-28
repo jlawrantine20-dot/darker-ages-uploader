@@ -49,15 +49,19 @@ export async function dispatch(ctx: Ctx, outs: Outbound[], now: Date): Promise<D
       try {
         const account = await socialAccount(ctx, out.from);
         if (!account) throw new Error('This channel is paused or disconnected in Settings.');
+        // The photo first, then the words, so they read in order in the chat.
+        if (out.imageUrl && !out.commentId) {
+          await socialFor(ctx).sendImage(account, { userId: out.to }, out.imageUrl).catch((err) => console.error(`Photo to ${out.channel} user ${out.to} not sent: ${(err as Error).message}`));
+        }
         providerId = (await socialFor(ctx).send(account, out.commentId ? { commentId: out.commentId } : { userId: out.to }, out.body)).providerId;
       } catch (err) {
         error = (err as Error).message;
         console.error(`Message to ${out.channel} user ${out.to} not sent: ${error}`);
       }
       await ctx.db.query(
-        `insert into messages (seller_id, contact_id, channel, direction, kind, category, body, cost_usd_micros, provider_id, error, created_at)
-         values ($1, $2, $3, 'out', 'text', 'service', $4, 0, $5, $6, $7)`,
-        [out.sellerId, out.contactId, out.channel, body, providerId, error, now],
+        `insert into messages (seller_id, contact_id, channel, direction, kind, category, body, cost_usd_micros, provider_id, error, created_at, image_url)
+         values ($1, $2, $3, 'out', 'text', 'service', $4, 0, $5, $6, $7, $8)`,
+        [out.sellerId, out.contactId, out.channel, body, providerId, error, now, out.kind === 'text' && !out.commentId ? out.imageUrl ?? null : null],
       );
       results.push(error ? { to: out.to, status: 'failed', body, costUsdMicros: 0, error } : { to: out.to, status: 'sent', body, costUsdMicros: 0 });
       continue;
@@ -74,15 +78,19 @@ export async function dispatch(ctx: Ctx, outs: Outbound[], now: Date): Promise<D
     const body = o.kind === 'text' ? o.body : o.preview;
     const category = o.kind === 'text' ? 'service' : o.category;
     const cost = messageCost(ctx, o.country, category);
+    const image = o.kind === 'text' ? o.imageUrl ?? null : null;
     try {
+      // A photo carries the text as its caption; if the photo can't go, the text still does.
       const sent =
-        o.kind === 'text'
+        o.kind === 'text' && image
+          ? await ctx.channel.sendImage(o.from, o.to, image, o.body).catch(() => ctx.channel.sendText(o.from, o.to, (o as { body: string }).body))
+          : o.kind === 'text'
           ? await ctx.channel.sendText(o.from, o.to, o.body)
           : await ctx.channel.sendTemplate(o.from, o.to, { ...templateFor(templates[o.template], o.language), params: o.params });
       await ctx.db.query(
-        `insert into messages (seller_id, contact_id, direction, kind, template, category, body, cost_usd_micros, provider_id, created_at)
-         values ($1, $2, 'out', $3, $4, $5, $6, $7, $8, $9)`,
-        [o.sellerId, o.contactId, o.kind, o.kind === 'template' ? templateFor(templates[o.template], o.language).name : null, category, body, cost, sent.providerId, now],
+        `insert into messages (seller_id, contact_id, direction, kind, template, category, body, cost_usd_micros, provider_id, created_at, image_url)
+         values ($1, $2, 'out', $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [o.sellerId, o.contactId, o.kind, o.kind === 'template' ? templateFor(templates[o.template], o.language).name : null, category, body, cost, sent.providerId, now, image],
       );
       results.push({ to: o.to, status: 'sent', body, costUsdMicros: cost });
     } catch (err) {

@@ -19,6 +19,7 @@ import { dispatch } from './services/outbound.js';
 import { listTemplates, submitTemplates } from './services/templates.js';
 import { fxRates, refreshFx } from './services/fx.js';
 import { runFollowUps } from './services/followups.js';
+import { deletePhoto, loadPhoto, photoUrl, savePhoto } from './services/photos.js';
 import { pushEnabled, removeSubscription, saveSubscription } from './services/push.js';
 import { sendWebPush } from './channels/webpush.js';
 import { HELD_BY_ORDERS_SQL, cancelOrder, expireOrders, handleOrderPayment, isOrderRef, markOrderPaid, orderForCheckout } from './services/orders.js';
@@ -223,8 +224,8 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
   app.get('/shop/:slug', async (c) => {
     const [seller] = await db.query<Seller>('select * from sellers where slug = $1', [c.req.param('slug').toLowerCase()]);
     if (!seller) return c.json({ error: 'No shop with that link.' }, 404);
-    const products = await db.query<{ name: string; variant: string; price_minor: number; free: number }>(
-      `select p.name, p.variant, p.price_minor,
+    const products = await db.query<{ id: string; photo_version: string | null; name: string; variant: string; price_minor: number; free: number }>(
+      `select p.id, p.photo_version, p.name, p.variant, p.price_minor,
               p.stock - coalesce((select count(*)::int from offers o join restocks r on r.id = o.restock_id
                                    where r.product_id = p.id and o.status = 'held'), 0) - ${HELD_BY_ORDERS_SQL} as free
          from products p where p.seller_id = $1 order by p.name, p.variant`,
@@ -236,7 +237,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
       currency: seller.currency,
       language: seller.language,
       whatsapp: seller.wa_display_phone,
-      products: products.map((p) => ({ name: p.name, variant: p.variant, priceMinor: Number(p.price_minor), available: Number(p.free) > 0 })),
+      products: products.map((p) => ({ name: p.name, variant: p.variant, priceMinor: Number(p.price_minor), available: Number(p.free) > 0, photo: photoUrl(ctx, p) })),
     });
   });
 
@@ -554,7 +555,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     const [contact] = await db.query<{ last_inbound_at: Date | null }>('select * from contacts where id = $1', [c.req.param('id')]);
     if (!contact) return c.json({ error: 'No chat with that id.' }, 404);
     const messages = await db.query(
-      'select direction, kind, template, category, body, cost_usd_micros, error, created_at from messages where contact_id = $1 order by created_at, seq',
+      'select direction, kind, template, category, body, cost_usd_micros, error, image_url, created_at from messages where contact_id = $1 order by created_at, seq',
       [c.req.param('id')],
     );
     const waitingFor = await db.query(
@@ -652,6 +653,24 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     const b = await c.req.json<{ endpoint?: string }>();
     if (b.endpoint) await removeSubscription(ctx, v.userId, b.endpoint);
     return c.json({ ok: true });
+  });
+
+  // ---- Product photos ----
+  app.post('/api/products/:id/photo', async (c) => {
+    await guardOf(c, 'product', c.req.param('id'));
+    const b = await c.req.json<{ dataUrl?: string }>();
+    return c.json({ url: await savePhoto(ctx, c.req.param('id'), b.dataUrl ?? '', clock()) });
+  });
+  app.delete('/api/products/:id/photo', async (c) => {
+    await guardOf(c, 'product', c.req.param('id'));
+    await deletePhoto(ctx, c.req.param('id'));
+    return c.json({ ok: true });
+  });
+  // Public: shop pages, chats and Meta (for photo messages) load photos from here.
+  app.get('/photos/:id', async (c) => {
+    const photo = await loadPhoto(ctx, c.req.param('id'));
+    if (!photo) return c.notFound();
+    return c.body(photo.data as Uint8Array<ArrayBuffer>, 200, { 'Content-Type': photo.type, 'Cache-Control': 'public, max-age=31536000, immutable' });
   });
 
   // ---- Delivery areas and fees ----

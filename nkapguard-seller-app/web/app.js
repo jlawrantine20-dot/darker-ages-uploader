@@ -76,6 +76,35 @@ const mins = (m) => {
 };
 /** "40 %" in French, "40%" in English. */
 const pct = (n) => new Intl.NumberFormat(dateLocale(), { style: 'percent', maximumFractionDigits: 0 }).format(n / 100);
+/** A product's photo link, or null. The version in the link changes with the photo. */
+const photoOf = (p) => (p?.photo_version ? `${API}/photos/${p.id}?v=${p.photo_version}` : null);
+const thumb = (p) => (photoOf(p) ? `<img class="prodicon" src="${esc(photoOf(p))}" alt="" loading="lazy">` : `<span class="prodicon">${initials(p.name)}</span>`);
+/**
+ * Shrink a photo on the phone before upload: at most 1024 px on the long side, as JPEG. A 4 MB
+ * camera photo becomes about 100 KB, which uploads quickly on a weak connection.
+ */
+async function shrink(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = fail; i.src = url; });
+    const scale = Math.min(1, 1024 / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.naturalWidth * scale);
+    c.height = Math.round(img.naturalHeight * scale);
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff';
+    g.fillRect(0, 0, c.width, c.height);
+    g.drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.82);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+async function uploadPhoto(productId, file) {
+  let dataUrl;
+  try { dataUrl = await shrink(file); } catch { throw new Error(t('ph.unreadable')); }
+  return api(`/api/products/${productId}/photo`, { method: 'POST', body: { dataUrl } });
+}
 /** Country names in the app's language: "Cameroun" or "Cameroon". */
 function countryName(code, fallback) {
   try { return new Intl.DisplayNames([lang()], { type: 'region' }).of(code) ?? fallback ?? code; } catch { return fallback ?? code; }
@@ -308,7 +337,7 @@ views.chat = async ([id]) => {
       ${waitingFor.map((w) => `<span class="tag">${t('chat.waitingTag', { item: label(w), pos: w.position })}</span>`).join('')}
       ${live ? `<span class="tag muted">${t('chat.consentTag', { quote: esc(live.quote), when: when(live.granted_at) })}</span>` : consents.length ? `<span class="tag muted">${t('chat.optedOut')}</span>` : ''}
     </span></div>` : ''}
-    <div class="msgs">${messages.map((m) => `<div class="b ${m.direction}">${m.kind === 'template' ? `<span class="tpl">${t('chat.template')}${m.cost_usd_micros ? ` · ${fee(m.cost_usd_micros)}` : ''}</span>` : ''}${esc(m.body)}${m.error ? `<span class="fail">${t('chat.notSent', { why: esc(m.error) })}</span>` : ''}<small>${when(m.created_at)}</small></div>`).join('')}</div>
+    <div class="msgs">${messages.map((m) => `<div class="b ${m.direction}">${m.image_url ? `<img class="bimg" src="${esc(m.image_url)}" alt="" loading="lazy">` : ''}${m.kind === 'template' ? `<span class="tpl">${t('chat.template')}${m.cost_usd_micros ? ` · ${fee(m.cost_usd_micros)}` : ''}</span>` : ''}${esc(m.body)}${m.error ? `<span class="fail">${t('chat.notSent', { why: esc(m.error) })}</span>` : ''}<small>${when(m.created_at)}</small></div>`).join('')}</div>
     <form class="composer" data-form="reply" data-id="${esc(id)}">
       <input id="reply" placeholder="${c.window_open ? t('chat.reply') : t('chat.replyOff')}" autocomplete="off" ${c.window_open ? '' : 'disabled'}>
       <button ${c.window_open ? '' : 'disabled'}>${t('chat.send')}</button></form>
@@ -351,7 +380,7 @@ views.products = async () => {
   const products = await api(`/api/products?sellerId=${sellerId()}`);
   header(t('stock.title'), { sub: t('stock.peopleWaiting', { n: products.reduce((a, p) => a + p.waiting, 0) }) });
   setNav('stock');
-  const row = (p) => `<a class="row" href="#/product/${esc(p.id)}"><span class="prodicon">${initials(p.name)}</span>
+  const row = (p) => `<a class="row" href="#/product/${esc(p.id)}">${thumb(p)}
     <span style="min-width:0"><span class="name"><span class="n">${esc(p.name)}</span></span><span class="last">${esc(variantText(p.variant) || t('stock.noVariant'))} · ${t('stock.inStockN', { n: p.stock })} · ${money(p.price_minor)}</span></span>
     <span class="r"><b>${p.waiting}</b>${t('stock.waitingLabel')}</span></a>`;
   const out = products.filter((p) => p.stock === 0);
@@ -372,6 +401,7 @@ views.newProduct = async () => {
     <label>${t('product.price', { cur: esc(S.seller.currency) })}<input id="p-price" type="number" min="0" step="any" required></label>
     <label>${t('product.stockNow')}<input id="p-stock" type="number" min="0" step="1" value="0"></label>
     <label>${t('product.aliases')}<input id="p-aliases" placeholder="${esc(t('product.aliasesPh'))}"><span class="hint">${t('product.aliasesHint')}</span></label>
+    <label>${t('ph.title')}<input id="p-photo" type="file" accept="image/*"><span class="hint">${t('ph.optional')}</span></label>
     <p class="err" id="p-err" hidden></p>
     <button class="btn primary block">${t('product.save')}</button></form>`;
 };
@@ -387,7 +417,14 @@ views.product = async ([id]) => {
   setNav('stock');
   const stepper = (k) => `<span class="step"><button type="button" data-cfg="${k}:-1" aria-label="${t('fewer')}">−</button><output>${f[k]}</output><button type="button" data-cfg="${k}:1" aria-label="${t('more')}">+</button></span>`;
   const q = (text) => (lang() === 'fr' ? `« ${text} »` : `“${text}”`);
+  const pic = photoOf(p);
   main.innerHTML = `
+    <div class="photo-block">
+      ${pic ? `<img src="${esc(pic)}" alt="">` : `<span class="prodicon big">${initials(p.name)}</span>`}
+      <div><p class="note" style="margin:0 0 8px">${t('ph.why')}</p>
+        <div class="btns" style="margin:0"><label class="btn sm">${pic ? t('ph.change') : t('ph.add')}<input type="file" accept="image/*" data-photo="${esc(p.id)}" hidden></label>
+        ${pic ? `<button class="btn sm" data-photo-remove="${esc(p.id)}">${t('ph.remove')}</button>` : ''}</div></div>
+    </div>
     <div class="kv"><div><span>${t('product.inStock')}</span><b>${p.stock}</b></div><div><span>${t('product.waiting')}</span><b>${p.waiting}</b></div><div><span>${t('product.bought')}</span><b>${bought === null ? t('none') : pct(bought)}</b></div></div>
     ${running ? `<div class="banner">${t('product.running', { href: `#/restock/${esc(running.id)}` })}</div>` : ''}
     <div class="card"><h2>${p.waiting ? t('restock.logTitle') : t('restock.addStock')}</h2>
@@ -687,6 +724,13 @@ function payKeyFields(mk, provider) {
   return `<label>${t('set.key', { provider: esc(info.label.split(' (')[0]) })}<input id="pay-secret" type="password" autocomplete="off" placeholder="${S.seller.payments_connected && S.seller.payment_provider === provider ? t('set.keySaved') : ''}"><span class="hint">${esc(t(`pv.${provider}.secret`))}</span></label>
     ${info.needsWebhookSecret ? `<label>${t('set.webhookSecret')}<input id="pay-hook-secret" type="password" autocomplete="off"><span class="hint">${esc(t(`pv.${provider}.webhook`))}</span></label>` : ''}`;
 }
+// Picking a photo on a product's page uploads it right away.
+document.addEventListener('change', async (e) => {
+  if (!e.target.matches('[data-photo]') || !e.target.files?.[0]) return;
+  toast(t('ph.saving'));
+  try { await uploadPhoto(e.target.dataset.photo, e.target.files[0]); toast(t('ph.saved')); } catch (err) { toast(err.message); }
+  route(true);
+});
 document.addEventListener('change', async (e) => {
   if (e.target.matches('[data-provider]')) $('#pay-keys').innerHTML = payKeyFields(await markets(), e.target.value);
 });
@@ -741,8 +785,12 @@ document.addEventListener('click', (e) => {
 });
 
 document.addEventListener('click', async (e) => {
-  const el = e.target.closest('[data-zone-remove],[data-pick],[data-filter],[data-ofilter],[data-order-paid],[data-order-cancel],[data-cfg],[data-mode],[data-hold],[data-act],[data-pay],[data-remove-member]');
+  const el = e.target.closest('[data-photo-remove],[data-zone-remove],[data-pick],[data-filter],[data-ofilter],[data-order-paid],[data-order-cancel],[data-cfg],[data-mode],[data-hold],[data-act],[data-pay],[data-remove-member]');
   if (!el) return;
+  if (el.dataset.photoRemove) {
+    try { await api(`/api/products/${el.dataset.photoRemove}/photo`, { method: 'DELETE' }); toast(t('ph.removed')); } catch (err) { toast(err.message); }
+    return route(true);
+  }
   if (el.dataset.zoneRemove) {
     try { await api(`/api/delivery-zones/${el.dataset.zoneRemove}`, { method: 'DELETE' }); toast(t('dl.removed')); } catch (err) { toast(err.message); }
     return route(true);
@@ -919,6 +967,8 @@ document.addEventListener('submit', async (e) => {
           method: 'POST',
           body: { sellerId: sellerId(), name: val('p-name'), variant: val('p-variant'), price: Number(val('p-price')), stock: Number(val('p-stock') || 0), aliases: val('p-aliases').split(',').map((a) => a.trim()).filter(Boolean) },
         });
+        const file = $('#p-photo', form)?.files?.[0];
+        if (file) { toast(t('ph.saving')); await uploadPhoto(p.id, file).catch((err) => toast(err.message)); }
         toast(t('product.saved'));
         location.hash = `#/product/${p.id}`;
         return;

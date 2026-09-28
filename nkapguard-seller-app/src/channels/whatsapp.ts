@@ -16,13 +16,16 @@ export interface TemplateMessage {
 export interface Channel {
   sendText(from: string, to: string, body: string): Promise<SendResult>;
   sendTemplate(from: string, to: string, t: TemplateMessage): Promise<SendResult>;
+  /** A photo with the text as its caption. Only inside the 24-hour window, like text. */
+  sendImage(from: string, to: string, imageUrl: string, caption: string): Promise<SendResult>;
 }
 
 export interface SentRecord {
   from: string;
   to: string;
-  kind: 'text' | 'template';
+  kind: 'text' | 'template' | 'image';
   body?: string;
+  imageUrl?: string;
   template?: TemplateMessage;
 }
 
@@ -41,6 +44,9 @@ export class DryRunChannel implements Channel {
   }
   async sendTemplate(from: string, to: string, template: TemplateMessage) {
     return this.record({ from, to, kind: 'template', template });
+  }
+  async sendImage(from: string, to: string, imageUrl: string, caption: string) {
+    return this.record({ from, to, kind: 'image', body: caption, imageUrl });
   }
 }
 
@@ -61,6 +67,8 @@ export function whatsappCloud(opts: { token: string; apiVersion: string; fetchFn
   return {
     sendText: (from, to, body) =>
       post(from, { messaging_product: 'whatsapp', to, type: 'text', text: { body, preview_url: true } }),
+    sendImage: (from, to, imageUrl, caption) =>
+      post(from, { messaging_product: 'whatsapp', to, type: 'image', image: { link: imageUrl, caption: caption.slice(0, 1024) } }),
     sendTemplate: (from, to, t) =>
       post(from, {
         messaging_product: 'whatsapp',

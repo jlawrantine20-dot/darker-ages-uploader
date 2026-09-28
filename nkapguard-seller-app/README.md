@@ -81,6 +81,10 @@ India and Brazil. Any other country works once you enter its currency and time z
   - Without a provider, the customer is told the shop will contact them about payment, and
     the seller marks the order paid by hand (cash, or mobile money sent to their number).
   - A payment that lands after the hold ended and the units sold is flagged for refund.
+- **Product photos:** one per product (each colour is its own product), added from the
+  phone's camera or gallery and shrunk on the phone to about 100 KB before upload. The photo
+  shows on the shop page and goes with the "in stock" answer and reminders (as the caption
+  photo on WhatsApp; before the text on Instagram and Messenger).
 - **Delivery by area:** the seller lists areas (a neighbourhood, a city or a region, in any
   country) with a fee, 0 for pickup. "La livraison à Akwa c'est combien ?" or "how much is
   dispatch to Lekki?" gets the fee; without an area named, the list. An order asks where to

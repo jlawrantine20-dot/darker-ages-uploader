@@ -86,6 +86,8 @@ const MESSAGES = {
   order_closed: { en: () => 'This order is already closed.', fr: () => 'Cette commande est déjà clôturée.' },
   push_invalid: { en: () => "This browser didn't give a valid notification address. Try again.", fr: () => "Ce navigateur n'a pas fourni d'adresse de notification valable. Réessayez." },
   zone_required: { en: () => 'An area needs a name and a fee (0 for free).', fr: () => 'Une zone doit avoir un nom et un tarif (0 si gratuit).' },
+  photo_invalid: { en: () => 'That file is not a photo. Use a JPEG, PNG or WebP image.', fr: () => "Ce fichier n'est pas une photo. Utilisez une image JPEG, PNG ou WebP." },
+  photo_too_big: { en: () => 'That photo is too large. Try a smaller one.', fr: () => 'Cette photo est trop lourde. Essayez-en une plus petite.' },
   server_error: { en: () => 'Something went wrong on our side. Try again in a moment.', fr: () => 'Un problème est survenu de notre côté. Réessayez dans un instant.' },
 } satisfies Record<string, Record<UiLang, (p: P) => string>>;
 

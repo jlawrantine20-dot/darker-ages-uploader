@@ -27,7 +27,8 @@ h1{font:700 28px/1.15 var(--display);margin:0}
 .product h2{font:700 18px/1.3 var(--display);margin:0 0 10px}
 .row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
 .row:first-of-type{border-top:0;padding-top:0}
-.what{min-width:0}
+.what{min-width:0;flex:1}
+.pic{flex:none;width:64px;height:64px;border-radius:12px;object-fit:cover;background:var(--surface-2)}
 .variant{font-weight:600}
 .price{color:var(--muted);font-size:14px;font-variant-numeric:tabular-nums}
 .tag{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:1px 8px;margin-left:6px;vertical-align:1px}
@@ -37,7 +38,7 @@ a.btn{flex:none;display:inline-flex;align-items:center;gap:6px;text-decoration:n
 a.btn.alt{background:var(--surface-2);color:var(--ink);border:1px solid var(--line)}
 .note{color:var(--muted);font-size:14px;text-align:center;margin-top:24px}
 .empty{background:var(--surface);border-radius:16px;padding:24px;color:var(--muted)}
-@media (max-width:420px){.row{flex-direction:column;align-items:stretch}a.btn{justify-content:center}}
+@media (max-width:420px){.row{flex-wrap:wrap}.row a.btn{flex-basis:100%;justify-content:center}}
 </style>
 <script src="config.js"></script>
 </head>
@@ -50,7 +51,7 @@ a.btn.alt{background:var(--surface-2);color:var(--ink);border:1px solid var(--li
 (function () {
   var TEXT = {
     fr: {
-      sub: 'Touchez un article pour le demander sur WhatsApp.',
+      sub: 'Touchez un article pour le commander sur WhatsApp, ou pour recevoir une alerte à son retour.',
       inStock: 'En stock', soldOut: 'En rupture',
       order: 'Commander sur WhatsApp', alert: 'Me prévenir à son retour',
       // Sending this places the order: the shop answers with a payment link right away.
@@ -64,7 +65,7 @@ a.btn.alt{background:var(--surface-2);color:var(--ink);border:1px solid var(--li
       offline: 'La boutique ne répond pas pour le moment. Réessayez dans une minute.',
     },
     en: {
-      sub: 'Tap an item to ask about it on WhatsApp.',
+      sub: 'Tap an item to order it on WhatsApp, or to hear when it is back.',
       inStock: 'In stock', soldOut: 'Sold out',
       order: 'Order on WhatsApp', alert: "Alert me when it's back",
       ask: function (label) { return "Hi, I'd like to order the " + label + ', please.'; },
@@ -142,6 +143,13 @@ a.btn.alt{background:var(--surface-2);color:var(--ink);border:1px solid var(--li
       card.appendChild(el('h2', null, g.name));
       g.items.forEach(function (p) {
         var row = el('div', 'row');
+        if (p.photo) {
+          var img = el('img', 'pic');
+          img.src = p.photo;
+          img.alt = label(p, lang);
+          img.loading = 'lazy';
+          row.appendChild(img);
+        }
         var what = el('div', 'what');
         var name = el('div', 'variant', variantName(p.variant, lang) || g.name);
         name.appendChild(el('span', 'tag ' + (p.available ? 'in' : 'out'), p.available ? t.inStock : t.soldOut));

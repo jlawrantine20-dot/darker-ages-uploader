@@ -7,6 +7,7 @@ import type { Q } from '../db.js';
 import type { Ctx, DispatchResult, Outbound, Recipient } from './context.js';
 import { appBase } from './channels.js';
 import { dispatch, socialAccount, socialFor } from './outbound.js';
+import { photoUrl } from './photos.js';
 import { messageNotice, notifyShop, orderNotice } from './push.js';
 import { HELD_BY_ORDERS_SQL, createOrder, heldOrder, takesPaymentsOnline } from './orders.js';
 import { fmt, type Seller } from './sellers.js';
@@ -49,6 +50,7 @@ interface ProductRow {
   aliases: string[];
   price_minor: number;
   stock: number;
+  photo_version: string | null;
 }
 
 /** Units on the shelf not already held for someone: a waitlister's restock hold or an unpaid chat order. */
@@ -240,7 +242,11 @@ async function decide(
     if (free > 0) {
       // "To order, reply YES": remember what a yes would be for.
       await q.query('update contacts set awaiting_order_product_id = $2, awaiting_order_at = $3, awaiting_consent_product_id = null, awaiting_consent_at = null where id = $1', [contact.id, product.id, msg.at]);
-      return { action: 'in_stock' as const, outs: reply(say(lang, 'inStock', { name: contact.name, product, priceMinor: product.price_minor, stock: free }, f)) };
+      // With the product's photo when it has one: customers buy what they can see.
+      const outs = reply(say(lang, 'inStock', { name: contact.name, product, priceMinor: product.price_minor, stock: free }, f));
+      const photo = photoUrl(ctx, product);
+      if (photo && outs[0]?.kind === 'text') outs[0].imageUrl = photo;
+      return { action: 'in_stock' as const, outs };
     }
     if (whatsapp) {
       // "Prévenez-moi quand … revient" (from the shop page or an Instagram hand-off) is a clear yes already.

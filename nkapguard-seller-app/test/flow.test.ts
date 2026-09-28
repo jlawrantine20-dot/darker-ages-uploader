@@ -341,6 +341,7 @@ describe('failed sends', () => {
     env.ctx.channel = {
       sendText: async () => { throw new Error('WhatsApp send failed (401): Error validating access token: Session has expired'); },
       sendTemplate: async () => { throw new Error('unused'); },
+      sendImage: async () => { throw new Error('unused'); },
     };
     const r = await handleInbound(env.ctx, inbound(wa(1), 'una get the jet black claw clip?', T0, 'Tunde'));
     expect(r.sent).toMatchObject([{ status: 'failed', error: expect.stringContaining('Session has expired') }]);

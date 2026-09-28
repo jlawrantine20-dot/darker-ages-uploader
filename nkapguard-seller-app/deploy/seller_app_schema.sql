@@ -280,6 +280,15 @@ alter table seller_app.contacts add column if not exists awaiting_zone_at timest
 alter table seller_app.contacts add column if not exists pending_order_product_id uuid references seller_app.products(id) on delete set null;
 alter table seller_app.contacts add column if not exists pending_order_quantity integer;
 
+create table if not exists seller_app.product_photos (
+  product_id uuid primary key references seller_app.products(id) on delete cascade,
+  content_type text not null check (content_type in ('image/jpeg', 'image/png', 'image/webp')),
+  data bytea not null,
+  updated_at timestamptz not null default now()
+);
+alter table seller_app.products add column if not exists photo_version bigint;
+alter table seller_app.messages add column if not exists image_url text;
+
 -- Defence in depth: row-level security on, with no policies, so even if the schema were
 -- exposed later, the anon and authenticated roles would see nothing.
 do $$

@@ -20,6 +20,8 @@ export type SocialTarget = { userId: string } | { commentId: string };
 
 export interface SocialSender {
   send(account: SocialAccount, to: SocialTarget, text: string): Promise<SendResult>;
+  /** A photo in a chat (not in a comment reply, which is text only). */
+  sendImage(account: SocialAccount, to: { userId: string }, imageUrl: string): Promise<SendResult>;
   /** The person's display name and handle, when the platform shares them. */
   profile(account: SocialAccount, userId: string): Promise<{ name: string | null; username: string | null }>;
 }
@@ -29,6 +31,7 @@ export interface SocialSentRecord {
   account: string;
   to: SocialTarget;
   text: string;
+  imageUrl?: string;
 }
 
 /** Records instead of sending. Used in tests and test mode. */
@@ -38,6 +41,12 @@ export class DryRunSocial implements SocialSender {
   constructor(private onSend?: (m: SocialSentRecord) => void) {}
   async send(account: SocialAccount, to: SocialTarget, text: string) {
     const m = { channel: account.channel, account: account.externalId, to, text };
+    this.sent.push(m);
+    this.onSend?.(m);
+    return { providerId: `dry-social-${++this.n}` };
+  }
+  async sendImage(account: SocialAccount, to: { userId: string }, imageUrl: string) {
+    const m = { channel: account.channel, account: account.externalId, to, text: '', imageUrl };
     this.sent.push(m);
     this.onSend?.(m);
     return { providerId: `dry-social-${++this.n}` };
@@ -70,6 +79,13 @@ export function metaGraph(opts: { version: string; fetchFn?: typeof fetch }): So
         const where = account.channel === 'instagram' ? 'Instagram' : 'Messenger';
         throw new Error(`${where} send failed (${res.status}): ${json.error?.message ?? 'no message id returned'}`);
       }
+      return { providerId: json.message_id };
+    },
+    async sendImage(account, to, imageUrl) {
+      const message = { attachment: { type: 'image', payload: { url: imageUrl } } };
+      const body = account.channel === 'facebook' ? { recipient: { id: to.userId }, messaging_type: 'RESPONSE', message } : { recipient: { id: to.userId }, message };
+      const { res, json } = await call(`${base(account)}/${opts.version}/${account.externalId}/messages`, account.token, { method: 'POST', body: JSON.stringify(body) });
+      if (!res.ok || !json.message_id) throw new Error(`Photo not sent (${res.status}): ${json.error?.message ?? 'no message id returned'}`);
       return { providerId: json.message_id };
     },
     async profile(account, userId) {

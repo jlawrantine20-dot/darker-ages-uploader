@@ -183,3 +183,10 @@ details.test .form{padding:0 12px 12px}
 .form label.check{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;font-weight:600}
 .form label.check input{width:20px;height:20px;margin:2px 0 0;accent-color:var(--accent)}
 .form label.check .hint{display:block;font-weight:400;margin-top:4px}
+/* Product photos */
+img.prodicon{object-fit:cover;padding:0}
+.prodicon.big{width:96px;height:96px;font-size:28px}
+.photo-block{display:grid;grid-template-columns:96px 1fr;gap:14px;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line)}
+.photo-block img{width:96px;height:96px;border-radius:14px;object-fit:cover;background:var(--surface-3)}
+.photo-block label.btn{cursor:pointer}
+.b img.bimg{display:block;width:100%;max-width:240px;border-radius:10px;margin-bottom:6px}
