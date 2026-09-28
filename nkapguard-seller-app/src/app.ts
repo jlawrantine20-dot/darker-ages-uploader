@@ -18,6 +18,7 @@ import { CHANNEL_NAMES, appBase, stateLang, channelAvailable, choosePendingPage,
 import { dispatch } from './services/outbound.js';
 import { listTemplates, submitTemplates } from './services/templates.js';
 import { fxRates, refreshFx } from './services/fx.js';
+import { runFollowUps } from './services/followups.js';
 import { pushEnabled, removeSubscription, saveSubscription } from './services/push.js';
 import { sendWebPush } from './channels/webpush.js';
 import { HELD_BY_ORDERS_SQL, cancelOrder, expireOrders, handleOrderPayment, isOrderRef, markOrderPaid, orderForCheckout } from './services/orders.js';
@@ -414,9 +415,9 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
         if (taken) throw new InputError('slug_taken', { slug: String(v.slug) });
       }
       const [s] = await q.query<Seller>(
-        `update sellers set name = $2, country = $3, currency = $4, language = $5, timezone = $6, slug = $7, wa_display_phone = $8
+        `update sellers set name = $2, country = $3, currency = $4, language = $5, timezone = $6, slug = $7, wa_display_phone = $8, follow_ups = $9
           where id = $1 returning *`,
-        [current.id, v.name, v.country, v.currency, v.language, v.timezone, v.slug ?? (await uniqueSlug(q, v.name)), v.waDisplayPhone],
+        [current.id, v.name, v.country, v.currency, v.language, v.timezone, v.slug ?? (await uniqueSlug(q, v.name)), v.waDisplayPhone, typeof b.followUps === 'boolean' ? b.followUps : current.follow_ups],
       );
       return s;
     });
@@ -697,6 +698,14 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
          from orders where status = 'paid' and paid_at >= $2 and ($1::uuid is null or seller_id = $1)`,
       [sellerId, monthStart],
     );
+    // Reminders sent this month, and how many led to an order within a day.
+    const [followUps] = await db.query(
+      `select count(*)::int as sent,
+              count(*) filter (where exists (select 1 from orders o where o.contact_id = f.contact_id and o.product_id = f.product_id
+                                              and o.created_at > f.sent_at and o.created_at < f.sent_at + interval '1 day'))::int as ordered
+         from follow_ups f where f.sent_at >= $2 and ($1::uuid is null or f.seller_id = $1)`,
+      [sellerId, monthStart],
+    );
     const [spend] = await db.query(
       `select count(*)::int as messages, coalesce(sum(cost_usd_micros), 0)::bigint as cost_usd_micros
          from messages where direction = 'out' and error is null and created_at >= $2 and ($1::uuid is null or seller_id = $1)`,
@@ -725,7 +734,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
         where o.status = 'refund_due' and ($1::uuid is null or o.seller_id = $1)`,
       [sellerId],
     );
-    return c.json({ monthStart, sales: num(sales), chatSales: num(chatSales), spend: num(spend), demand, refunds: [...refunds, ...orderRefunds] });
+    return c.json({ monthStart, sales: num(sales), chatSales: num(chatSales), followUps: num(followUps), spend: num(spend), demand, refunds: [...refunds, ...orderRefunds] });
   });
 
   // For a scheduler (Supabase pg_cron): a secret that can only pass expired holds down the
@@ -737,6 +746,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     const now = clock();
     const sent = (await tick(ctx, now)).length;
     await expireOrders(ctx, now);
+    await runFollowUps(ctx, now);
     // Once an hour is plenty for tokens that last 60 days.
     const refreshed = now.getUTCMinutes() === 0 ? await refreshInstagramTokens(ctx, now) : 0;
     // Exchange rates for showing fees in local money; refreshFx only fetches twice a day.
@@ -864,7 +874,8 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
   app.post('/api/tick', async (c) => {
     if (c.get('viewer').kind !== 'admin' && !config.dryRun) return c.json({ error: 'Only the operator can run this.' }, 403);
     await expireOrders(ctx, clock());
-    return c.json({ sent: (await tick(ctx, clock())).length });
+    const reminded = (await runFollowUps(ctx, clock())).length;
+    return c.json({ sent: (await tick(ctx, clock())).length, reminded });
   });
 
   // ---- Test mode helpers: pretend to be a customer, or pretend a customer paid ----

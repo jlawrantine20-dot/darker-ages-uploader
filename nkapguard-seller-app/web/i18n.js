@@ -211,6 +211,10 @@ const EN = {
   'dev.notReady': "Notifications aren't set up on the server yet.",
   'dev.enabled': 'Notifications turned on', 'dev.disabled': 'Notifications turned off', 'dev.testSent': 'Test sent. It should appear in a few seconds.',
   'dev.adminOnly': 'Sign in with your WhatsApp number to get notifications on this phone.',
+  // Follow-ups
+  'fu.label': 'Remind customers who go quiet',
+  'fu.hint': "One message, about 3 hours after an “in stock” answer with no reply, or when an order's hold runs out unpaid. Only inside WhatsApp's 24-hour window, never between 9 PM and 8 AM, and never twice for the same item.",
+  'ins.followUps': 'Reminders sent', 'ins.followUpOrders': 'Orders after a reminder',
 };
 
 const FR = {
@@ -407,6 +411,9 @@ const FR = {
   'dev.notReady': 'Les notifications ne sont pas encore configurées sur le serveur.',
   'dev.enabled': 'Notifications activées', 'dev.disabled': 'Notifications désactivées', 'dev.testSent': 'Essai envoyé. Il devrait apparaître dans quelques secondes.',
   'dev.adminOnly': 'Connectez-vous avec votre numéro WhatsApp pour recevoir les notifications sur ce téléphone.',
+  'fu.label': 'Relancer les clients qui ne répondent plus',
+  'fu.hint': "Un seul message, environ 3 heures après une réponse « disponible » restée sans suite, ou quand la réservation d'une commande expire sans paiement. Uniquement dans la fenêtre de 24 heures de WhatsApp, jamais entre 21 h et 8 h, et jamais deux fois pour le même article.",
+  'ins.followUps': 'Relances envoyées', 'ins.followUpOrders': 'Commandes après relance',
 };
 
 export const DICTS = { en: EN, fr: FR };

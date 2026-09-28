@@ -23,6 +23,8 @@ export interface Seller {
   payment_provider: Provider;
   payment_secret_enc: string | null;
   payment_webhook_secret_enc: string | null;
+  /** Send one reminder to customers who went quiet (see services/followups.ts). */
+  follow_ups: boolean;
 }
 
 /** A seller as the API shows it: never includes secrets. */
@@ -47,6 +49,7 @@ export interface SellerInput {
   timezone?: string;
   slug?: string;
   waDisplayPhone?: string;
+  followUps?: boolean;
 }
 
 /** "Hair Plug Douala!" → "hair-plug-douala". Accents are dropped: "Mèches" → "meches". */

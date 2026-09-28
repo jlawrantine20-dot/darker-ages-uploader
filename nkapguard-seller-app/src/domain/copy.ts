@@ -56,7 +56,8 @@ interface Args {
 export type Key =
   | 'whichVariant' | 'offerWhatsApp' | 'soldOutPlain' | 'commentReply' | 'offerAlert' | 'inStock' | 'joined' | 'alreadyWaiting' | 'stopped'
   | 'hold' | 'race' | 'soldOut' | 'paid' | 'refund'
-  | 'orderLink' | 'orderManual' | 'orderAgain' | 'orderShort' | 'orderRefund';
+  | 'orderLink' | 'orderManual' | 'orderAgain' | 'orderShort' | 'orderRefund'
+  | 'followUp' | 'orderExpired';
 type Sentences = Record<Key, (a: Args) => string> & { fallbackName: string };
 
 // Each language is written as a native speaker would text a customer, not translated line by
@@ -80,6 +81,9 @@ const en: Sentences = {
     `Great, noted! We're keeping ${a.quantity > 1 ? `${a.quantity} × ${a.label}` : `the ${a.label}`} aside for you until ${a.until}. We'll message you shortly to arrange payment (${a.price}).`,
   orderAgain: (a) => `Your ${a.label} is already held for you until ${a.until}. Pay ${a.price} here to confirm:\n${a.url}`,
   orderShort: (a) => `We only have ${a.stock} left of the ${a.label}. How many would you like?`,
+  followUp: (a) =>
+    `Hi ${a.first}, still interested in the ${a.label}? ${a.stock === 1 ? `It's the last one, at ${a.price}.` : `We've got ${a.stock} left at ${a.price}.`} Just reply YES and it's yours.`,
+  orderExpired: (a) => `Your hold on the ${a.label} has ended, but it's still available at ${a.price}. Reply YES if you'd still like it.`,
   orderRefund: (a) =>
     `We received your payment, but the ${a.label} sold out after your hold ended. We're refunding you in full. Sorry about that!`,
   joined: (a) =>
@@ -114,6 +118,9 @@ const fr: Sentences = {
     `Parfait, c'est noté ! Nous vous mettons ${a.quantity > 1 ? `${a.quantity} × ${a.label}` : `le modèle ${a.label}`} de côté jusqu'à ${a.until}. Nous vous écrivons très vite pour le paiement (${a.price}).`,
   orderAgain: (a) => `Le modèle ${a.label} vous est déjà réservé jusqu'à ${a.until}. Réglez ${a.price} ici pour confirmer :\n${a.url}`,
   orderShort: (a) => `Il ne nous en reste que ${a.stock} pour le modèle ${a.label}. Combien en voulez-vous ?`,
+  followUp: (a) =>
+    `Bonjour ${a.first}, le modèle ${a.label} vous intéresse toujours ? ${a.stock === 1 ? `C'est le dernier, à ${a.price}.` : `Il nous en reste ${a.stock}, à ${a.price}.`} Répondez simplement OUI pour le commander.`,
+  orderExpired: (a) => `La réservation du modèle ${a.label} a expiré, mais il est encore disponible à ${a.price}. Répondez OUI si vous le voulez toujours.`,
   orderRefund: (a) =>
     `Nous avons bien reçu votre paiement, mais le modèle ${a.label} a été vendu après la fin de votre réservation. Nous vous remboursons intégralement. Toutes nos excuses !`,
   joined: (a) =>

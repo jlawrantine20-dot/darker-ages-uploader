@@ -477,6 +477,8 @@ views.insights = async () => {
       <div><span>${t('ins.chatOrders')}</span><b class="num">${ins.chatSales?.orders ?? 0}</b></div>
       <div><span>${t('ins.sales')}</span><b class="num">${money(ins.sales.revenue_minor)}</b></div>
       <div><span>${t('ins.orders')}</span><b class="num">${ins.sales.orders}</b></div>
+      <div><span>${t('ins.followUps')}</span><b class="num">${ins.followUps?.sent ?? 0}</b></div>
+      <div><span>${t('ins.followUpOrders')}</span><b class="num">${ins.followUps?.ordered ?? 0}</b></div>
       <div><span>${t('ins.messages')}</span><b class="num">${ins.spend.messages}</b></div>
       <div><span>${t('ins.fees')}</span><b class="num">${fee(ins.spend.cost_usd_micros)}</b></div>
     </div>
@@ -532,6 +534,7 @@ views.settings = async () => {
     <form class="form" data-form="shop" style="padding-top:4px"${owner ? '' : ' hidden'}>
       <label>${t('shop.name')}<input id="s-name" value="${esc(s.name)}" required></label>
       ${shopFields(mk, s)}
+      <label class="check"><input type="checkbox" id="s-followups" ${s.follow_ups !== false ? 'checked' : ''}><span>${t('fu.label')}<span class="hint">${t('fu.hint')}</span></span></label>
       <label id="s-rate-wrap" data-from="${esc(s.currency)}" hidden><span id="s-rate-label">${t('rate.title')}</span><input id="s-rate" type="number" min="0" step="any"><span class="hint" id="s-rate-hint"></span></label>
       <p class="err" hidden></p>
       <button class="btn block">${t('set.saveShop')}</button>
@@ -869,7 +872,7 @@ document.addEventListener('submit', async (e) => {
       case 'shop': {
         const rateWrap = $('#s-rate-wrap', form);
         const rate = rateWrap && !rateWrap.hidden ? Number(val('s-rate')) : undefined;
-        setSeller({ ...S.seller, ...await api(`/api/sellers/${sellerId()}`, { method: 'PATCH', body: { name: val('s-name'), ...shopValues(form), rate } }) });
+        setSeller({ ...S.seller, ...await api(`/api/sellers/${sellerId()}`, { method: 'PATCH', body: { name: val('s-name'), ...shopValues(form), rate, followUps: $('#s-followups', form).checked } }) });
         toast(rate ? t('set.shopConverted') : t('set.shopSaved'));
       }
         return route(true);

@@ -179,3 +179,7 @@ details.test .form{padding:0 12px 12px}
 .order-what b{font-weight:600;min-width:0}
 .order-when{font-size:12.5px;color:var(--muted)}
 .order .btns{margin:4px 0 0}
+/* A checkbox with its label and hint beside it */
+.form label.check{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;font-weight:600}
+.form label.check input{width:20px;height:20px;margin:2px 0 0;accent-color:var(--accent)}
+.form label.check .hint{display:block;font-weight:400;margin-top:4px}

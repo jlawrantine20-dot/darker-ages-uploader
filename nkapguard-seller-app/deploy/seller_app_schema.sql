@@ -252,6 +252,17 @@ create table if not exists seller_app.push_subscriptions (
 );
 create index if not exists push_subscriptions_user on seller_app.push_subscriptions (user_id);
 
+alter table seller_app.sellers add column if not exists follow_ups boolean not null default true;
+create table if not exists seller_app.follow_ups (
+  id uuid primary key default gen_random_uuid(),
+  seller_id uuid not null references seller_app.sellers(id) on delete cascade,
+  contact_id uuid not null references seller_app.contacts(id) on delete cascade,
+  product_id uuid not null references seller_app.products(id) on delete cascade,
+  kind text not null check (kind in ('quiet', 'order_expired')),
+  sent_at timestamptz not null
+);
+create index if not exists follow_ups_contact on seller_app.follow_ups (contact_id, product_id, sent_at);
+
 -- Defence in depth: row-level security on, with no policies, so even if the schema were
 -- exposed later, the anon and authenticated roles would see nothing.
 do $$

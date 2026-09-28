@@ -81,6 +81,11 @@ India and Brazil. Any other country works once you enter its currency and time z
   - Without a provider, the customer is told the shop will contact them about payment, and
     the seller marks the order paid by hand (cash, or mobile money sent to their number).
   - A payment that lands after the hold ended and the units sold is flagged for refund.
+- **Follow-ups:** one reminder when a sale stalls: about 3 hours after an unanswered "in
+  stock, reply YES to order", or when an order's hold runs out unpaid. Only inside the
+  24-hour reply window, never between 21:00 and 08:00 shop time, never twice for the same
+  item in a week, and never once the chat has moved on, the seller has replied, the customer
+  ordered or said STOP. A YES to the reminder places the order. Each shop can turn them off.
 - **Consent:** a clear yes ("yes", "oui", "d'accord") is recorded with the customer's exact
   words and the time. Hedged replies ("oui mais c'est combien ?") don't count. STOP (or
   "arrêter") removes them from every list.
