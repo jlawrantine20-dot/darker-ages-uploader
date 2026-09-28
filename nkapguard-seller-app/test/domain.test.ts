@@ -170,7 +170,7 @@ describe('WhatsApp template texts', () => {
   it('match the README table submitted to Meta', async () => {
     const { readFileSync } = await import('node:fs');
     const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
-    for (const key of ['hold', 'race', 'soldOut', 'paid', 'refund'] as const) {
+    for (const key of ['hold', 'race', 'soldOut', 'paid', 'refund', 'priceDrop'] as const) {
       expect(readme).toContain(templateBody('en', key));
       expect(readme).toContain(templateBody('fr', key));
       expect(readme).toContain(templateBody('fr+en', key).replace('\n\n', '<br><br>'));

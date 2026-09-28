@@ -407,7 +407,7 @@ views.newProduct = async () => {
 };
 
 views.product = async ([id]) => {
-  const [{ product: p, restocks }, waitlist] = await Promise.all([api(`/api/products/${id}`), api(`/api/products/${id}/waitlist`)]);
+  const [{ product: p, restocks }, waitlist, drop] = await Promise.all([api(`/api/products/${id}`), api(`/api/products/${id}/waitlist`), api(`/api/products/${id}/price-drop`).catch(() => null)]);
   if (!S.restockForm || S.restockForm.id !== id) S.restockForm = { id, units: 3, mode: 'hold', holdMinutes: 120, perUnit: 5 };
   const f = S.restockForm;
   const past = restocks.filter((r) => r.messaged > 0);
@@ -427,6 +427,11 @@ views.product = async ([id]) => {
     </div>
     <div class="kv"><div><span>${t('product.inStock')}</span><b>${p.stock}</b></div><div><span>${t('product.waiting')}</span><b>${p.waiting}</b></div><div><span>${t('product.bought')}</span><b>${bought === null ? t('none') : pct(bought)}</b></div></div>
     ${running ? `<div class="banner">${t('product.running', { href: `#/restock/${esc(running.id)}` })}</div>` : ''}
+    ${S.priceDrop?.id === id && drop?.watchers ? `<div class="card"><h2>${t('pd.title')}</h2>
+      <p>${t('pd.text', { n: drop.watchers, to: money(p.price_minor), from: money(S.priceDrop.fromMinor) })}</p>
+      <div class="cost"><span class="tot">${t('restock.feesTotal')}</span><b class="tot num">${fee(drop.costUsdMicros)}</b></div>
+      <div class="btns"><button class="btn primary" data-act="price-drop">${t('pd.send', { n: drop.watchers })}</button><button class="btn" data-act="price-drop-later">${t('pd.later')}</button></div></div>`
+      : drop?.watchers ? `<p class="note pad" style="margin:0">${t('pd.waiting', { n: drop.watchers })}</p>` : ''}
     <div class="card"><h2>${p.waiting ? t('restock.logTitle') : t('restock.addStock')}</h2>
       <div class="field"><label>${t('restock.units')}</label>${stepper('units')}</div>
       ${p.waiting ? `<div class="field"><div class="seg"><button type="button" data-mode="hold" class="${f.mode === 'hold' ? 'on' : ''}">${t('restock.hold')}</button><button type="button" data-mode="race" class="${f.mode === 'race' ? 'on' : ''}">${t('restock.race')}</button></div></div>
@@ -528,7 +533,7 @@ views.insights = async () => {
     </tbody></table></div><p class="note pad" style="margin:0">${t('ins.reorderNote')}</p>`
       : `<p class="empty">${t('ins.noWaitlist')}</p>`}
     <div class="sect">${t('ins.consents')}</div>
-    ${consents.map((k) => `<div class="line"><span class="pos">${k.revoked_at ? '✕' : '✓'}</span><span>${esc(k.name ?? phone(k.wa_id))}<span class="q">${q(esc(k.quote))} · ${label({ name: k.product ?? '', variant: k.variant ?? '' })} · ${when(k.granted_at)}</span></span>${k.revoked_at ? `<span class="pill expired">${t('ins.optedOut')}</span>` : chip(k.channel)}</div>`).join('') || `<p class="empty">${t('ins.noConsents')}</p>`}`;
+    ${consents.map((k) => `<div class="line"><span class="pos">${k.revoked_at ? '✕' : '✓'}</span><span>${esc(k.name ?? phone(k.wa_id))}<span class="q">${t(`purpose.${k.purpose}`) === `purpose.${k.purpose}` ? '' : `${t(`purpose.${k.purpose}`)} · `}${q(esc(k.quote))} · ${label({ name: k.product ?? '', variant: k.variant ?? '' })} · ${when(k.granted_at)}</span></span>${k.revoked_at ? `<span class="pill expired">${t('ins.optedOut')}</span>` : chip(k.channel)}</div>`).join('') || `<p class="empty">${t('ins.noConsents')}</p>`}`;
 };
 
 views.settings = async () => {
@@ -885,6 +890,14 @@ document.addEventListener('click', async (e) => {
       a.click();
       return;
     }
+    if (act === 'price-drop') {
+      el.disabled = true;
+      const r = await api(`/api/products/${S.priceDrop.id}/price-drop`, { method: 'POST' });
+      S.priceDrop = null;
+      toast(t('pd.sent', { n: r.sent }));
+      return route(true);
+    }
+    if (act === 'price-drop-later') { S.priceDrop = null; return route(true); }
     if (act === 'install') {
       const p = S.installPrompt;
       S.installPrompt = null;
@@ -973,13 +986,18 @@ document.addEventListener('submit', async (e) => {
         location.hash = `#/product/${p.id}`;
         return;
       }
-      case 'edit-product':
-        await api(`/api/products/${form.dataset.id}`, {
+      case 'edit-product': {
+        const r = await api(`/api/products/${form.dataset.id}`, {
           method: 'PATCH',
           body: { stock: Number(val('e-stock')), price: Number(val('e-price')), aliases: val('e-aliases').split(',').map((a) => a.trim()).filter(Boolean) },
         });
+        // A price cut with customers waiting for it: offer to tell them, at the top of the page.
+        S.priceDrop = r.priceDrop ? { id: form.dataset.id, fromMinor: r.priceDrop.fromMinor } : null;
         toast(t('saved'));
-        return route(true);
+        await route(true);
+        if (S.priceDrop) window.scrollTo(0, 0);
+        return;
+      }
       case 'reply':
         if (!val('reply')) return;
         await api(`/api/chats/${form.dataset.id}/reply`, { method: 'POST', body: { body: val('reply') } });

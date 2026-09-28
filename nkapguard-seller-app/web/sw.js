@@ -1,6 +1,6 @@
 // NKAPGUARD Seller App background worker: shows notifications (new messages, orders, payments)
 // and keeps the app's own files so it opens quickly, even on a weak connection.
-const CACHE = 'nkg-app-v4';
+const CACHE = 'nkg-app-v5';
 const SHELL = ['./', './index.html', './app.js', './i18n.js', './styles.css', './config.js', './manifest.webmanifest', './icon-192.png', './badge-96.png'];
 
 self.addEventListener('install', (e) => {

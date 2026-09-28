@@ -7,15 +7,16 @@ import { slots, templateBody, templateFor, type Facts, type Fmt } from '../domai
 import { CODE_TTL_MS } from './auth.js';
 import type { Ctx } from './context.js';
 
-type Key = 'hold' | 'race' | 'soldOut' | 'paid' | 'refund';
-const KEYS: Key[] = ['hold', 'race', 'soldOut', 'paid', 'refund'];
-const CATEGORY: Record<Key, 'MARKETING' | 'UTILITY'> = { hold: 'MARKETING', race: 'MARKETING', soldOut: 'UTILITY', paid: 'UTILITY', refund: 'UTILITY' };
+type Key = 'hold' | 'race' | 'soldOut' | 'paid' | 'refund' | 'priceDrop';
+const KEYS: Key[] = ['hold', 'race', 'soldOut', 'paid', 'refund', 'priceDrop'];
+const CATEGORY: Record<Key, 'MARKETING' | 'UTILITY'> = { hold: 'MARKETING', race: 'MARKETING', soldOut: 'UTILITY', paid: 'UTILITY', refund: 'UTILITY', priceDrop: 'MARKETING' };
 
 // Meta asks for a sample value for every {{n}}; reviewers read the template with these filled in.
 const SAMPLE: Facts = {
   name: 'Aïcha Mbarga',
   product: { name: 'Claw Clip Ponytail', variant: 'Marron / Brown' },
-  priceMinor: 15000,
+  priceMinor: 12000,
+  oldPriceMinor: 15000,
   units: 3,
   waiting: 5,
   told: 5,

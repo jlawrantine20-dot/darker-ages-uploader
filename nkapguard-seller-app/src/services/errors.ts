@@ -88,6 +88,11 @@ const MESSAGES = {
   zone_required: { en: () => 'An area needs a name and a fee (0 for free).', fr: () => 'Une zone doit avoir un nom et un tarif (0 si gratuit).' },
   photo_invalid: { en: () => 'That file is not a photo. Use a JPEG, PNG or WebP image.', fr: () => "Ce fichier n'est pas une photo. Utilisez une image JPEG, PNG ou WebP." },
   photo_too_big: { en: () => 'That photo is too large. Try a smaller one.', fr: () => 'Cette photo est trop lourde. Essayez-en une plus petite.' },
+  price_not_lower: { en: () => 'The new price must be lower than the old one.', fr: () => "Le nouveau prix doit être inférieur à l'ancien." },
+  price_drop_sold_out: {
+    en: () => 'This item is sold out. People on its waitlist will see the new price when it comes back.',
+    fr: () => "Cet article est en rupture. Les personnes sur sa liste d'attente verront le nouveau prix à son retour.",
+  },
   server_error: { en: () => 'Something went wrong on our side. Try again in a moment.', fr: () => 'Un problème est survenu de notre côté. Réessayez dans un instant.' },
 } satisfies Record<string, Record<UiLang, (p: P) => string>>;
 

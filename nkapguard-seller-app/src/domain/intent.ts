@@ -217,3 +217,15 @@ export function detectZone<T extends Zone>(text: string, zones: T[]): T | null {
   if (!scored.length || (scored[1] && scored[1].score === scored[0].score)) return null;
   return scored[0].z;
 }
+
+/**
+ * Bargaining: "c'est trop cher", "dernier prix ?", "last price?", "abeg reduce am". The
+ * answer offers a price-drop alert, and the seller can still step in and negotiate.
+ */
+export function isBargain(text: string): boolean {
+  const t = fold(text).replace(/[’']/g, ' ');
+  return (
+    /\b(trop cher|c est cher|tres cher|dernier prix|derniere prix|prix final|prix fixe|reduction|reduire|reduisez|reduis|baisser|baissez|baisse un peu|moins cher|remise|rabais|negocier|negociable|on peut discuter|faites un effort|fais un effort|petit geste)\b/.test(t) ||
+    /\b(too expensive|too much|expensive|last price|final price|best price|reduce|reduction|discount|cheaper|lower the price|negotiable|negotiate|do me price|wetin be last|abeg reduce|reduce am|make una reduce)\b/.test(t)
+  );
+}

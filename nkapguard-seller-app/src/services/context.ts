@@ -33,7 +33,7 @@ export interface Recipient {
   language: string;
 }
 
-export type TemplateKey = 'hold' | 'race' | 'soldOut' | 'paid' | 'refund';
+export type TemplateKey = 'hold' | 'race' | 'soldOut' | 'paid' | 'refund' | 'priceDrop';
 
 export interface TemplatePart {
   template: TemplateKey;

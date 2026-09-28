@@ -30,6 +30,8 @@ export interface Facts {
   quantity?: number;
   /** A delivery area and its fee; with an order, the fee is already in priceMinor. */
   zone?: { name: string; fee_minor: number };
+  /** The price before a drop, for "now X (it was Y)". */
+  oldPriceMinor?: number;
   /** The shop's delivery areas, for "which area are you in?". */
   zones?: { name: string; fee_minor: number }[];
 }
@@ -55,6 +57,7 @@ interface Args {
   seller: string;
   options: string;
   quantity: number;
+  oldPrice: string;
   zone: string;
   fee: string;
   /** "Akwa (1 000 FCFA), Bonamoussadi (1 500 FCFA) et …" */
@@ -69,7 +72,8 @@ export type Key =
   | 'hold' | 'race' | 'soldOut' | 'paid' | 'refund'
   | 'orderLink' | 'orderManual' | 'orderAgain' | 'orderShort' | 'orderRefund'
   | 'followUp' | 'orderExpired'
-  | 'deliveryFee' | 'deliveryZones' | 'askZone';
+  | 'deliveryFee' | 'deliveryZones' | 'askZone'
+  | 'priceDrop' | 'priceAlertOffer' | 'priceAlertJoined';
 type Sentences = Record<Key, (a: Args) => string> & { fallbackName: string };
 
 // Each language is written as a native speaker would text a customer, not translated line by
@@ -92,6 +96,10 @@ const en: Sentences = {
   orderManual: (a) =>
     `Great, noted! We're keeping ${a.quantity > 1 ? `${a.quantity} × ${a.label}` : `the ${a.label}`} aside for you until ${a.until}. We'll message you shortly to arrange payment (${a.price}${a.delivery}).`,
   orderAgain: (a) => `Your ${a.label} is already held for you until ${a.until}. Pay ${a.price}${a.delivery} here to confirm:\n${a.url}`,
+  priceDrop: (a) => `Hi ${a.first}, good news: the ${a.label} is now ${a.price} (it was ${a.oldPrice}). Reply YES to order it. (Reply STOP to opt out.)`,
+  priceAlertOffer: (a) =>
+    `Hi ${a.first}, the price of the ${a.label} is fixed for now (${a.price}). Want us to tell you here if it drops? Just reply YES. (Reply STOP anytime to opt out.)`,
+  priceAlertJoined: (a) => `Noted! We'll tell you here if the price of the ${a.label} drops. Reply STOP anytime to opt out.`,
   deliveryFee: (a) => (a.fee === 'free' ? `${a.zone}: it's free.` : `Delivery to ${a.zone} is ${a.fee}.`),
   deliveryZones: (a) => `We deliver to ${a.zonesAnd}. Where should we deliver to?`,
   askZone: (a) => `Great! Where should we deliver to? ${a.zonesOr}.`,
@@ -132,6 +140,11 @@ const fr: Sentences = {
   orderManual: (a) =>
     `Parfait, c'est noté ! Nous vous mettons ${a.quantity > 1 ? `${a.quantity} × ${a.label}` : `le modèle ${a.label}`} de côté jusqu'à ${a.until}. Nous vous écrivons très vite pour le paiement (${a.price}${a.delivery}).`,
   orderAgain: (a) => `Le modèle ${a.label} vous est déjà réservé jusqu'à ${a.until}. Réglez ${a.price}${a.delivery} ici pour confirmer :\n${a.url}`,
+  priceDrop: (a) =>
+    `Bonjour ${a.first}, bonne nouvelle : le modèle ${a.label} passe à ${a.price} (au lieu de ${a.oldPrice}). Répondez OUI pour le commander. (Répondez STOP pour ne plus recevoir de messages.)`,
+  priceAlertOffer: (a) =>
+    `Bonjour ${a.first} ! Le prix du modèle ${a.label} est fixe pour le moment (${a.price}). Voulez-vous que nous vous prévenions ici s'il baisse ? Répondez simplement OUI. (Répondez STOP à tout moment pour ne plus recevoir de messages.)`,
+  priceAlertJoined: (a) => `C'est noté ! Nous vous préviendrons ici si le prix du modèle ${a.label} baisse. Pour ne plus recevoir de messages, répondez STOP.`,
   deliveryFee: (a) => (a.fee === 'gratuit' ? `${a.zone} : c'est gratuit.` : `La livraison à ${a.zone} coûte ${a.fee}.`),
   deliveryZones: (a) => `Nous livrons à ${a.zonesAnd}. Où faut-il vous livrer ?`,
   askZone: (a) => `Parfait ! Où faut-il vous livrer ? ${a.zonesOr}.`,
@@ -230,6 +243,7 @@ function args(l: Base, f: Facts, fmt: Fmt): Args {
     seller: f.seller ?? '',
     options: options(l, f.options ?? []),
     quantity: f.quantity ?? 1,
+    oldPrice: f.oldPriceMinor === undefined ? '' : formatMoney(f.oldPriceMinor, fmt.currency, l, fmt.country),
     zone: f.zone?.name ?? '',
     fee: f.zone ? feeText(l, f.zone.fee_minor, fmt) : '',
     zonesAnd: zoneList(l, f.zones ?? [], fmt, 'conjunction'),
@@ -246,7 +260,8 @@ export function say(lang: Lang | string, key: Key, facts: Facts, fmt: Fmt): stri
 }
 
 /** Slot values for each template, in order. */
-const SLOTS: Record<'hold' | 'race' | 'soldOut' | 'paid' | 'refund', (a: Args) => string[]> = {
+const SLOTS: Record<'hold' | 'race' | 'soldOut' | 'paid' | 'refund' | 'priceDrop', (a: Args) => string[]> = {
+  priceDrop: (a) => [a.first, a.label, a.price, a.oldPrice],
   hold: (a) => [a.first, a.label, String(a.units), String(a.waiting), a.until, a.price, a.url],
   race: (a) => [a.first, a.label, String(a.units), String(a.told), a.price, a.url],
   soldOut: (a) => [a.first, a.label],

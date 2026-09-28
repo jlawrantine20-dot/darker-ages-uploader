@@ -228,6 +228,15 @@ const EN = {
   'ph.why': 'Customers buy what they can see. The photo appears on your shop page and is sent with the answer when someone asks about this item.',
   'ph.saving': 'Saving the photo…', 'ph.saved': 'Photo saved', 'ph.removed': 'Photo removed',
   'ph.unreadable': "This photo couldn't be opened. Try another one.", 'ph.optional': 'Optional. You can add it later.',
+  // Price-drop alerts
+  'pd.waiting': (p) => (p.n === 1 ? '1 customer asked to hear if the price drops' : `${p.n} customers asked to hear if the price drops`),
+  'pd.title': 'Tell customers about the new price',
+  'pd.text': (p) => `${p.n === 1 ? '1 customer' : `${p.n} customers`} asked for an alert if this item got cheaper. They'll read: “now ${p.to} (it was ${p.from})”, and can reply YES to order.`,
+  'pd.send': (p) => (p.n === 1 ? 'Send the alert' : `Send ${p.n} alerts`), 'pd.later': 'Not now',
+  'pd.sent': (p) => (p.n === 1 ? 'Alert sent' : `${p.n} alerts sent`),
+  'purpose.price_alert': 'Price alert', 'purpose.restock_alert': 'Restock alert',
+  'out.price_alert_offered': 'NKAPGUARD offered a price-drop alert', 'out.price_alert_joined': 'Customer asked for a price-drop alert',
+  'out.asked_zone': 'NKAPGUARD asked where to deliver', 'out.delivery_fee': 'NKAPGUARD gave the delivery fee',
 };
 
 const FR = {
@@ -438,6 +447,16 @@ const FR = {
   'ph.why': "Les clients achètent ce qu'ils voient. La photo s'affiche sur votre page boutique et part avec la réponse quand quelqu'un demande cet article.",
   'ph.saving': 'Enregistrement de la photo…', 'ph.saved': 'Photo enregistrée', 'ph.removed': 'Photo retirée',
   'ph.unreadable': "Impossible d'ouvrir cette photo. Essayez-en une autre.", 'ph.optional': "Facultatif. Vous pourrez l'ajouter plus tard.",
+  'pd.waiting': (p) => (p.n === 1 ? 'Un client attend une baisse de prix' : `${p.n} clients attendent une baisse de prix`),
+  'pd.title': 'Annoncer le nouveau prix',
+  'pd.text': (p) => (p.n === 1
+    ? `Un client a demandé une alerte si le prix de cet article baissait. Il lira : « ${p.to} au lieu de ${p.from} », et pourra répondre OUI pour commander.`
+    : `${p.n} clients ont demandé une alerte si le prix de cet article baissait. Ils liront : « ${p.to} au lieu de ${p.from} », et pourront répondre OUI pour commander.`),
+  'pd.send': (p) => (p.n === 1 ? "Envoyer l'alerte" : `Envoyer les ${p.n} alertes`), 'pd.later': 'Pas maintenant',
+  'pd.sent': (p) => (p.n === 1 ? 'Alerte envoyée' : `${p.n} alertes envoyées`),
+  'purpose.price_alert': 'Alerte de prix', 'purpose.restock_alert': 'Alerte de retour',
+  'out.price_alert_offered': 'NKAPGUARD a proposé une alerte de baisse de prix', 'out.price_alert_joined': 'Le client a demandé une alerte de baisse de prix',
+  'out.asked_zone': 'NKAPGUARD a demandé où livrer', 'out.delivery_fee': 'NKAPGUARD a donné le tarif de livraison',
 };
 
 export const DICTS = { en: EN, fr: FR };

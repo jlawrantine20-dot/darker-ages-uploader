@@ -289,6 +289,21 @@ create table if not exists seller_app.product_photos (
 alter table seller_app.products add column if not exists photo_version bigint;
 alter table seller_app.messages add column if not exists image_url text;
 
+alter table seller_app.contacts add column if not exists awaiting_price_alert_product_id uuid references seller_app.products(id) on delete set null;
+alter table seller_app.contacts add column if not exists awaiting_price_alert_at timestamptz;
+create table if not exists seller_app.price_alert_sends (
+  id uuid primary key default gen_random_uuid(),
+  seller_id uuid not null references seller_app.sellers(id) on delete cascade,
+  contact_id uuid not null references seller_app.contacts(id) on delete cascade,
+  product_id uuid not null references seller_app.products(id) on delete cascade,
+  old_price_minor bigint not null,
+  new_price_minor bigint not null,
+  sent_at timestamptz not null
+);
+create index if not exists price_alert_sends_lookup on seller_app.price_alert_sends (product_id, contact_id);
+alter table seller_app.products add column if not exists previous_price_minor bigint;
+alter table seller_app.products add column if not exists price_lowered_at timestamptz;
+
 -- Defence in depth: row-level security on, with no policies, so even if the schema were
 -- exposed later, the anon and authenticated roles would see nothing.
 do $$

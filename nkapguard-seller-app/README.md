@@ -85,6 +85,13 @@ India and Brazil. Any other country works once you enter its currency and time z
   phone's camera or gallery and shrunk on the phone to about 100 KB before upload. The photo
   shows on the shop page and goes with the "in stock" answer and reminders (as the caption
   photo on WhatsApp; before the text on Instagram and Messenger).
+- **Price-drop alerts:** a customer who bargains ("trop cher", "dernier prix ?", "last price?",
+  "abeg reduce am") about a product is offered an alert if the price drops; a yes is recorded
+  as consent with their words. When the seller lowers that price, the app shows how many are
+  waiting and the cost, and sends on confirmation: a plain reply inside the 24-hour window,
+  otherwise the `price_drop_v1` template. The "was" price is the one the server recorded at
+  the cut, never typed in; nobody who already bought it or was told about that price gets it,
+  and a sold-out item waits for its restock. A YES orders at the new price.
 - **Delivery by area:** the seller lists areas (a neighbourhood, a city or a region, in any
   country) with a fee, 0 for pickup. "La livraison à Akwa c'est combien ?" or "how much is
   dispatch to Lekki?" gets the fee; without an area named, the list. An order asks where to
@@ -274,6 +281,7 @@ template (`login_code_v1`) once the business is verified.
 | `restock_sold_out_v1` | Utility | Sorry {{1}}, the {{2}} sold out before your payment came through. You're still on the list, and we'll let you know about the next restock. | Désolés {{1}}, le modèle {{2}} est parti avant votre paiement. Vous restez sur la liste et nous vous préviendrons au prochain arrivage. |
 | `payment_received_v1` | Utility | Payment received, thank you! The {{1}} is yours. We'll be in touch shortly about delivery. | Paiement bien reçu, merci ! Le modèle {{1}} est à vous. Nous revenons très vite vers vous pour la livraison. |
 | `payment_refund_v1` | Utility | We received your payment, but the last {{1}} sold just moments before. We're refunding you in full, and you keep your place on the list. | Nous avons bien reçu votre paiement, mais le dernier modèle {{1}} a été vendu quelques instants plus tôt. Nous vous remboursons intégralement, et vous gardez votre place sur la liste. |
+| `price_drop_v1` | Marketing | Hi {{1}}, good news: the {{2}} is now {{3}} (it was {{4}}). Reply YES to order it. (Reply STOP to opt out.) | Bonjour {{1}}, bonne nouvelle : le modèle {{2}} passe à {{3}} (au lieu de {{4}}). Répondez OUI pour le commander. (Répondez STOP pour ne plus recevoir de messages.) |
 
 ### Bilingual templates (French and English)
 
@@ -296,6 +304,7 @@ for example after a message like "ok" or "👍".
 | `restock_sold_out_v1_bilingual` | Désolés {{1}}, le modèle {{2}} est parti avant votre paiement. Vous restez sur la liste et nous vous préviendrons au prochain arrivage.<br><br>Sorry {{3}}, the {{4}} sold out before your payment came through. You're still on the list, and we'll let you know about the next restock. |
 | `payment_received_v1_bilingual` | Paiement bien reçu, merci ! Le modèle {{1}} est à vous. Nous revenons très vite vers vous pour la livraison.<br><br>Payment received, thank you! The {{2}} is yours. We'll be in touch shortly about delivery. |
 | `payment_refund_v1_bilingual` | Nous avons bien reçu votre paiement, mais le dernier modèle {{1}} a été vendu quelques instants plus tôt. Nous vous remboursons intégralement, et vous gardez votre place sur la liste.<br><br>We received your payment, but the last {{2}} sold just moments before. We're refunding you in full, and you keep your place on the list. |
+| `price_drop_v1_bilingual` | Bonjour {{1}}, bonne nouvelle : le modèle {{2}} passe à {{3}} (au lieu de {{4}}). Répondez OUI pour le commander. (Répondez STOP pour ne plus recevoir de messages.)<br><br>Hi {{5}}, good news: the {{6}} is now {{7}} (it was {{8}}). Reply YES to order it. (Reply STOP to opt out.) |
 
 A bilingual message is one WhatsApp message, so it costs the same as a single-language one.
 

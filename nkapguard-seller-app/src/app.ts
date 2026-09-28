@@ -19,6 +19,7 @@ import { dispatch } from './services/outbound.js';
 import { listTemplates, submitTemplates } from './services/templates.js';
 import { fxRates, refreshFx } from './services/fx.js';
 import { runFollowUps } from './services/followups.js';
+import { previewPriceDrop, sendPriceDrop } from './services/pricedrop.js';
 import { deletePhoto, loadPhoto, photoUrl, savePhoto } from './services/photos.js';
 import { pushEnabled, removeSubscription, saveSubscription } from './services/push.js';
 import { sendWebPush } from './channels/webpush.js';
@@ -478,8 +479,8 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     const b = await c.req.json<{ stock?: number; price?: number; aliases?: string[]; name?: string; variant?: string }>();
     if (b.stock !== undefined && !(Number.isInteger(b.stock) && b.stock >= 0)) throw new InputError('stock_whole');
     if (b.price !== undefined && !(b.price >= 0)) throw new InputError('price_min');
-    const [owner] = await db.query<{ currency: string }>(
-      'select s.currency from products p join sellers s on s.id = p.seller_id where p.id = $1',
+    const [owner] = await db.query<{ currency: string; price_minor: string }>(
+      'select s.currency, p.price_minor from products p join sellers s on s.id = p.seller_id where p.id = $1',
       [c.req.param('id')],
     );
     if (!owner) return c.json({ error: 'No product with that id.' }, 404);
@@ -489,7 +490,28 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
         where id = $1 returning *`,
       [c.req.param('id'), b.stock ?? null, b.price === undefined ? null : toMinor(b.price, owner.currency), b.aliases ?? null, b.name ?? null, b.variant ?? null],
     );
+    // A price cut: remember the real old price (the "was" in alerts), and say how many customers
+    // asked to hear about it. A rise clears it, so an old cut can't be announced later.
+    const was = Number(owner.price_minor);
+    const now = Number((row as { price_minor: string }).price_minor);
+    if (now < was) {
+      await db.query('update products set previous_price_minor = $2, price_lowered_at = $3 where id = $1', [c.req.param('id'), was, clock()]);
+      const pv = await previewPriceDrop(ctx, c.req.param('id'), clock());
+      if (pv.watchers > 0) return c.json({ ...row, priceDrop: { fromMinor: was, ...pv } });
+    } else if (now > was) {
+      await db.query('update products set previous_price_minor = null, price_lowered_at = null where id = $1', [c.req.param('id')]);
+    }
     return c.json(row);
+  });
+
+  app.get('/api/products/:id/price-drop', async (c) => {
+    await guardOf(c, 'product', c.req.param('id'));
+    return c.json(await previewPriceDrop(ctx, c.req.param('id'), clock()));
+  });
+  app.post('/api/products/:id/price-drop', async (c) => {
+    await guardOf(c, 'product', c.req.param('id'));
+    const r = await sendPriceDrop(ctx, c.req.param('id'), clock());
+    return c.json({ sent: r.sent.filter((x) => x.status === 'sent').length });
   });
 
   app.get('/api/products/:id/waitlist', async (c) => {

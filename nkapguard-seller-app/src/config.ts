@@ -18,7 +18,7 @@ export interface Config {
     appSecret: string;
     verifyToken: string;
     apiVersion: string;
-    templates: { hold: string; race: string; soldOut: string; paid: string; refund: string };
+    templates: { hold: string; race: string; soldOut: string; paid: string; refund: string; priceDrop: string };
   };
   /**
    * Optional Instagram and Messenger channels. A channel can only be connected when its app id
@@ -64,6 +64,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
         soldOut: env.WA_TEMPLATE_SOLD_OUT ?? 'restock_sold_out_v1',
         paid: env.WA_TEMPLATE_PAID ?? 'payment_received_v1',
         refund: env.WA_TEMPLATE_REFUND ?? 'payment_refund_v1',
+        priceDrop: env.WA_TEMPLATE_PRICE_DROP ?? 'price_drop_v1',
       },
     },
     push: { publicKey: env.VAPID_PUBLIC_KEY ?? '', privateKey: env.VAPID_PRIVATE_KEY ?? '', subject: env.VAPID_SUBJECT ?? 'mailto:support@nkapguard.com' },

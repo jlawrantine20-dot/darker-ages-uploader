@@ -6,7 +6,7 @@ describe('WhatsApp template submission', () => {
   it('builds every template with a sample value for each slot', async () => {
     const { ctx } = await setup();
     const specs = templateSpecs(ctx);
-    expect(specs).toHaveLength(16);
+    expect(specs).toHaveLength(19);
     for (const s of specs.filter((x) => x.category !== 'AUTHENTICATION')) {
       const body = s.components[0] as { text: string; example: { body_text: string[][] } };
       const slotsInText = body.text.match(/\{\{\d+\}\}/g)!.length;
@@ -33,8 +33,8 @@ describe('WhatsApp template submission', () => {
       return new Response(JSON.stringify({ data: [{ name: 'payment_received_v1', language: 'en', status: 'APPROVED' }] }));
     }) as typeof fetch;
     const r = await submitTemplates(ctx, '555');
-    expect(r).toHaveLength(16);
-    expect(posted).toHaveLength(15);
+    expect(r).toHaveLength(19);
+    expect(posted).toHaveLength(18);
     expect(r.find((t) => t.name === 'payment_received_v1' && t.language === 'en')?.status).toBe('APPROVED');
     expect(r.find((t) => t.name === 'payment_refund_v1' && t.language === 'fr')).toMatchObject({ status: 'NOT_SUBMITTED', error: 'Too many variables' });
   });

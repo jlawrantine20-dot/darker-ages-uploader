@@ -1,7 +1,7 @@
 import type { SocialChannel, SocialInbound } from '../channels/meta.js';
 import type { InboundText } from '../channels/whatsapp.js';
 import { parts, productLabel, say } from '../domain/copy.js';
-import { asksAvailability, asksDelivery, detectZone, detectLanguage, detectProduct, fold, isAlertRequest, isConsentYes, isOrderRequest, isStop, orderQuantity, pickVariant, productFamily } from '../domain/intent.js';
+import { asksAvailability, asksDelivery, detectZone, isBargain, detectLanguage, detectProduct, fold, isAlertRequest, isConsentYes, isOrderRequest, isStop, orderQuantity, pickVariant, productFamily } from '../domain/intent.js';
 import { CONSENT_PROMPT_TTL_MS } from '../domain/windows.js';
 import type { Q } from '../db.js';
 import type { Ctx, DispatchResult, Outbound, Recipient } from './context.js';
@@ -14,7 +14,8 @@ import { fmt, type Seller } from './sellers.js';
 
 export type InboundAction =
   | 'unknown_seller' | 'stopped' | 'joined' | 'already_waiting' | 'offered' | 'in_stock' | 'asked_variant' | 'sold_out' | 'shop_link' | 'unhandled'
-  | 'ordered' | 'ordered_manual' | 'order_again' | 'asked_quantity' | 'asked_zone' | 'delivery_fee';
+  | 'ordered' | 'ordered_manual' | 'order_again' | 'asked_quantity' | 'asked_zone' | 'delivery_fee'
+  | 'price_alert_offered' | 'price_alert_joined';
 
 interface ContactRow {
   id: string;
@@ -33,6 +34,8 @@ interface ContactRow {
   awaiting_zone_at: Date | null;
   pending_order_product_id: string | null;
   pending_order_quantity: number | null;
+  awaiting_price_alert_product_id: string | null;
+  awaiting_price_alert_at: Date | null;
   channel: string;
 }
 
@@ -235,6 +238,31 @@ async function decide(
     return joinWaitlist(product);
   }
 
+  // A yes to "want us to tell you if the price drops?": their words are the consent record.
+  const priceLive =
+    contact.awaiting_price_alert_product_id &&
+    contact.awaiting_price_alert_at &&
+    msg.at.getTime() - contact.awaiting_price_alert_at.getTime() < CONSENT_PROMPT_TTL_MS;
+  if (whatsapp && priceLive && isConsentYes(msg.text)) {
+    const [product] = await q.query<ProductRow>('select * from products where id = $1', [contact.awaiting_price_alert_product_id]);
+    // They may still decide to buy at today's price: "je le prends" keeps working.
+    await q.query(
+      'update contacts set awaiting_price_alert_product_id = null, awaiting_price_alert_at = null, awaiting_order_product_id = $2, awaiting_order_at = $3 where id = $1',
+      [contact.id, product.id, msg.at],
+    );
+    const [existing] = await q.query(
+      `select 1 from consents where contact_id = $1 and product_id = $2 and purpose = 'price_alert' and revoked_at is null`,
+      [contact.id, product.id],
+    );
+    if (!existing) {
+      await q.query(
+        `insert into consents (seller_id, contact_id, channel, purpose, product_id, quote, granted_at) values ($1, $2, 'whatsapp', 'price_alert', $3, $4, $5)`,
+        [seller.id, contact.id, product.id, msg.text, msg.at],
+      );
+    }
+    return { action: 'price_alert_joined' as const, outs: reply(say(lang, 'priceAlertJoined', { product }, f)) };
+  }
+
   // Answer about one product: in stock with the price, or sold out with a way to get an alert.
   const answerFor = async (product: ProductRow) => {
     await q.query('update contacts set awaiting_choice_name = null, awaiting_choice_at = null where id = $1', [contact.id]);
@@ -304,6 +332,23 @@ async function decide(
       ? { action: 'ordered' as const, outs: reply(say(lang, 'orderLink', facts, f)) }
       : { action: 'ordered_manual' as const, outs: reply(say(lang, 'orderManual', facts, f)) };
   };
+
+  // Bargaining ("trop cher", "last price?") about a product we know: offer a price-drop alert.
+  // Only on WhatsApp, the one channel that can message them later.
+  if (whatsapp && isBargain(msg.text) && !isOrderRequest(msg.text)) {
+    const recent = contact.awaiting_order_product_id && contact.awaiting_order_at && msg.at.getTime() - contact.awaiting_order_at.getTime() < CONSENT_PROMPT_TTL_MS;
+    const named = detectProduct(msg.text, await catalog());
+    const [product] = named ? [named] : recent ? await q.query<ProductRow>('select * from products where id = $1', [contact.awaiting_order_product_id]) : [];
+    if (product) {
+      await q.query(
+        `update contacts set awaiting_price_alert_product_id = $2, awaiting_price_alert_at = $3,
+                awaiting_consent_product_id = null, awaiting_consent_at = null, awaiting_order_product_id = null, awaiting_order_at = null
+          where id = $1`,
+        [contact.id, product.id, msg.at],
+      );
+      return { action: 'price_alert_offered' as const, outs: reply(say(lang, 'priceAlertOffer', { name: contact.name, product, priceMinor: product.price_minor }, f)) };
+    }
+  }
 
   // The answer to "which area?": finish the waiting order, or give that area's fee.
   const zoneLive = contact.awaiting_zone_at && msg.at.getTime() - contact.awaiting_zone_at.getTime() < CONSENT_PROMPT_TTL_MS;
