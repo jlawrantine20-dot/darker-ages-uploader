@@ -228,6 +228,12 @@ with a variable.
 The texts below are generated from `src/domain/copy.ts` (`templateBody`), and a test checks
 that this table still matches, so submit them to Meta exactly as written.
 
+The app can submit them all for you with a token that has `whatsapp_business_management`:
+`POST /api/admin/templates?wabaId=<WhatsApp Business Account id>` with the admin token.
+`GET` on the same URL shows Meta's review status. Templates Meta already has are skipped,
+so running it again only submits what's missing. Meta only accepts the authentication
+template (`login_code_v1`) once the business is verified.
+
 | Name | Category | English | French |
 |---|---|---|---|
 | `restock_hold_v1` | Marketing | Hi {{1}}, good news: the {{2}} is back! Units in: {{3}}. People waiting: {{4}}. We're holding one for you until {{5}}. Pay {{6}} here to secure it: {{7}} (Reply STOP to leave the list.) | Bonjour {{1}}, bonne nouvelle : le modèle {{2}} est de retour ! Arrivage : {{3}}. Personnes en attente : {{4}}. Nous vous en réservons un jusqu'à {{5}}. Pour le garder, réglez {{6}} ici : {{7}} (Répondez STOP pour quitter la liste.) |
