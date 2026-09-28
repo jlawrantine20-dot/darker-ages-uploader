@@ -31,7 +31,7 @@ describe('seller app API', () => {
 
     const chats = (await call('GET', `/api/chats?sellerId=${env.sellerId}`)).body;
     expect(chats.map((c: { name: string }) => c.name)).toEqual(['Tunde', 'Amaka Obi']);
-    expect(chats[1]).toMatchObject({ unread: 2, waiting_for: ['12" Claw Clip Ponytail Brown'], window_open: true, channel: 'whatsapp', last_direction: 'out' });
+    expect(chats[1]).toMatchObject({ unread: 2, waiting_for: [{ name: '12" Claw Clip Ponytail', variant: 'Brown' }], window_open: true, channel: 'whatsapp', last_direction: 'out' });
 
     const detail = (await call('GET', `/api/chats/${chats[1].id}`)).body;
     expect(detail.messages).toHaveLength(4);

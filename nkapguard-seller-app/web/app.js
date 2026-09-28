@@ -1,4 +1,5 @@
 // NKAPGUARD Seller App. Plain JavaScript modules, no build step; talks to the /api routes.
+import { lang, setLang, t } from './i18n.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 /** Where the NKAPGUARD API lives. Empty when the app and API share a host; set in config.js otherwise. */
@@ -12,39 +13,73 @@ let TZ = 'UTC';
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const exponent = (cur) => new Intl.NumberFormat('en', { style: 'currency', currency: cur }).resolvedOptions().maximumFractionDigits;
 const toMajor = (minor) => (minor ?? 0) / 10 ** exponent(S.seller?.currency ?? 'USD');
-const LANG_NAMES = { en: 'English', fr: 'French', 'fr+en': 'French and English (both in every message)' };
-/** The first language of the shop, used for names, prices and times in the app. */
-const baseLang = () => ((S.seller?.language ?? 'en').startsWith('fr') ? 'fr' : 'en');
-/** A price in the shop's currency and language: "15 000 FCFA", "FCFA 15,000", "₦18,500". */
-function money(minor) {
-  const cur = S.seller?.currency ?? 'USD';
-  const major = toMajor(minor);
-  const opts = { style: 'currency', currency: cur, minimumFractionDigits: Number.isInteger(major) ? 0 : undefined };
-  try { return new Intl.NumberFormat(`${baseLang()}-${S.seller?.country ?? 'US'}`, opts).format(major); }
-  catch { return new Intl.NumberFormat('en', opts).format(major); }
+/** The language customers are written to, as the seller reads it in the app's language. */
+const langName = (l) => t(`lang.${l}`);
+/** Locale for numbers and dates: the app's language, with the shop's country for number style. */
+const locale = () => `${lang()}-${S.seller?.country ?? (lang() === 'fr' ? 'FR' : 'GB')}`;
+/** The shop's own language, which is the language its product names and variants are written in. */
+const shopLang = () => ((S.seller?.language ?? 'en').startsWith('fr') ? 'fr' : 'en');
+function fmtMoney(major, cur, digits) {
+  const opts = { style: 'currency', currency: cur, minimumFractionDigits: Number.isInteger(major) ? 0 : undefined, ...(digits !== undefined ? { maximumFractionDigits: digits, minimumFractionDigits: 0 } : {}) };
+  try { return new Intl.NumberFormat(locale(), opts).format(major); }
+  catch { return new Intl.NumberFormat(lang(), opts).format(major); }
 }
-/** Meta fees are billed in USD. */
-const usd = (micros) => { const v = (micros ?? 0) / 1e6; return '$' + v.toFixed(v !== 0 && v < 1 ? 4 : 2); };
+/** A price in the shop's currency, written the way the app's language writes it: "15 000 FCFA", "FCFA 15,000", "₦18,500". */
+const money = (minor) => fmtMoney(toMajor(minor), S.seller?.currency ?? 'USD');
+/** Meta bills fees in US dollars; sellers see them in their own currency, converted at the day's rate. */
+const usd = (micros) => { const v = (micros ?? 0) / 1e6; const d = v !== 0 && v < 0.01 ? 4 : 2; return fmtMoney(Number(v.toFixed(d)), 'USD', d); };
+function fee(micros) {
+  const cur = S.seller?.currency ?? 'USD';
+  const rate = S.markets?.fx?.perUsd?.[cur];
+  if (!rate || cur === 'USD') return usd(micros);
+  if (!micros) return fmtMoney(0, cur);
+  const local = ((micros ?? 0) / 1e6) * rate;
+  // Small fees keep their decimals; bigger ones round to whole units.
+  return `≈ ${fmtMoney(local, cur, local >= 10 ? 0 : Math.min(2, exponent(cur)))}`;
+}
 const initials = (name) => esc((name || '?').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase());
 const phone = (wa) => (wa ? '+' + esc(wa) : '');
 const chName = { whatsapp: 'WhatsApp', instagram: 'Instagram', facebook: 'Messenger', tiktok: 'TikTok' };
 /** How a customer is shown: WhatsApp by name or number; Instagram and Messenger by name or @handle. */
-const who = (c) => c.channel === 'whatsapp' || !c.channel ? c.name ?? phone(c.wa_id) : c.name ?? (c.username ? '@' + c.username : `${chName[c.channel]} customer`);
+const who = (c) => c.channel === 'whatsapp' || !c.channel ? c.name ?? phone(c.wa_id) : c.name ?? (c.username ? '@' + c.username : t('chats.customerOf', { app: chName[c.channel] }));
 const whoSub = (c) => c.channel === 'whatsapp' || !c.channel ? phone(c.wa_id) : c.username ? '@' + c.username : chName[c.channel];
 const chip = (ch) => `<span class="ch ${esc(ch)}"><i></i>${chName[ch] ?? esc(ch)}</span>`;
-/** "Brown Claw Clip" in English, "Claw Clip marron" in French, following the shop's language. */
-const variantFor = (v) => { const [a, b] = (v ?? '').split('/').map((x) => x.trim()); return baseLang() === 'fr' ? a : (b || a); };
-const label = (p) => esc(baseLang() === 'fr' ? [p.name, (variantFor(p.variant) ?? '').toLowerCase()].filter(Boolean).join(' ') : [variantFor(p.variant), p.name].filter(Boolean).join(' '));
+/**
+ * A product as the seller reads it. A bilingual variant ("Marron / Brown") follows the app's
+ * language; otherwise names stay as the seller wrote them, in the shop's word order:
+ * "Claw Clip marron" in French, "Brown Claw Clip" in English.
+ */
+function label(p) {
+  const parts = (p.variant ?? '').split('/').map((x) => x.trim());
+  const both = parts.length > 1 && parts[1];
+  const l = both ? lang() : shopLang();
+  const v = both ? (l === 'fr' ? parts[0] : parts[1]) : parts[0];
+  return esc(l === 'fr' ? [p.name, (v ?? '').toLowerCase()].filter(Boolean).join(' ') : [v, p.name].filter(Boolean).join(' '));
+}
+const variantText = (v) => { const [a, b] = (v ?? '').split('/').map((x) => x.trim()); return b ? (lang() === 'fr' ? a : b) : a; };
+const dateLocale = () => (lang() === 'fr' ? 'fr-FR' : 'en-GB');
 function when(iso) {
   if (!iso) return '';
   const d = new Date(iso);
   const sameDay = d.toLocaleDateString('en-GB', { timeZone: TZ }) === new Date().toLocaleDateString('en-GB', { timeZone: TZ });
-  if (sameDay) return d.toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit', timeZone: TZ }).toUpperCase();
-  if (Date.now() - d.getTime() < 6 * 864e5) return d.toLocaleDateString('en-GB', { weekday: 'short', timeZone: TZ });
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: TZ });
+  if (sameDay) return clock(iso);
+  if (Date.now() - d.getTime() < 6 * 864e5) return d.toLocaleDateString(dateLocale(), { weekday: 'short', timeZone: TZ });
+  return d.toLocaleDateString(dateLocale(), { day: 'numeric', month: 'short', timeZone: TZ });
 }
-const clock = (iso) => new Date(iso).toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit', timeZone: TZ }).toUpperCase();
-const mins = (m) => (m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}` : `${Math.max(0, m)}m`);
+/** "14:05" in French, "2:05 PM" in English. */
+const clock = (iso) => new Date(iso).toLocaleTimeString(lang() === 'fr' ? 'fr-FR' : 'en-GB', { hour: 'numeric', minute: '2-digit', hour12: lang() !== 'fr', timeZone: TZ }).toUpperCase();
+/** "2 h 30" in French, "2h 30m" in English. */
+const mins = (m) => {
+  m = Math.max(0, m);
+  if (lang() === 'fr') return m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${String(m % 60).padStart(2, '0')}` : ''}` : `${m} min`;
+  return m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}` : `${m}m`;
+};
+/** "40 %" in French, "40%" in English. */
+const pct = (n) => new Intl.NumberFormat(dateLocale(), { style: 'percent', maximumFractionDigits: 0 }).format(n / 100);
+/** Country names in the app's language: "Cameroun" or "Cameroon". */
+function countryName(code, fallback) {
+  try { return new Intl.DisplayNames([lang()], { type: 'region' }).of(code) ?? fallback ?? code; } catch { return fallback ?? code; }
+}
 
 function store(key, value) {
   try {
@@ -70,12 +105,12 @@ class ApiError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 async function api(path, { method = 'GET', body } = {}) {
-  const headers = { 'Content-Type': 'application/json' };
+  const headers = { 'Content-Type': 'application/json', 'X-Lang': lang() };
   const token = get('nkg.token');
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   const data = res.headers.get('content-type')?.includes('json') ? await res.json() : await res.text();
-  if (!res.ok) throw new ApiError(res.status, data?.error ?? `Request failed (${res.status}).`);
+  if (!res.ok) throw new ApiError(res.status, data?.error ?? t('requestFailed', { status: res.status }));
   return data;
 }
 
@@ -93,15 +128,17 @@ const ICON = {
   settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>',
 };
 function header(title, { back, sub } = {}) {
-  top.innerHTML = `${back ? `<a class="back" href="${back}" aria-label="Back">‹</a>` : ''}<h1>${title}${sub ? `<span class="sub">${sub}</span>` : ''}</h1>`;
+  // The language switch is on every screen, sign-in included.
+  const toggle = `<div class="langtog" role="group" aria-label="Langue / Language">${['fr', 'en'].map((l) => `<button type="button" data-lang="${l}" aria-pressed="${lang() === l}">${l.toUpperCase()}</button>`).join('')}</div>`;
+  top.innerHTML = `${back ? `<a class="back" href="${back}" aria-label="${t('back')}">‹</a>` : ''}<h1>${title}${sub ? `<span class="sub">${sub}</span>` : ''}</h1>${toggle}`;
 }
 function setNav(active, unread = 0) {
   if (!active) { nav.hidden = true; return; }
   nav.hidden = false;
   const item = (k, href, text, extra = '') => `<a href="${href}" class="${active === k ? 'on' : ''}">${ICON[k]}<span>${text}</span>${extra}</a>`;
   nav.innerHTML =
-    item('chats', '#/chats', 'Chats', unread ? `<span class="dot">${unread}</span>` : '') +
-    item('stock', '#/products', 'Stock') + item('insights', '#/insights', 'Insights') + item('settings', '#/settings', 'Settings');
+    item('chats', '#/chats', t('nav.chats'), unread ? `<span class="dot">${unread}</span>` : '') +
+    item('stock', '#/products', t('nav.stock')) + item('insights', '#/insights', t('nav.insights')) + item('settings', '#/settings', t('nav.settings'));
 }
 
 // ---------- views ----------
@@ -109,32 +146,32 @@ const views = {};
 
 /** Sign in with a WhatsApp number: step 1 asks for the number, step 2 for the code. */
 views.login = async (_p, msg) => {
-  header('NKAPGUARD Seller App', { sub: 'Sign in with WhatsApp' });
+  header(t('app.name'), { sub: t('login.sub') });
   setNav(null);
   const mk = await markets();
   const guess = (Intl.DateTimeFormat().resolvedOptions().locale.split('-')[1] ?? '').toUpperCase();
   const country = S.login?.country ?? (mk.countries.some((c) => c.code === guess) ? guess : 'CM');
   if (S.login?.sent) {
     main.innerHTML = `<form class="form" data-form="login-code">
-      <p style="margin:0">We sent a 6-digit code to <b>${esc(S.login.phone)}</b> on WhatsApp.</p>
-      ${S.login.devCode ? `<div class="banner" style="margin:0"><b>Test mode.</b> Nothing is sent, so here is your code: <b>${esc(S.login.devCode)}</b></div>` : ''}
+      <p style="margin:0">${t('login.sent', { phone: esc(S.login.phone) })}</p>
+      ${S.login.devCode ? `<div class="banner" style="margin:0">${t('login.testCode', { code: esc(S.login.devCode) })}</div>` : ''}
       ${msg ? `<p class="err">${esc(msg)}</p>` : ''}
-      <label>Code<input id="l-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required value="${esc(S.login.devCode ?? '')}"></label>
-      <button class="btn primary block">Sign in</button>
-      <button type="button" class="btn block" data-act="login-back">Use a different number</button></form>`;
+      <label>${t('login.code')}<input id="l-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required value="${esc(S.login.devCode ?? '')}"></label>
+      <button class="btn primary block">${t('login.signIn')}</button>
+      <button type="button" class="btn block" data-act="login-back">${t('login.otherNumber')}</button></form>`;
     return;
   }
   main.innerHTML = `<form class="form" data-form="login-phone">
-    <p style="margin:0">Enter your WhatsApp number. We'll send you a code to sign in. No password needed.</p>
+    <p style="margin:0">${t('login.intro')}</p>
     ${msg ? `<p class="err">${esc(msg)}</p>` : ''}
-    <label>Country<select id="l-country">${mk.countries.map((c) => `<option value="${c.code}" ${c.code === country ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
-      <span class="hint">Only used to read a local number. International numbers with + work from anywhere.</span></label>
-    <label>WhatsApp number<input id="l-phone" type="tel" autocomplete="tel" required value="${esc(S.login?.phone ?? '')}" placeholder="6 77 12 34 56"></label>
-    <button class="btn primary block">Send code</button></form>`;
+    <label>${t('login.country')}<select id="l-country">${countryOptions(mk, country)}</select>
+      <span class="hint">${t('login.countryHint')}</span></label>
+    <label>${t('login.phone')}<input id="l-phone" type="tel" autocomplete="tel" required value="${esc(S.login?.phone ?? '')}" placeholder="6 77 12 34 56"></label>
+    <button class="btn primary block">${t('login.send')}</button></form>`;
 };
 
 views.setup = async () => {
-  header('NKAPGUARD Seller App', { sub: 'Your shops' });
+  header(t('app.name'), { sub: t('setup.sub') });
   setNav(null);
   const sellers = await api('/api/sellers');
   const [mk, me] = await Promise.all([markets(), api('/api/me')]);
@@ -142,30 +179,37 @@ views.setup = async () => {
   const guess = me.user?.country ?? (Intl.DateTimeFormat().resolvedOptions().locale.split('-')[1] ?? '').toUpperCase();
   const def = mk.countries.some((c) => c.code === guess) ? guess : 'CM';
   main.innerHTML = `
-    ${sellers.length ? `<div class="sect">Choose a shop</div>${sellers.map((s) => `<a class="row" href="#/chats" data-pick="${esc(s.id)}">
-      <span class="av">${initials(s.name)}</span><span><span class="name"><span class="n">${esc(s.name)}</span></span><span class="last">${esc(s.country)} · ${esc(s.currency)} · ${LANG_NAMES[s.language] ?? s.language}</span></span><span></span></a>`).join('')}` : ''}
-    <div class="sect">${sellers.length ? 'Or add another shop' : 'Add your shop'}</div>
+    ${sellers.length ? `<div class="sect">${t('setup.choose')}</div>${sellers.map((s) => `<a class="row" href="#/chats" data-pick="${esc(s.id)}">
+      <span class="av">${initials(s.name)}</span><span><span class="name"><span class="n">${esc(s.name)}</span></span><span class="last">${esc(countryName(s.country))} · ${esc(s.currency)} · ${langName(s.language)}</span></span><span></span></a>`).join('')}` : ''}
+    <div class="sect">${sellers.length ? t('setup.addAnother') : t('setup.add')}</div>
     <form class="form" data-form="seller">
-      <label>Shop name<input id="s-name" required placeholder="Douala Hair Plug"></label>
+      <label>${t('shop.name')}<input id="s-name" required placeholder="${t('shop.namePh')}"></label>
       ${shopFields(mk, { country: def })}
-      <label>WhatsApp phone number id<input id="s-phone" required placeholder="From Meta: WhatsApp › API setup" value="${S.dryRun ? 'demo-' + Math.floor(Math.random() * 1e6) : ''}">
-        <span class="hint">The id Meta gives your WhatsApp number, not the phone number itself.</span></label>
+      <label>${t('shop.phoneId')}<input id="s-phone" required placeholder="${t('shop.phoneIdPh')}" value="${S.dryRun ? 'demo-' + Math.floor(Math.random() * 1e6) : ''}">
+        <span class="hint">${t('shop.phoneIdHint')}</span></label>
       <p class="err" hidden></p>
-      <button class="btn primary block">Add shop</button>
+      <button class="btn primary block">${t('shop.addBtn')}</button>
     </form>
-    ${S.dryRun && !sellers.length ? `<div class="card"><h2>Just looking around?</h2><p>Load a sample hair shop in the country you picked, with products and a few customer chats. Nothing is sent in test mode.</p><button class="btn block" data-act="demo">Load sample shop</button></div>` : ''}`;
+    ${S.dryRun && !sellers.length ? `<div class="card"><h2>${t('demo.title')}</h2><p>${t('demo.text')}</p><button class="btn block" data-act="demo">${t('demo.btn')}</button></div>` : ''}`;
 };
 
 /** Country, language, currency and time zone. Picking a country fills in the rest. */
+/** Country choices, named and sorted in the app's language. */
+function countryOptions(mk, selected) {
+  return mk.countries
+    .map((c) => ({ code: c.code, name: countryName(c.code, c.name) }))
+    .sort((a, b) => a.name.localeCompare(b.name, lang()))
+    .map((c) => `<option value="${c.code}" ${c.code === selected ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+}
 function shopFields(mk, cur) {
   const m = mk.countries.find((c) => c.code === cur.country);
-  const known = mk.countries.map((c) => `<option value="${c.code}" ${c.code === cur.country ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
-  const other = m ? '' : `<option value="${esc(cur.country)}" selected>${esc(cur.country)}</option>`;
-  return `<label>Country<select id="s-country" data-country>${known}${other}<option value="__other">Another country…</option></select></label>
-    <label id="s-other-wrap" hidden>Country code<input id="s-other" maxlength="2" placeholder="Two letters, like PH"></label>
-    <label>Talk to customers in<select id="s-lang">${mk.languages.map((l) => `<option value="${l}" ${l === (cur.language ?? m?.language) ? 'selected' : ''}>${LANG_NAMES[l] ?? l}</option>`).join('')}</select></label>
-    <label>Currency<input id="s-currency" maxlength="3" value="${esc(cur.currency ?? m?.currency ?? '')}" required><span class="hint">Three letters, like XAF, NGN or USD.</span></label>
-    <label>Time zone<input id="s-tz" value="${esc(cur.timezone ?? m?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone)}" required><span class="hint">Like Africa/Douala. Hold deadlines are shown in this time.</span></label>`;
+  const other = m ? '' : `<option value="${esc(cur.country)}" selected>${esc(countryName(cur.country))}</option>`;
+  return `<label>${t('shop.country')}<select id="s-country" data-country>${countryOptions(mk, cur.country)}${other}<option value="__other">${t('shop.otherCountry')}</option></select></label>
+    <label id="s-other-wrap" hidden>${t('shop.countryCode')}<input id="s-other" maxlength="2" placeholder="${t('shop.countryCodePh')}"></label>
+    <label>${t('shop.talkIn')}<select id="s-lang">${mk.languages.map((l) => `<option value="${l}" ${l === (cur.language ?? m?.language) ? 'selected' : ''}>${langName(l)}</option>`).join('')}</select>
+      <span class="hint">${t('shop.talkInHint')}</span></label>
+    <label>${t('shop.currency')}<input id="s-currency" maxlength="3" value="${esc(cur.currency ?? m?.currency ?? '')}" required><span class="hint">${t('shop.currencyHint')}</span></label>
+    <label>${t('shop.tz')}<input id="s-tz" value="${esc(cur.timezone ?? m?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone)}" required><span class="hint">${t('shop.tzHint')}</span></label>`;
 }
 function shopValues(form) {
   const v = (id) => $(`#${id}`, form).value.trim();
@@ -180,13 +224,13 @@ function syncRate(form) {
   const to = $('#s-currency', form).value.trim().toUpperCase();
   wrap.hidden = !/^[A-Z]{3}$/.test(to) || to === from;
   if (wrap.hidden) return;
-  $('#s-rate-label', form).textContent = `How many ${to} make 1 ${from}?`;
+  $('#s-rate-label', form).textContent = t('rate.label', { to, from });
   const ex = Number($('#s-rate', form).value) || null;
   $('#s-rate-hint', form).textContent = ex
-    ? `1 ${from} = ${ex.toLocaleString()} ${to}. A ${priceIn(10, from)} item becomes ${priceIn(10 * ex, to)}.`
-    : `Your prices will be converted with this rate. For example, 1 USD = 600 XAF.`;
+    ? t('rate.example', { from, to, rate: ex.toLocaleString(lang()), before: priceIn(10, from), after: priceIn(10 * ex, to) })
+    : t('rate.hint');
 }
-const priceIn = (major, cur) => { try { return new Intl.NumberFormat('en', { style: 'currency', currency: cur, maximumFractionDigits: exponent(cur) }).format(major); } catch { return `${major} ${cur}`; } };
+const priceIn = (major, cur) => { try { return new Intl.NumberFormat(lang(), { style: 'currency', currency: cur, maximumFractionDigits: exponent(cur) }).format(major); } catch { return `${major} ${cur}`; } };
 document.addEventListener('input', (e) => { if (e.target.matches('#s-currency, #s-rate')) syncRate(e.target.closest('form')); });
 document.addEventListener('change', async (e) => {
   if (!e.target.matches('[data-country]')) return;
@@ -202,34 +246,34 @@ document.addEventListener('change', async (e) => {
 views.chats = async () => {
   const [chats, channels] = await Promise.all([api(`/api/chats?sellerId=${sellerId()}`), S.dryRun ? api(`/api/channels?sellerId=${sellerId()}`) : null]);
   const unread = chats.reduce((a, c) => a + (c.unread > 0 ? 1 : 0), 0);
-  header('Chats', { sub: esc(S.seller?.name ?? '') });
+  header(t('chats.title'), { sub: esc(S.seller?.name ?? '') });
   setNav('chats', unread);
   const list = S.chatFilter === 'unread' ? chats.filter((c) => c.unread > 0) : S.chatFilter === 'waiting' ? chats.filter((c) => c.waiting_for.length) : chats;
   const f = (k, t) => `<button class="chip ${S.chatFilter === k ? 'on' : ''}" data-filter="${k}">${t}</button>`;
   main.innerHTML = `
     ${S.dryRun ? testCustomerForm(channels?.accounts.filter((a) => a.enabled)) : ''}
-    <div class="chips">${f('all', 'All')}${f('unread', `Unread${unread ? ` · ${unread}` : ''}`)}${f('waiting', 'On a waitlist')}</div>
+    <div class="chips">${f('all', t('chats.all'))}${f('unread', `${t('chats.unread')}${unread ? ` · ${unread}` : ''}`)}${f('waiting', t('chats.waiting'))}</div>
     ${list.map((c) => {
-      const tags = c.waiting_for.map((w) => `<span class="tag">Waiting: ${esc(w)}</span>`);
-      if (c.awaiting_consent) tags.push('<span class="tag hold">Asked for alert</span>');
+      const tags = c.waiting_for.map((w) => `<span class="tag">${t('chats.waitingFor', { item: label(w) })}</span>`);
+      if (c.awaiting_consent) tags.push(`<span class="tag hold">${t('chats.askedAlert')}</span>`);
       return `<a class="row" href="#/chat/${esc(c.id)}">
         <span class="av">${initials(c.name ?? c.wa_id)}</span>
         <span style="min-width:0"><span class="name"><span class="n">${esc(who(c))}</span>${chip(c.channel)}</span>
-          <span class="last">${c.last_direction === 'out' ? 'You: ' : ''}${esc(c.last_body ?? '')}</span>
+          <span class="last">${c.last_direction === 'out' ? t('chats.youPrefix') : ''}${esc(c.last_body ?? '')}</span>
           ${tags.length ? `<span class="tagline">${tags.join('')}</span>` : ''}</span>
         <span class="meta"><span>${when(c.last_at)}</span>${c.unread ? `<span class="badge">${c.unread}</span>` : ''}</span></a>`;
-    }).join('') || `<p class="empty">${chats.length ? 'Nothing here.' : 'No chats yet. When customers message your WhatsApp number, they show up here.'}</p>`}`;
+    }).join('') || `<p class="empty">${chats.length ? t('chats.nothing') : t('chats.empty')}</p>`}`;
 };
 
 function testCustomerForm(accounts = []) {
-  const opts = [['whatsapp', 'WhatsApp'], ...accounts.map((a) => [a.channel, chName[a.channel]]), ...accounts.map((a) => [`${a.channel}:comment`, `${chName[a.channel]} comment on a post`])];
-  return `<details class="test"><summary>Test mode: message the shop as a customer</summary>
+  const opts = [['whatsapp', 'WhatsApp'], ...accounts.map((a) => [a.channel, chName[a.channel]]), ...accounts.map((a) => [`${a.channel}:comment`, t('test.comment', { app: chName[a.channel] })])];
+  return `<details class="test"><summary>${t('test.summary')}</summary>
     <form class="form" data-form="as-customer">
-      ${accounts.length ? `<label>Channel<select id="tc-channel">${opts.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join('')}</select></label>` : ''}
-      <label>Customer's WhatsApp number or Instagram handle<input id="tc-from" value="${esc(samplePhone())}" required><span class="hint">A phone number for WhatsApp; any name for Instagram or Messenger.</span></label>
-      <label>Name<input id="tc-name" value="Amaka Obi"></label>
-      <label>Message<input id="tc-text" value="Do you have the brown claw clip ponytail?" required></label>
-      <button class="btn block">Send as customer</button>
+      ${accounts.length ? `<label>${t('test.channel')}<select id="tc-channel">${opts.map(([v, text]) => `<option value="${v}">${esc(text)}</option>`).join('')}</select></label>` : ''}
+      <label>${t('test.from')}<input id="tc-from" value="${esc(samplePhone())}" required><span class="hint">${t('test.fromHint')}</span></label>
+      <label>${t('test.name')}<input id="tc-name" value="${lang() === 'fr' ? 'Nadège Mballa' : 'Amaka Obi'}"></label>
+      <label>${t('test.message')}<input id="tc-text" value="${esc(t('test.sampleText'))}" required></label>
+      <button class="btn block">${t('test.send')}</button>
     </form></details>`;
 }
 /** An example local number for the shop's country, for the test-mode customer form. */
@@ -251,50 +295,51 @@ views.chat = async ([id]) => {
   main.innerHTML = `
     ${c.channel !== 'whatsapp'
       ? c.window_open
-        ? `<div class="banner ok"><b>Reply window open</b> for about ${hoursLeft}h. After that, ${app_} doesn't allow replies until they message again.</div>`
-        : `<div class="banner"><b>Reply window closed.</b> ${app_} doesn't allow a reply until they message again. Restock alerts only go out on WhatsApp, so sold-out answers here send them there.</div>`
+        ? `<div class="banner ok">${t('chat.openOther', { h: hoursLeft, app: app_ })}</div>`
+        : `<div class="banner">${t('chat.closedOther', { app: app_ })}</div>`
       : c.window_open
-        ? `<div class="banner ok"><b>Reply window open</b> for about ${hoursLeft}h. After that, WhatsApp only allows approved templates.</div>`
-        : `<div class="banner"><b>Reply window closed.</b> It's been over 24 hours since they last messaged, so free replies are off until they message again. Restock alerts still reach them as templates.</div>`}
+        ? `<div class="banner ok">${t('chat.openWa', { h: hoursLeft })}</div>`
+        : `<div class="banner">${t('chat.closedWa')}</div>`}
     ${waitingFor.length || live ? `<div class="pad" style="padding-bottom:0"><span class="tagline">
-      ${waitingFor.map((w) => `<span class="tag">Waiting: ${label(w)} · #${w.position}</span>`).join('')}
-      ${live ? `<span class="tag muted">Consent: “${esc(live.quote)}” · ${when(live.granted_at)}</span>` : consents.length ? '<span class="tag muted">Opted out</span>' : ''}
+      ${waitingFor.map((w) => `<span class="tag">${t('chat.waitingTag', { item: label(w), pos: w.position })}</span>`).join('')}
+      ${live ? `<span class="tag muted">${t('chat.consentTag', { quote: esc(live.quote), when: when(live.granted_at) })}</span>` : consents.length ? `<span class="tag muted">${t('chat.optedOut')}</span>` : ''}
     </span></div>` : ''}
-    <div class="msgs">${messages.map((m) => `<div class="b ${m.direction}">${m.kind === 'template' ? `<span class="tpl">Template${m.cost_usd_micros ? ` · ${usd(m.cost_usd_micros)}` : ''}</span>` : ''}${esc(m.body)}${m.error ? `<span class="fail">Not sent: ${esc(m.error)}</span>` : ''}<small>${when(m.created_at)}</small></div>`).join('')}</div>
+    <div class="msgs">${messages.map((m) => `<div class="b ${m.direction}">${m.kind === 'template' ? `<span class="tpl">${t('chat.template')}${m.cost_usd_micros ? ` · ${fee(m.cost_usd_micros)}` : ''}</span>` : ''}${esc(m.body)}${m.error ? `<span class="fail">${t('chat.notSent', { why: esc(m.error) })}</span>` : ''}<small>${when(m.created_at)}</small></div>`).join('')}</div>
     <form class="composer" data-form="reply" data-id="${esc(id)}">
-      <input id="reply" placeholder="${c.window_open ? 'Reply' : 'Replies are off until they message again'}" autocomplete="off" ${c.window_open ? '' : 'disabled'}>
-      <button ${c.window_open ? '' : 'disabled'}>Send</button></form>
+      <input id="reply" placeholder="${c.window_open ? t('chat.reply') : t('chat.replyOff')}" autocomplete="off" ${c.window_open ? '' : 'disabled'}>
+      <button ${c.window_open ? '' : 'disabled'}>${t('chat.send')}</button></form>
     ${S.dryRun ? `<form class="composer test" data-form="as-this-customer" data-wa="${esc(c.wa_id)}" data-name="${esc(c.name ?? '')}" data-channel="${esc(c.channel)}">
-      <input id="as-cust" placeholder="Test mode: reply as ${esc((c.name ?? 'customer').split(' ')[0])}" autocomplete="off"><button>Send</button></form>` : ''}`;
+      <input id="as-cust" placeholder="${esc(t('test.replyAs', { name: c.name ? c.name.split(' ')[0] : t('test.customer') }))}" autocomplete="off"><button>${t('chat.send')}</button></form>` : ''}`;
   if (stickToBottom) window.scrollTo(0, document.body.scrollHeight);
 };
 
 views.products = async () => {
   const products = await api(`/api/products?sellerId=${sellerId()}`);
-  header('Stock', { sub: `${products.reduce((a, p) => a + p.waiting, 0)} people waiting` });
+  header(t('stock.title'), { sub: t('stock.peopleWaiting', { n: products.reduce((a, p) => a + p.waiting, 0) }) });
   setNav('stock');
   const row = (p) => `<a class="row" href="#/product/${esc(p.id)}"><span class="prodicon">${initials(p.name)}</span>
-    <span style="min-width:0"><span class="name"><span class="n">${esc(p.name)}</span></span><span class="last">${esc(p.variant || 'No variant')} · ${p.stock} in stock · ${money(p.price_minor)}</span></span>
-    <span class="r"><b>${p.waiting}</b>waiting</span></a>`;
+    <span style="min-width:0"><span class="name"><span class="n">${esc(p.name)}</span></span><span class="last">${esc(variantText(p.variant) || t('stock.noVariant'))} · ${t('stock.inStockN', { n: p.stock })} · ${money(p.price_minor)}</span></span>
+    <span class="r"><b>${p.waiting}</b>${t('stock.waitingLabel')}</span></a>`;
   const out = products.filter((p) => p.stock === 0);
   const inStock = products.filter((p) => p.stock > 0);
-  main.innerHTML = `<div class="pad"><a class="btn block" href="#/products/new">Add a product</a></div>
-    ${out.length ? `<div class="sect">Sold out</div>${out.map(row).join('')}` : ''}
-    ${inStock.length ? `<div class="sect">In stock</div>${inStock.map(row).join('')}` : ''}
-    ${products.length ? '' : '<p class="empty">No products yet. Add what you sell so NKAPGUARD can recognise it in chats.</p>'}`;
+  main.innerHTML = `<div class="pad"><a class="btn block" href="#/products/new">${t('stock.add')}</a></div>
+    ${out.length ? `<div class="sect">${t('stock.soldOut')}</div>${out.map(row).join('')}` : ''}
+    ${inStock.length ? `<div class="sect">${t('stock.inStock')}</div>${inStock.map(row).join('')}` : ''}
+    ${products.length ? '' : `<p class="empty">${t('stock.empty')}</p>`}`;
 };
 
 views.newProduct = async () => {
-  header('Add a product', { back: '#/products' });
+  header(t('product.addTitle'), { back: '#/products' });
   setNav('stock');
+  const both = S.seller.language === 'fr+en';
   main.innerHTML = `<form class="form" data-form="product">
-    <label>Name<input id="p-name" required placeholder='12" Claw Clip Ponytail'></label>
-    <label>Colour or variant<input id="p-variant" placeholder="${S.seller.language === 'fr+en' ? 'Marron / Brown' : 'Brown'}"><span class="hint">NKAPGUARD uses this to tell variants apart in chats. Leave empty if there's only one.${S.seller.language === 'fr+en' ? ' Write both languages as “Marron / Brown” so each half of a message reads naturally.' : ''}</span></label>
-    <label>Price (${esc(S.seller.currency)})<input id="p-price" type="number" min="0" step="any" required></label>
-    <label>In stock now<input id="p-stock" type="number" min="0" step="1" value="0"></label>
-    <label>Other words customers use<input id="p-aliases" placeholder="ponytail extension, claw ponytail"><span class="hint">Separate with commas.</span></label>
+    <label>${t('product.name')}<input id="p-name" required placeholder="${esc(t('product.namePh'))}"></label>
+    <label>${t('product.variant')}<input id="p-variant" placeholder="${both ? t('product.variantPhBoth') : shopLang() === 'fr' ? 'Marron' : 'Brown'}"><span class="hint">${t('product.variantHint')}${both ? t('product.variantHintBoth') : ''}</span></label>
+    <label>${t('product.price', { cur: esc(S.seller.currency) })}<input id="p-price" type="number" min="0" step="any" required></label>
+    <label>${t('product.stockNow')}<input id="p-stock" type="number" min="0" step="1" value="0"></label>
+    <label>${t('product.aliases')}<input id="p-aliases" placeholder="${esc(t('product.aliasesPh'))}"><span class="hint">${t('product.aliasesHint')}</span></label>
     <p class="err" id="p-err" hidden></p>
-    <button class="btn primary block">Save product</button></form>`;
+    <button class="btn primary block">${t('product.save')}</button></form>`;
 };
 
 views.product = async ([id]) => {
@@ -306,28 +351,29 @@ views.product = async ([id]) => {
   const running = restocks.find((r) => !r.closed_at);
   header(label(p), { back: '#/products', sub: money(p.price_minor) });
   setNav('stock');
-  const stepper = (k) => `<span class="step"><button type="button" data-cfg="${k}:-1" aria-label="Fewer">−</button><output>${f[k]}</output><button type="button" data-cfg="${k}:1" aria-label="More">+</button></span>`;
+  const stepper = (k) => `<span class="step"><button type="button" data-cfg="${k}:-1" aria-label="${t('fewer')}">−</button><output>${f[k]}</output><button type="button" data-cfg="${k}:1" aria-label="${t('more')}">+</button></span>`;
+  const q = (text) => (lang() === 'fr' ? `« ${text} »` : `“${text}”`);
   main.innerHTML = `
-    <div class="kv"><div><span>In stock</span><b>${p.stock}</b></div><div><span>Waiting</span><b>${p.waiting}</b></div><div><span>Bought when alerted</span><b>${bought === null ? '—' : bought + '%'}</b></div></div>
-    ${running ? `<div class="banner"><b>Restock running.</b> <a href="#/restock/${esc(running.id)}">See who's been messaged</a></div>` : ''}
-    <div class="card"><h2>${p.waiting ? 'Log a restock' : 'Add stock'}</h2>
-      <div class="field"><label>Units that came in</label>${stepper('units')}</div>
-      ${p.waiting ? `<div class="field"><div class="seg"><button type="button" data-mode="hold" class="${f.mode === 'hold' ? 'on' : ''}">Hold one per unit</button><button type="button" data-mode="race" class="${f.mode === 'race' ? 'on' : ''}">Open race</button></div></div>
+    <div class="kv"><div><span>${t('product.inStock')}</span><b>${p.stock}</b></div><div><span>${t('product.waiting')}</span><b>${p.waiting}</b></div><div><span>${t('product.bought')}</span><b>${bought === null ? t('none') : pct(bought)}</b></div></div>
+    ${running ? `<div class="banner">${t('product.running', { href: `#/restock/${esc(running.id)}` })}</div>` : ''}
+    <div class="card"><h2>${p.waiting ? t('restock.logTitle') : t('restock.addStock')}</h2>
+      <div class="field"><label>${t('restock.units')}</label>${stepper('units')}</div>
+      ${p.waiting ? `<div class="field"><div class="seg"><button type="button" data-mode="hold" class="${f.mode === 'hold' ? 'on' : ''}">${t('restock.hold')}</button><button type="button" data-mode="race" class="${f.mode === 'race' ? 'on' : ''}">${t('restock.race')}</button></div></div>
       ${f.mode === 'hold'
-        ? `<div class="field"><label>Hold length</label><div class="seg" style="width:auto;min-width:220px">${[60, 120, 240, 1440].map((m) => `<button type="button" data-hold="${m}" class="${f.holdMinutes === m ? 'on' : ''}">${mins(m)}</button>`).join('')}</div></div>`
-        : `<div class="field"><label>People per unit<span class="hint">Messaging more people sells faster but costs more</span></label>${stepper('perUnit')}</div>`}` : ''}
-      <div id="plan"><p class="note">Working out who to message…</p></div>
+        ? `<div class="field"><label>${t('restock.holdLength')}</label><div class="seg" style="width:auto;min-width:220px">${[60, 120, 240, 1440].map((m) => `<button type="button" data-hold="${m}" class="${f.holdMinutes === m ? 'on' : ''}">${mins(m)}</button>`).join('')}</div></div>`
+        : `<div class="field"><label>${t('restock.perUnit')}<span class="hint">${t('restock.perUnitHint')}</span></label>${stepper('perUnit')}</div>`}` : ''}
+      <div id="plan"><p class="note">${t('restock.working')}</p></div>
     </div>
-    ${waitlist.length ? `<div class="sect">Waitlist</div>${waitlist.map((w) => `<div class="line"><span class="pos">#${w.position}</span>
-      <span>${esc(w.name ?? phone(w.wa_id))}<span class="q">“${esc(w.consent_quote)}” · since ${when(w.joined_at)}</span></span><span class="ch whatsapp"><i></i>WhatsApp</span></div>`).join('')}` : ''}
-    <div class="sect">Edit</div>
+    ${waitlist.length ? `<div class="sect">${t('waitlist.title')}</div>${waitlist.map((w) => `<div class="line"><span class="pos">#${w.position}</span>
+      <span>${esc(w.name ?? phone(w.wa_id))}<span class="q">${q(esc(w.consent_quote))} · ${t('waitlist.since', { when: when(w.joined_at) })}</span></span><span class="ch whatsapp"><i></i>WhatsApp</span></div>`).join('')}` : ''}
+    <div class="sect">${t('edit.title')}</div>
     <form class="form" data-form="edit-product" data-id="${esc(id)}" style="padding-top:4px">
-      <label>Set stock count<input id="e-stock" type="number" min="0" step="1" value="${p.stock}"><span class="hint">For sales outside NKAPGUARD. To announce new stock, use the restock above.</span></label>
-      <label>Price (${esc(S.seller.currency)})<input id="e-price" type="number" min="0" step="any" value="${toMajor(p.price_minor)}"></label>
-      <label>Other words customers use<input id="e-aliases" value="${esc(p.aliases.join(', '))}"></label>
-      <button class="btn block">Save changes</button></form>
-    ${restocks.length ? `<div class="sect">Past restocks</div>${restocks.map((r) => `<a class="line" href="#/restock/${esc(r.id)}" style="text-decoration:none;color:inherit"><span class="pos">${r.units}×</span>
-      <span>${when(r.created_at)} · ${r.mode === 'hold' ? 'holds' : 'race'}<span class="q">${r.sold} sold · ${r.messaged} messaged</span></span>${r.closed_at ? '<span class="pill expired">Done</span>' : '<span class="pill held">Running</span>'}</a>`).join('')}` : ''}`;
+      <label>${t('edit.stock')}<input id="e-stock" type="number" min="0" step="1" value="${p.stock}"><span class="hint">${t('edit.stockHint')}</span></label>
+      <label>${t('product.price', { cur: esc(S.seller.currency) })}<input id="e-price" type="number" min="0" step="any" value="${toMajor(p.price_minor)}"></label>
+      <label>${t('product.aliases')}<input id="e-aliases" value="${esc(p.aliases.join(', '))}"></label>
+      <button class="btn block">${t('edit.save')}</button></form>
+    ${restocks.length ? `<div class="sect">${t('past.title')}</div>${restocks.map((r) => `<a class="line" href="#/restock/${esc(r.id)}" style="text-decoration:none;color:inherit"><span class="pos">${r.units}×</span>
+      <span>${when(r.created_at)} · ${r.mode === 'hold' ? t('past.holds') : t('past.race')}<span class="q">${t('past.counts', { sold: r.sold, messaged: r.messaged })}</span></span>${r.closed_at ? `<span class="pill expired">${t('past.done')}</span>` : `<span class="pill held">${t('past.running')}</span>`}</a>`).join('')}` : ''}`;
   loadPlan(id, p);
 };
 
@@ -339,19 +385,20 @@ async function loadPlan(id, p) {
     const pv = await api(`/api/products/${id}/restocks/preview`, { method: 'POST', body: { units: f.units, mode: f.mode, holdMinutes: f.holdMinutes, perUnit: f.perUnit } });
     if ($('#plan') !== plan) return;
     const what = pv.toMessage === 0
-      ? `Nobody is waiting, so ${f.units} unit${f.units === 1 ? '' : 's'} go straight into stock. No messages are sent.`
+      ? t('restock.nobody', { n: f.units })
       : f.mode === 'hold'
-        ? `Message the first ${pv.toMessage} on the list. Each gets one unit held for ${mins(f.holdMinutes)}. If they don't pay, it passes to the next person.`
-        : `Message the first ${pv.toMessage} on the list at once. The first ${f.units} to pay get one; everyone else gets a “sold out, you keep your place” note.`;
+        ? t('restock.planHold', { n: pv.toMessage, len: mins(f.holdMinutes) })
+        : t('restock.planRace', { n: pv.toMessage, units: f.units });
     plan.innerHTML = `<p class="note" style="margin-top:4px">${what}</p>
-      ${pv.toMessage ? `<p class="hint" style="margin:12px 0 6px">What the first person on the list will read</p><div class="preview">${esc(pv.preview)}</div>
-      <p class="note">Counts come from your stock and waitlist.</p>
-      <div class="cost" style="margin-top:12px"><span>${pv.toMessage} alert${pv.toMessage === 1 ? '' : 's'}</span><b class="num">${usd(pv.costUsdMicros.alerts)}</b>
-        ${pv.soldOutNotes ? `<span>${pv.soldOutNotes} sold-out notes</span><b class="num">${usd(pv.costUsdMicros.soldOutNotes)}</b>` : f.mode === 'hold' ? `<span>Each re-offer if a hold lapses</span><b class="num">${usd(pv.perMessageUsdMicros.marketing)}</b>` : ''}
-        <span class="tot">Estimated WhatsApp fees (Meta bills in USD)</span><b class="tot num">${usd(pv.costUsdMicros.total)}</b></div>` : ''}
+      ${pv.toMessage ? `<p class="hint" style="margin:12px 0 6px">${t('restock.previewLabel')}</p><div class="preview">${esc(pv.preview)}</div>
+      <p class="note">${t('restock.previewNote')}</p>
+      <div class="cost" style="margin-top:12px"><span>${t('restock.alerts', { n: pv.toMessage })}</span><b class="num">${fee(pv.costUsdMicros.alerts)}</b>
+        ${pv.soldOutNotes ? `<span>${t('restock.soldOutNotes', { n: pv.soldOutNotes })}</span><b class="num">${fee(pv.costUsdMicros.soldOutNotes)}</b>` : f.mode === 'hold' ? `<span>${t('restock.reoffer')}</span><b class="num">${fee(pv.perMessageUsdMicros.marketing)}</b>` : ''}
+        <span class="tot">${t('restock.feesTotal')}</span><b class="tot num">${fee(pv.costUsdMicros.total)}</b></div>
+      ${S.seller?.currency !== 'USD' ? `<p class="note">${t('restock.feesNote', { usd: usd(pv.costUsdMicros.total) })}</p>` : ''}` : ''}
       <div class="btns">${S.confirm
-        ? `<button class="btn primary" data-act="restock-go">Yes, ${pv.toMessage ? `send ${pv.toMessage} alert${pv.toMessage === 1 ? '' : 's'}` : 'add to stock'}</button><button class="btn" data-act="restock-cancel">Cancel</button>`
-        : `<button class="btn primary block" data-act="restock-ask" ${pv.running ? 'disabled' : ''}>${pv.running ? 'Wait for the running restock to finish' : `Add ${f.units} to stock${pv.toMessage ? ` and message ${pv.toMessage}` : ''}`}</button>`}</div>`;
+        ? `<button class="btn primary" data-act="restock-go">${t('restock.confirm', { n: pv.toMessage })}</button><button class="btn" data-act="restock-cancel">${t('restock.cancel')}</button>`
+        : `<button class="btn primary block" data-act="restock-ask" ${pv.running ? 'disabled' : ''}>${pv.running ? t('restock.wait') : t('restock.go', { units: f.units, n: pv.toMessage })}</button>`}</div>`;
   } catch (e) {
     plan.innerHTML = `<p class="err">${esc(e.message)}</p>`;
   }
@@ -362,128 +409,129 @@ views.restock = async ([id]) => {
   const { product: p } = await api(`/api/products/${r.product_id}`);
   const sold = offers.filter((o) => o.status === 'paid').length;
   const held = offers.filter((o) => o.status === 'held').length;
-  header(r.closed_at ? 'Restock finished' : 'Restock running', { back: `#/product/${esc(p.id)}`, sub: `${label(p)} · ${when(r.created_at)}` });
+  header(r.closed_at ? t('rs.finished') : t('rs.running'), { back: `#/product/${esc(p.id)}`, sub: `${label(p)} · ${when(r.created_at)}` });
   setNav('stock');
   const slots = Array.from({ length: Math.min(r.units, 12) }, (_, k) => (k < sold ? 'sold' : k < sold + held ? 'held' : ''));
   const pill = (o) => {
-    if (o.refund_due) return '<span class="pill refund">Paid late · refund</span>';
-    if (o.status === 'held') return `<span class="pill held">Held · ${mins(Math.round((new Date(o.expires_at) - Date.now()) / 6e4))} left</span>`;
-    if (o.status === 'paid') return `<span class="pill paid">Paid ${clock(o.paid_at)}</span>`;
-    if (o.status === 'expired') return '<span class="pill expired">Hold ended</span>';
-    if (o.status === 'missed') return '<span class="pill missed">Sold-out note</span>';
-    return '<span class="pill notified">Messaged</span>';
+    if (o.refund_due) return `<span class="pill refund">${t('rs.paidLate')}</span>`;
+    if (o.status === 'held') return `<span class="pill held">${t('rs.held', { left: mins(Math.round((new Date(o.expires_at) - Date.now()) / 6e4)) })}</span>`;
+    if (o.status === 'paid') return `<span class="pill paid">${t('rs.paid', { at: clock(o.paid_at) })}</span>`;
+    if (o.status === 'expired') return `<span class="pill expired">${t('rs.holdEnded')}</span>`;
+    if (o.status === 'missed') return `<span class="pill missed">${t('rs.soldOutNote')}</span>`;
+    return `<span class="pill notified">${t('rs.messaged')}</span>`;
   };
   main.innerHTML = `
-    <div class="units">${slots.map((s, k) => `<span class="${s}">${s === 'sold' ? 'Sold' : s === 'held' ? 'Held' : 'Unit ' + (k + 1)}</span>`).join('')}${r.units > 12 ? `<span>+${r.units - 12}</span>` : ''}</div>
-    <div class="stats"><div><span>Sold</span><b class="num">${sold} of ${r.units}</b></div><div><span>Messaged</span><b class="num">${offers.length}</b></div><div><span>Sales</span><b class="num">${money(sold * p.price_minor)}</b></div></div>
-    ${r.closed_at ? `<div class="banner ok"><b>Finished.</b> ${sold ? `${sold} sold.` : 'Nothing sold through alerts.'} ${r.units - sold > 0 ? `${r.units - sold} unit${r.units - sold === 1 ? '' : 's'} stay in stock for anyone who asks.` : ''} People who didn't buy keep their place.</div>` : ''}
-    <div class="sect">Who was messaged</div>
+    <div class="units">${slots.map((s, k) => `<span class="${s}">${s === 'sold' ? t('rs.sold') : s === 'held' ? t('rs.heldSlot') : t('rs.unit', { n: k + 1 })}</span>`).join('')}${r.units > 12 ? `<span>+${r.units - 12}</span>` : ''}</div>
+    <div class="stats"><div><span>${t('rs.sold')}</span><b class="num">${t('rs.soldOf', { sold, units: r.units })}</b></div><div><span>${t('rs.messagedCount')}</span><b class="num">${offers.length}</b></div><div><span>${t('rs.sales')}</span><b class="num">${money(sold * p.price_minor)}</b></div></div>
+    ${r.closed_at ? `<div class="banner ok">${t('rs.doneBanner', { sold, left: r.units - sold })}</div>` : ''}
+    <div class="sect">${t('rs.who')}</div>
     ${offers.map((o) => `<div class="line"><span class="pos">${clock(o.sent_at)}</span><span>${esc(o.name ?? phone(o.wa_id))}<span class="q">${phone(o.wa_id)}</span></span>
-      <span style="display:grid;gap:4px;justify-items:end">${pill(o)}${S.dryRun && ['held', 'notified'].includes(o.status) ? `<button class="btn sm" data-pay="${esc(o.payment_ref)}">Test: mark paid</button>` : ''}</span></div>`).join('') || '<p class="empty">Nobody was waiting, so no one was messaged.</p>'}
-    ${!r.closed_at && r.mode === 'hold' ? `<p class="note pad">Holds are checked every minute. Unpaid ones pass to the next person automatically.${S.dryRun ? ' <button class="btn sm" data-act="tick">Test: check holds now</button>' : ''}</p>` : ''}`;
+      <span style="display:grid;gap:4px;justify-items:end">${pill(o)}${S.dryRun && ['held', 'notified'].includes(o.status) ? `<button class="btn sm" data-pay="${esc(o.payment_ref)}">${t('rs.testPaid')}</button>` : ''}</span></div>`).join('') || `<p class="empty">${t('rs.nobody')}</p>`}
+    ${!r.closed_at && r.mode === 'hold' ? `<p class="note pad">${t('rs.holdsNote')}${S.dryRun ? ` <button class="btn sm" data-act="tick">${t('rs.testTick')}</button>` : ''}</p>` : ''}`;
 };
 
 views.insights = async () => {
   const [ins, consents] = await Promise.all([api(`/api/insights?sellerId=${sellerId()}`), api(`/api/consents?sellerId=${sellerId()}`)]);
-  header('Insights', { sub: new Date(ins.monthStart).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) });
+  const month = new Date(ins.monthStart).toLocaleDateString(dateLocale(), { month: 'long', year: 'numeric' });
+  header(t('ins.title'), { sub: month.charAt(0).toUpperCase() + month.slice(1) });
   setNav('insights');
   const demand = ins.demand.filter((d) => d.waiting > 0);
+  const q = (text) => (lang() === 'fr' ? `« ${text} »` : `“${text}”`);
   main.innerHTML = `
     <div class="tiles">
-      <div><span>Sales from alerts</span><b class="num">${money(ins.sales.revenue_minor)}</b></div>
-      <div><span>Orders from alerts</span><b class="num">${ins.sales.orders}</b></div>
-      <div><span>Messages sent</span><b class="num">${ins.spend.messages}</b></div>
-      <div><span>WhatsApp fees (est.)</span><b class="num">${usd(ins.spend.cost_usd_micros)}</b></div>
+      <div><span>${t('ins.sales')}</span><b class="num">${money(ins.sales.revenue_minor)}</b></div>
+      <div><span>${t('ins.orders')}</span><b class="num">${ins.sales.orders}</b></div>
+      <div><span>${t('ins.messages')}</span><b class="num">${ins.spend.messages}</b></div>
+      <div><span>${t('ins.fees')}</span><b class="num">${fee(ins.spend.cost_usd_micros)}</b></div>
     </div>
-    ${ins.refunds.length ? `<div class="sect">Refunds to send</div>${ins.refunds.map((r) => `<div class="line"><span class="pos">↩</span><span>${esc(r.name ?? phone(r.wa_id))} · ${money(r.price_minor)}<span class="q">${label({ name: r.product, variant: r.variant })} · Paystack ref ${esc(r.payment_ref)}</span></span><span class="pill refund">Refund due</span></div>`).join('')}` : ''}
-    <div class="sect">What to reorder</div>
-    ${demand.length ? `<div class="tablewrap"><table><thead><tr><th>Item</th><th>Waiting</th><th>Bought when alerted</th><th>Suggest</th></tr></thead><tbody>
-      ${demand.map((d) => `<tr><td>${esc(d.name)}<span>${esc(d.variant)}</span></td><td class="num">${d.waiting}</td><td class="num">${d.bought_pct === null ? '—' : d.bought_pct + '%'}</td>
-        <td class="num"><b>${d.bought_pct === null ? '—' : Math.max(1, Math.round((d.waiting * d.bought_pct) / 100))}</b></td></tr>`).join('')}
-    </tbody></table></div><p class="note pad" style="margin:0">Suggested units = people waiting × share who bought at past restocks. Shown once an item has had one restock.</p>`
-      : '<p class="empty">Nobody is on a waitlist yet.</p>'}
-    <div class="sect">Consent log</div>
-    ${consents.map((k) => `<div class="line"><span class="pos">${k.revoked_at ? '✕' : '✓'}</span><span>${esc(k.name ?? phone(k.wa_id))}<span class="q">“${esc(k.quote)}” · ${label({ name: k.product ?? '', variant: k.variant ?? '' })} · ${when(k.granted_at)}</span></span>${k.revoked_at ? '<span class="pill expired">Opted out</span>' : chip(k.channel)}</div>`).join('') || '<p class="empty">No consents yet.</p>'}`;
+    ${S.seller?.currency !== 'USD' && ins.spend.cost_usd_micros ? `<p class="note pad" style="margin:0;padding-top:0">${t('ins.feesNote', { usd: usd(ins.spend.cost_usd_micros) })}</p>` : ''}
+    ${ins.refunds.length ? `<div class="sect">${t('ins.refunds')}</div>${ins.refunds.map((r) => `<div class="line"><span class="pos">↩</span><span>${esc(r.name ?? phone(r.wa_id))} · ${money(r.price_minor)}<span class="q">${label({ name: r.product, variant: r.variant })} · ${t('ins.ref', { ref: esc(r.payment_ref) })}</span></span><span class="pill refund">${t('ins.refundDue')}</span></div>`).join('')}` : ''}
+    <div class="sect">${t('ins.reorder')}</div>
+    ${demand.length ? `<div class="tablewrap"><table><thead><tr><th>${t('ins.item')}</th><th>${t('ins.waiting')}</th><th>${t('ins.bought')}</th><th>${t('ins.suggest')}</th></tr></thead><tbody>
+      ${demand.map((d) => `<tr><td>${esc(d.name)}<span>${esc(variantText(d.variant))}</span></td><td class="num">${d.waiting}</td><td class="num">${d.bought_pct === null ? t('none') : pct(d.bought_pct)}</td>
+        <td class="num"><b>${d.bought_pct === null ? t('none') : Math.max(1, Math.round((d.waiting * d.bought_pct) / 100))}</b></td></tr>`).join('')}
+    </tbody></table></div><p class="note pad" style="margin:0">${t('ins.reorderNote')}</p>`
+      : `<p class="empty">${t('ins.noWaitlist')}</p>`}
+    <div class="sect">${t('ins.consents')}</div>
+    ${consents.map((k) => `<div class="line"><span class="pos">${k.revoked_at ? '✕' : '✓'}</span><span>${esc(k.name ?? phone(k.wa_id))}<span class="q">${q(esc(k.quote))} · ${label({ name: k.product ?? '', variant: k.variant ?? '' })} · ${when(k.granted_at)}</span></span>${k.revoked_at ? `<span class="pill expired">${t('ins.optedOut')}</span>` : chip(k.channel)}</div>`).join('') || `<p class="empty">${t('ins.noConsents')}</p>`}`;
 };
 
 views.settings = async () => {
   const mk = await markets();
   const s = S.seller;
-  header('Settings', { sub: esc(s?.name ?? '') });
+  header(t('set.title'), { sub: esc(s?.name ?? '') });
   setNav('settings');
   const m = mk.countries.find((c) => c.code === s.country);
   const suggested = m?.providers ?? ['flutterwave', 'stripe'];
   const order = [...new Set([s.payment_provider, ...suggested, 'flutterwave', 'notchpay', 'paystack', 'stripe', 'test'])];
-  const connected = (on) => (on ? '<span class="pill paid">Connected</span>' : '<span class="pill expired">Not connected yet</span>');
+  const connected = (on) => (on ? `<span class="pill paid">${t('set.connected')}</span>` : `<span class="pill expired">${t('set.notConnected')}</span>`);
   const chRow = (ch, title, note, on) => `<div class="line"><span class="pos"><span class="ch ${ch}" style="padding:4px"><i></i></span></span><span>${title}<span class="q">${note}</span></span>${connected(on)}</div>`;
   const owner = s.role === 'owner';
   const [members, me, channels] = await Promise.all([api(`/api/sellers/${s.id}/members`), api('/api/me'), api(`/api/channels?sellerId=${s.id}`)]);
   const pagePicker = S.pickPage ? await api(`/api/channels/pending/${S.pickPage}?sellerId=${s.id}`).catch(() => null) : null;
-  const team = `<div class="sect">Team</div>
+  const team = `<div class="sect">${t('team.title')}</div>
     ${members.map((mb) => `<div class="line"><span class="pos">${mb.role === 'owner' ? '★' : '·'}</span>
-      <span>${me.user?.id === mb.user_id ? 'You' : esc(mb.name ?? '+' + mb.wa_id)}<span class="q">${mb.name || me.user?.id === mb.user_id ? `+${esc(mb.wa_id)} · ` : ''}${mb.role === 'owner' ? 'Owner: everything' : 'Staff: chats, stock and restocks'}</span></span>
-      ${owner && me.user?.id !== mb.user_id ? `<button class="btn sm" data-remove-member="${esc(mb.user_id)}">Remove</button>` : '<span></span>'}</div>`).join('')}
+      <span>${me.user?.id === mb.user_id ? t('you') : esc(mb.name ?? '+' + mb.wa_id)}<span class="q">${mb.name || me.user?.id === mb.user_id ? `+${esc(mb.wa_id)} · ` : ''}${mb.role === 'owner' ? t('team.owner') : t('team.staff')}</span></span>
+      ${owner && me.user?.id !== mb.user_id ? `<button class="btn sm" data-remove-member="${esc(mb.user_id)}">${t('team.remove')}</button>` : '<span></span>'}</div>`).join('')}
     ${owner ? `<form class="form" data-form="member">
-      <label>Add someone by WhatsApp number<input id="m-phone" type="tel" required placeholder="${esc(samplePhone())}"><span class="hint">They sign in with this number. Local numbers are read as ${esc(m?.name ?? s.country)}.</span></label>
-      <label>Role<select id="m-role"><option value="staff">Staff: chats, stock and restocks</option><option value="owner">Owner: also payments and the team</option></select></label>
+      <label>${t('team.add')}<input id="m-phone" type="tel" required placeholder="${esc(samplePhone())}"><span class="hint">${t('team.addHint', { country: esc(countryName(s.country, m?.name)) })}</span></label>
+      <label>${t('team.role')}<select id="m-role"><option value="staff">${t('team.staff')}</option><option value="owner">${t('team.ownerOpt')}</option></select></label>
       <p class="err" hidden></p>
-      <button class="btn block">Add to team</button></form>` : ''}`;
+      <button class="btn block">${t('team.addBtn')}</button></form>` : ''}`;
   main.innerHTML = `
-    ${S.dryRun ? '<div class="banner"><b>Test mode.</b> Nothing is sent to WhatsApp and payments are simulated. Set DRY_RUN=false on the server to go live.</div>' : ''}
-    ${owner ? '' : '<div class="banner">You are <b>staff</b> in this shop. The owner manages payments, shop details and the team.</div>'}
+    ${S.dryRun ? `<div class="banner">${t('set.testBanner')}</div>` : ''}
+    ${owner ? '' : `<div class="banner">${t('set.staffBanner')}</div>`}
     ${shopPage(s, owner)}
-    <div class="sect"${owner ? '' : ' hidden'}>Get paid</div>
+    <div class="sect"${owner ? '' : ' hidden'}>${t('set.getPaid')}</div>
     <form class="form" data-form="payments" style="padding-top:4px"${owner ? '' : ' hidden'}>
-      <label>Payment provider<select id="pay-provider" data-provider>${order.map((k) => `<option value="${k}" ${k === s.payment_provider ? 'selected' : ''}>${esc(mk.providers[k].label)}${suggested.includes(k) ? ' · suggested' : ''}</option>`).join('')}</select>
-        <span class="hint">Money goes straight to your own account. NKAPGUARD never holds it.</span></label>
+      <label>${t('set.provider')}<select id="pay-provider" data-provider>${order.map((k) => `<option value="${k}" ${k === s.payment_provider ? 'selected' : ''}>${esc(t(`pv.${k}`))}${suggested.includes(k) ? ` · ${t('set.suggested')}` : ''}</option>`).join('')}</select>
+        <span class="hint">${t('set.providerHint')}</span></label>
       <div id="pay-keys">${payKeyFields(mk, s.payment_provider)}</div>
-      <p class="note" id="pay-hook">${s.payment_provider !== 'test' && s.payments_connected ? `Webhook URL to paste in your provider dashboard: <code>${esc(API || location.origin)}/webhooks/payments/${esc(s.id)}</code>` : ''}</p>
+      <p class="note" id="pay-hook">${s.payment_provider !== 'test' && s.payments_connected ? t('set.webhookUrl', { url: `${esc(API || location.origin)}/webhooks/payments/${esc(s.id)}` }) : ''}</p>
       <p class="err" hidden></p>
-      <button class="btn block">Save payment settings</button>
+      <button class="btn block">${t('set.savePay')}</button>
     </form>
-    <div class="sect"${owner ? '' : ' hidden'}>Shop</div>
+    <div class="sect"${owner ? '' : ' hidden'}>${t('set.shop')}</div>
     <form class="form" data-form="shop" style="padding-top:4px"${owner ? '' : ' hidden'}>
-      <label>Shop name<input id="s-name" value="${esc(s.name)}" required></label>
+      <label>${t('shop.name')}<input id="s-name" value="${esc(s.name)}" required></label>
       ${shopFields(mk, s)}
-      <label id="s-rate-wrap" data-from="${esc(s.currency)}" hidden><span id="s-rate-label">Exchange rate</span><input id="s-rate" type="number" min="0" step="any"><span class="hint" id="s-rate-hint"></span></label>
+      <label id="s-rate-wrap" data-from="${esc(s.currency)}" hidden><span id="s-rate-label">${t('rate.title')}</span><input id="s-rate" type="number" min="0" step="any"><span class="hint" id="s-rate-hint"></span></label>
       <p class="err" hidden></p>
-      <button class="btn block">Save shop</button>
+      <button class="btn block">${t('set.saveShop')}</button>
     </form>
     ${team}
-    <div class="sect">Channels</div>
+    <div class="sect">${t('ch.title')}</div>
     ${S.dryRun
-      ? `<div class="line"><span class="pos"><span class="ch whatsapp" style="padding:4px"><i></i></span></span><span>WhatsApp<span class="q">Test mode: messages are shown in chats but not sent</span></span><span class="pill held">Test mode</span></div>`
-      : chRow('whatsapp', 'WhatsApp', `Number id ${esc(s.wa_phone_number_id)}`, true)}
-    <p class="note pad" style="padding-top:0">WhatsApp is always on: it's the only app that can send restock alerts later, so waitlists and payments run there. Connect the other apps only if you sell on them.</p>
-    ${pagePicker?.length ? `<div class="card"><h2>Which Facebook Page?</h2><p>Your account manages several Pages. Pick the one customers message.</p>
+      ? `<div class="line"><span class="pos"><span class="ch whatsapp" style="padding:4px"><i></i></span></span><span>WhatsApp<span class="q">${t('ch.testWa')}</span></span><span class="pill held">${t('ch.testPill')}</span></div>`
+      : chRow('whatsapp', 'WhatsApp', t('ch.numberId', { id: esc(s.wa_phone_number_id) }), true)}
+    <p class="note pad" style="padding-top:0">${t('ch.waNote')}</p>
+    ${pagePicker?.length ? `<div class="card"><h2>${t('ch.whichPage')}</h2><p>${t('ch.whichPageText')}</p>
       <div class="btns">${pagePicker.map((p) => `<button class="btn" data-act="pick-page" data-page="${esc(p.id)}">${esc(p.name)}</button>`).join('')}</div></div>` : ''}
     ${['instagram', 'facebook'].map((ch) => channelCard(ch, channels, s, owner)).join('')}
-    <div class="line"><span class="pos"><span class="ch tiktok" style="padding:4px"><i></i></span></span><span>TikTok<span class="q">TikTok doesn't let us answer DMs yet. Put your shop page link in your TikTok bio so viewers can message you on WhatsApp.</span></span>${s.slug ? '<button class="btn sm" data-act="copy-shop">Copy link</button>' : '<span></span>'}</div>
-    <div class="pad btns" style="margin:0"><a class="btn" href="#/setup">Switch or add shop</a><button class="btn danger" data-act="signout">Sign out</button></div>`;
+    <div class="line"><span class="pos"><span class="ch tiktok" style="padding:4px"><i></i></span></span><span>TikTok<span class="q">${t('ch.tiktok')}</span></span>${s.slug ? `<button class="btn sm" data-act="copy-shop">${t('ch.copyLink')}</button>` : '<span></span>'}</div>
+    <div class="pad btns" style="margin:0"><a class="btn" href="#/setup">${t('set.switchShop')}</a><button class="btn danger" data-act="signout">${t('set.signOut')}</button></div>`;
 };
 /** One optional channel in Settings: connect it, or pause, turn comment replies on or off, and disconnect. */
 function channelCard(ch, channels, s, owner) {
   const a = channels.accounts.find((x) => x.channel === ch);
-  const title = ch === 'instagram' ? 'Instagram' : 'Facebook Messenger';
+  const title = ch === 'instagram' ? 'Instagram' : t('ch.messenger');
   const icon = `<span class="pos"><span class="ch ${ch}" style="padding:4px"><i></i></span></span>`;
   if (!a) {
-    const what = ch === 'instagram'
-      ? 'Answer DMs and comments that ask about price or stock. Needs an Instagram Business or Creator account.'
-      : 'Answer messages and comments on your Facebook Page.';
+    const what = ch === 'instagram' ? t('ch.igWhat') : t('ch.fbWhat');
     const action = !owner ? '<span></span>'
-      : channels.available[ch] ? `<button class="btn sm" data-act="ch-connect" data-ch="${ch}">Connect</button>`
-      : S.dryRun ? `<button class="btn sm" data-act="ch-sample" data-ch="${ch}">Test: add sample</button>`
-      : '<span class="pill expired">Not set up yet</span>';
-    return `<div class="line">${icon}<span>${title}<span class="q">${what}${!channels.available[ch] && !S.dryRun ? ` The server needs ${ch === 'instagram' ? 'IG_APP_ID and IG_APP_SECRET' : 'META_APP_ID'} first.` : ''}</span></span>${action}</div>`;
+      : channels.available[ch] ? `<button class="btn sm" data-act="ch-connect" data-ch="${ch}">${t('ch.connect')}</button>`
+      : S.dryRun ? `<button class="btn sm" data-act="ch-sample" data-ch="${ch}">${t('ch.sample')}</button>`
+      : `<span class="pill expired">${t('ch.notSetUp')}</span>`;
+    return `<div class="line">${icon}<span>${title}<span class="q">${what}${!channels.available[ch] && !S.dryRun ? t('ch.serverNeeds', { what: ch === 'instagram' ? 'IG_APP_ID + IG_APP_SECRET' : 'META_APP_ID' }) : ''}</span></span>${action}</div>`;
   }
   const handle = a.username ? '@' + a.username : a.name ?? '';
   return `<div class="line">${icon}<span>${title}${handle ? ` · ${esc(handle)}` : ''}
-      <span class="q">${a.enabled ? 'Answering messages' : 'Paused: messages arrive in the app but nothing is answered'}${a.comment_replies ? ' · replies privately to price and stock comments' : ''}${!s.wa_display_phone ? '. Add your WhatsApp number under Shop page, so sold-out answers can send people there for alerts.' : ''}</span></span>
-      <span class="pill ${a.enabled ? 'paid' : 'held'}">${a.enabled ? 'On' : 'Paused'}</span></div>
+      <span class="q">${a.enabled ? t('ch.answering') : t('ch.paused')}${a.comment_replies ? t('ch.commentsOn') : ''}${!s.wa_display_phone ? t('ch.needWa') : ''}</span></span>
+      <span class="pill ${a.enabled ? 'paid' : 'held'}">${a.enabled ? t('ch.on') : t('ch.pausedPill')}</span></div>
     ${owner ? `<div class="pad btns" style="margin:0;padding-top:0">
-      <button class="btn sm" data-act="ch-set" data-id="${esc(a.id)}" data-field="enabled" data-on="${!a.enabled}">${a.enabled ? 'Pause' : 'Turn on'}</button>
-      <button class="btn sm" data-act="ch-set" data-id="${esc(a.id)}" data-field="commentReplies" data-on="${!a.comment_replies}">${a.comment_replies ? 'Stop comment replies' : 'Reply to comments'}</button>
-      <button class="btn sm danger" data-act="ch-remove" data-id="${esc(a.id)}" data-name="${esc(title)}">Disconnect</button></div>` : ''}`;
+      <button class="btn sm" data-act="ch-set" data-id="${esc(a.id)}" data-field="enabled" data-on="${!a.enabled}">${a.enabled ? t('ch.pause') : t('ch.turnOn')}</button>
+      <button class="btn sm" data-act="ch-set" data-id="${esc(a.id)}" data-field="commentReplies" data-on="${!a.comment_replies}">${a.comment_replies ? t('ch.stopComments') : t('ch.replyComments')}</button>
+      <button class="btn sm danger" data-act="ch-remove" data-id="${esc(a.id)}" data-name="${esc(title)}">${t('ch.disconnect')}</button></div>` : ''}`;
 }
 
 /** The public page customers open from a link or a printed QR code. */
@@ -497,27 +545,27 @@ function shopPage(s, owner) {
     code.make();
     qr = `<div class="qr">${code.createSvgTag({ cellSize: 5, margin: 2, scalable: true })}</div>`;
   }
-  return `<div class="sect">Shop page</div>
+  return `<div class="sect">${t('sp.title')}</div>
     <div class="card">
       ${ready
-        ? `<p>Share this link, or print the QR code for your stall. Customers see what's in stock and message you on WhatsApp in one tap.</p>
+        ? `<p>${t('sp.ready')}</p>
            <p><a href="${esc(shopUrl(s))}" target="_blank" rel="noopener"><code>${esc(shopUrl(s))}</code></a></p>
            ${qr}
-           <div class="btns"><button type="button" class="btn sm" data-act="copy-shop">Copy link</button>${qr ? '<button type="button" class="btn sm" data-act="qr-download">Download QR code</button>' : ''}</div>`
-        : `<p>Add the WhatsApp number customers write to, and your shop page is ready to share.</p>`}
+           <div class="btns"><button type="button" class="btn sm" data-act="copy-shop">${t('sp.copy')}</button>${qr ? `<button type="button" class="btn sm" data-act="qr-download">${t('sp.qr')}</button>` : ''}</div>`
+        : `<p>${t('sp.notReady')}</p>`}
     </div>
     ${owner ? `<form class="form" data-form="shoppage">
-      <label>WhatsApp number customers write to<input id="sp-phone" type="tel" value="${s.wa_display_phone ? '+' + esc(s.wa_display_phone) : ''}" placeholder="${esc(samplePhone())}"><span class="hint">The number of your WhatsApp Business account, with the country code.</span></label>
-      <label>Link name<input id="sp-slug" value="${esc(s.slug ?? '')}" placeholder="my-shop"><span class="hint">Lowercase letters, numbers and dashes. Changing it breaks links and QR codes you already shared.</span></label>
+      <label>${t('sp.phone')}<input id="sp-phone" type="tel" value="${s.wa_display_phone ? '+' + esc(s.wa_display_phone) : ''}" placeholder="${esc(samplePhone())}"><span class="hint">${t('sp.phoneHint')}</span></label>
+      <label>${t('sp.slug')}<input id="sp-slug" value="${esc(s.slug ?? '')}" placeholder="${lang() === 'fr' ? 'ma-boutique' : 'my-shop'}"><span class="hint">${t('sp.slugHint')}</span></label>
       <p class="err" hidden></p>
-      <button class="btn block">Save shop page</button></form>` : ''}`;
+      <button class="btn block">${t('sp.save')}</button></form>` : ''}`;
 }
 
 function payKeyFields(mk, provider) {
   const info = mk.providers[provider];
-  if (provider === 'test') return '<p class="note">Customers see a test checkout. Nothing is charged.</p>';
-  return `<label>${esc(info.label.split(' (')[0])} key<input id="pay-secret" type="password" autocomplete="off" placeholder="${S.seller.payments_connected && S.seller.payment_provider === provider ? 'Saved. Paste a new key to replace it.' : ''}"><span class="hint">${esc(info.secretHint)}</span></label>
-    ${info.needsWebhookSecret ? `<label>Webhook secret<input id="pay-hook-secret" type="password" autocomplete="off"><span class="hint">${esc(info.webhookHint ?? '')}</span></label>` : ''}`;
+  if (provider === 'test') return `<p class="note">${t('set.testCheckout')}</p>`;
+  return `<label>${t('set.key', { provider: esc(info.label.split(' (')[0]) })}<input id="pay-secret" type="password" autocomplete="off" placeholder="${S.seller.payments_connected && S.seller.payment_provider === provider ? t('set.keySaved') : ''}"><span class="hint">${esc(t(`pv.${provider}.secret`))}</span></label>
+    ${info.needsWebhookSecret ? `<label>${t('set.webhookSecret')}<input id="pay-hook-secret" type="password" autocomplete="off"><span class="hint">${esc(t(`pv.${provider}.webhook`))}</span></label>` : ''}`;
 }
 document.addEventListener('change', async (e) => {
   if (e.target.matches('[data-provider]')) $('#pay-keys').innerHTML = payKeyFields(await markets(), e.target.value);
@@ -546,7 +594,7 @@ async function route(quiet = false) {
     main.dataset.view = key;
     if (!quiet) { if (name !== 'chat') window.scrollTo(0, 0); main.focus({ preventScroll: true }); }
   } catch (e) {
-    if (e.status === 401) { set('nkg.token', null); set('nkg.seller', null); setSeller(null); S.login = null; await views.login([], 'Please sign in again.'); return; }
+    if (e.status === 401) { set('nkg.token', null); set('nkg.seller', null); setSeller(null); S.login = null; await views.login([], t('signInAgain')); return; }
     if (e.status === 404 && name !== 'setup' && sellerId() && !S.seller) { set('nkg.seller', null); location.hash = '#/setup'; return; }
     if (!quiet) main.innerHTML = `<p class="empty">${esc(e.message)}</p>`;
   }
@@ -562,76 +610,84 @@ setInterval(() => {
 }, 15000);
 
 // ---------- actions ----------
+// The FR/EN switch: remember the choice on this device and redraw the current screen in it.
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-lang]');
+  if (!b || b.dataset.lang === lang()) return;
+  setLang(b.dataset.lang);
+  route(true);
+});
+
 document.addEventListener('click', async (e) => {
-  const t = e.target.closest('[data-pick],[data-filter],[data-cfg],[data-mode],[data-hold],[data-act],[data-pay],[data-remove-member]');
-  if (!t) return;
-  if (t.dataset.pick) { set('nkg.seller', t.dataset.pick); setSeller(null); return; }
-  if (t.dataset.filter) { S.chatFilter = t.dataset.filter; return route(true); }
-  if (t.dataset.removeMember) {
-    try { await api(`/api/sellers/${sellerId()}/members/${t.dataset.removeMember}`, { method: 'DELETE' }); toast('Removed from the team'); }
+  const el = e.target.closest('[data-pick],[data-filter],[data-cfg],[data-mode],[data-hold],[data-act],[data-pay],[data-remove-member]');
+  if (!el) return;
+  if (el.dataset.pick) { set('nkg.seller', el.dataset.pick); setSeller(null); return; }
+  if (el.dataset.filter) { S.chatFilter = el.dataset.filter; return route(true); }
+  if (el.dataset.removeMember) {
+    try { await api(`/api/sellers/${sellerId()}/members/${el.dataset.removeMember}`, { method: 'DELETE' }); toast(t('team.removed')); }
     catch (err) { toast(err.message); }
     return route(true);
   }
   const f = S.restockForm;
-  if (t.dataset.cfg) {
-    const [k, d] = t.dataset.cfg.split(':');
+  if (el.dataset.cfg) {
+    const [k, d] = el.dataset.cfg.split(':');
     const max = { units: 500, perUnit: 20 }[k];
     f[k] = Math.max(1, Math.min(max, f[k] + Number(d)));
-    t.parentElement.querySelector('output').textContent = f[k];
+    el.parentElement.querySelector('output').textContent = f[k];
     S.confirm = false;
     clearTimeout(loadPlan.h);
     loadPlan.h = setTimeout(() => loadPlan(f.id), 200);
     return;
   }
-  if (t.dataset.mode) { f.mode = t.dataset.mode; S.confirm = false; return route(true); }
-  if (t.dataset.hold) { f.holdMinutes = Number(t.dataset.hold); S.confirm = false; return route(true); }
-  if (t.dataset.pay) {
-    t.disabled = true;
-    const r = await api(`/dev/pay/${t.dataset.pay}`, { method: 'POST' });
-    toast(r.outcome === 'paid' ? 'Marked as paid' : `Payment result: ${r.outcome.replace('_', ' ')}`);
+  if (el.dataset.mode) { f.mode = el.dataset.mode; S.confirm = false; return route(true); }
+  if (el.dataset.hold) { f.holdMinutes = Number(el.dataset.hold); S.confirm = false; return route(true); }
+  if (el.dataset.pay) {
+    el.disabled = true;
+    const r = await api(`/dev/pay/${el.dataset.pay}`, { method: 'POST' });
+    toast(r.outcome === 'paid' ? t('rs.markedPaid') : t('rs.payResult', { r: t(`pay.${r.outcome}`) }));
     return route(true);
   }
-  const act = t.dataset.act;
+  const act = el.dataset.act;
   try {
     if (act === 'restock-ask') { S.confirm = true; return loadPlan(f.id); }
     if (act === 'restock-cancel') { S.confirm = false; return loadPlan(f.id); }
     if (act === 'restock-go') {
-      t.disabled = true;
+      el.disabled = true;
       const r = await api(`/api/products/${f.id}/restocks`, { method: 'POST', body: { units: f.units, mode: f.mode, holdMinutes: f.holdMinutes, perUnit: f.perUnit } });
       S.confirm = false;
-      toast(r.offered ? `${r.offered} alert${r.offered === 1 ? '' : 's'} sent` : 'Added to stock');
+      toast(r.offered ? t('restock.sent', { n: r.offered }) : t('restock.added'));
       location.hash = r.offered ? `#/restock/${r.restockId}` : `#/product/${f.id}`;
       if (!r.offered) route(true);
       return;
     }
     if (act === 'ch-connect') {
-      const { url } = await api(`/api/channels/${t.dataset.ch}/connect`, { method: 'POST', body: { sellerId: sellerId() } });
+      const { url } = await api(`/api/channels/${el.dataset.ch}/connect`, { method: 'POST', body: { sellerId: sellerId() } });
       location.href = url;
       return;
     }
     if (act === 'ch-sample') {
-      await api('/dev/channels', { method: 'POST', body: { sellerId: sellerId(), channel: t.dataset.ch } });
-      toast(`Sample ${chName[t.dataset.ch]} account added. Try it from Chats.`);
+      await api('/dev/channels', { method: 'POST', body: { sellerId: sellerId(), channel: el.dataset.ch } });
+      toast(t('ch.sampleAdded', { app: chName[el.dataset.ch] }));
       return route(true);
     }
     if (act === 'ch-set') {
-      await api(`/api/channels/${t.dataset.id}`, { method: 'PATCH', body: { [t.dataset.field]: t.dataset.on === 'true' } });
+      await api(`/api/channels/${el.dataset.id}`, { method: 'PATCH', body: { [el.dataset.field]: el.dataset.on === 'true' } });
       return route(true);
     }
     if (act === 'ch-remove') {
-      if (!confirm(`Disconnect ${t.dataset.name}? Past chats stay, but new messages won't reach the app.`)) return;
-      await api(`/api/channels/${t.dataset.id}`, { method: 'DELETE' });
-      toast(`${t.dataset.name} disconnected`);
+      if (!confirm(t('ch.disconnectAsk', { name: el.dataset.name }))) return;
+      await api(`/api/channels/${el.dataset.id}`, { method: 'DELETE' });
+      toast(t('ch.disconnected', { name: el.dataset.name }));
       return route(true);
     }
     if (act === 'pick-page') {
-      await api(`/api/channels/pending/${S.pickPage}`, { method: 'POST', body: { sellerId: sellerId(), pageId: t.dataset.page } });
+      await api(`/api/channels/pending/${S.pickPage}`, { method: 'POST', body: { sellerId: sellerId(), pageId: el.dataset.page } });
       S.pickPage = null;
-      toast('Messenger connected');
+      toast(t('ch.messengerConnected'));
       return route(true);
     }
     if (act === 'copy-shop') {
-      try { await navigator.clipboard.writeText(shopUrl(S.seller)); toast('Link copied'); } catch { toast('Copy the link from the box above'); }
+      try { await navigator.clipboard.writeText(shopUrl(S.seller)); toast(t('sp.copied')); } catch { toast(t('sp.copyFail')); }
       return;
     }
     if (act === 'qr-download') {
@@ -644,16 +700,16 @@ document.addEventListener('click', async (e) => {
       a.click();
       return;
     }
-    if (act === 'tick') { await api('/api/tick', { method: 'POST' }); toast('Holds checked'); return route(true); }
+    if (act === 'tick') { await api('/api/tick', { method: 'POST' }); toast(t('rs.checked')); return route(true); }
     if (act === 'signout') {
       try { await api('/auth/logout', { method: 'POST' }); } catch { /* already signed out */ }
       set('nkg.token', null); set('nkg.seller', null); setSeller(null); S.login = null; location.hash = '#/login'; return route();
     }
     if (act === 'login-back') { S.login = { country: S.login?.country, phone: S.login?.phone }; return views.login(); }
-    if (act === 'demo') { t.disabled = true; t.textContent = 'Loading…'; await loadDemo(); return; }
+    if (act === 'demo') { el.disabled = true; el.textContent = t('loading'); await loadDemo(); return; }
   } catch (err) {
     toast(err.message);
-    if (act === 'restock-go') { t.disabled = false; }
+    if (act === 'restock-go') { el.disabled = false; }
   }
 });
 
@@ -680,7 +736,7 @@ document.addEventListener('submit', async (e) => {
       }
       case 'member':
         await api(`/api/sellers/${sellerId()}/members`, { method: 'POST', body: { phone: val('m-phone'), role: val('m-role') } });
-        toast('Added to the team. They can sign in with that number now.');
+        toast(t('team.added'));
         return route(true);
       case 'seller': {
         const s = await api('/api/sellers', { method: 'POST', body: { name: val('s-name'), waPhoneNumberId: val('s-phone'), ...shopValues(form) } });
@@ -692,20 +748,20 @@ document.addEventListener('submit', async (e) => {
         const rateWrap = $('#s-rate-wrap', form);
         const rate = rateWrap && !rateWrap.hidden ? Number(val('s-rate')) : undefined;
         setSeller({ ...S.seller, ...await api(`/api/sellers/${sellerId()}`, { method: 'PATCH', body: { name: val('s-name'), ...shopValues(form), rate } }) });
-        toast(rate ? 'Shop saved and prices converted' : 'Shop saved');
+        toast(rate ? t('set.shopConverted') : t('set.shopSaved'));
       }
         return route(true);
       case 'shoppage':
         setSeller({ ...S.seller, ...await api(`/api/sellers/${sellerId()}`, { method: 'PATCH', body: { slug: val('sp-slug'), waDisplayPhone: val('sp-phone') } }) });
-        toast('Shop page saved');
+        toast(t('sp.saved'));
         return route(true);
       case 'payments': {
         const provider = val('pay-provider');
         const r = await api(`/api/sellers/${sellerId()}/payments`, { method: 'PUT', body: { provider, secretKey: val('pay-secret') || undefined, webhookSecret: val('pay-hook-secret') || undefined } });
         setSeller({ ...S.seller, ...r });
-        toast(provider === 'test' ? 'Using test payments' : 'Payments connected');
+        toast(provider === 'test' ? t('set.payTest') : t('set.payConnected'));
         await route(true);
-        if (provider !== 'test') $('#pay-hook').innerHTML = `Webhook URL to paste in your provider dashboard: <code>${esc(r.webhookUrl)}</code>`;
+        if (provider !== 'test') $('#pay-hook').innerHTML = t('set.webhookUrl', { url: esc(r.webhookUrl) });
         return;
       }
       case 'product': {
@@ -713,7 +769,7 @@ document.addEventListener('submit', async (e) => {
           method: 'POST',
           body: { sellerId: sellerId(), name: val('p-name'), variant: val('p-variant'), price: Number(val('p-price')), stock: Number(val('p-stock') || 0), aliases: val('p-aliases').split(',').map((a) => a.trim()).filter(Boolean) },
         });
-        toast('Product saved');
+        toast(t('product.saved'));
         location.hash = `#/product/${p.id}`;
         return;
       }
@@ -722,7 +778,7 @@ document.addEventListener('submit', async (e) => {
           method: 'PATCH',
           body: { stock: Number(val('e-stock')), price: Number(val('e-price')), aliases: val('e-aliases').split(',').map((a) => a.trim()).filter(Boolean) },
         });
-        toast('Saved');
+        toast(t('saved'));
         return route(true);
       case 'reply':
         if (!val('reply')) return;
@@ -732,14 +788,14 @@ document.addEventListener('submit', async (e) => {
       case 'as-customer': {
         const [channel, kind] = ($('#tc-channel', form)?.value ?? 'whatsapp').split(':');
         const r = await api('/dev/inbound', { method: 'POST', body: { sellerId: sellerId(), from: val('tc-from'), name: val('tc-name') || undefined, text: val('tc-text'), channel, comment: kind === 'comment' } });
-        toast(outcomeText[r.action] ?? r.action);
+        toast(outcome(r.action));
         return route(true);
       }
       case 'as-this-customer': {
         if (!val('as-cust')) return;
         const r = await api('/dev/inbound', { method: 'POST', body: { sellerId: sellerId(), from: form.dataset.wa, name: form.dataset.name || undefined, text: val('as-cust'), channel: form.dataset.channel } });
         $('#as-cust', form).value = '';
-        toast(outcomeText[r.action] ?? r.action);
+        toast(outcome(r.action));
         return route(true);
       }
     }
@@ -752,18 +808,8 @@ document.addEventListener('submit', async (e) => {
   }
 });
 
-const outcomeText = {
-  offered: 'NKAPGUARD offered a restock alert',
-  joined: 'Customer joined the waitlist',
-  already_waiting: 'Already on the waitlist',
-  in_stock: 'NKAPGUARD said it’s in stock',
-  asked_variant: 'NKAPGUARD asked which colour',
-  sold_out: 'NKAPGUARD said it’s sold out',
-  shop_link: 'NKAPGUARD replied privately with your shop page',
-  ignored: 'No reply: channel paused, or not a price or stock question',
-  stopped: 'Customer opted out',
-  unhandled: 'Left for you to reply',
-};
+/** What NKAPGUARD did with a test message, in words. */
+const outcome = (action) => { const text = t(`out.${action}`); return text === `out.${action}` ? action : text; };
 
 async function loadDemo() {
   const form = $('form[data-form="seller"]');
@@ -795,7 +841,7 @@ async function loadDemo() {
     await chat('Tunde Bakare', 'una get the jet black claw clip?', 'How much is delivery?');
     await chat('Chioma Nwosu', 'Do you have the brown claw clip ponytail?');
   }
-  toast('Sample shop loaded');
+  toast(t('demo.loaded'));
   location.hash = '#/chats';
 }
 
@@ -804,7 +850,7 @@ try { S.dryRun = (await api('/health')).dryRun; } catch { /* server down: views 
 // Coming back from Instagram or Facebook sign-in: say what happened, then tidy the address.
 {
   const q = new URLSearchParams(location.search);
-  if (q.get('connected')) setTimeout(() => toast(`${chName[q.get('connected')] ?? 'Channel'} connected`), 300);
+  if (q.get('connected')) setTimeout(() => toast(t('ch.connected', { app: chName[q.get('connected')] ?? q.get('connected') })), 300);
   if (q.get('channel_error')) setTimeout(() => toast(q.get('channel_error')), 300);
   if (q.get('pick_page')) S.pickPage = q.get('pick_page');
   if ([...q.keys()].length) history.replaceState(null, '', location.pathname + location.hash);

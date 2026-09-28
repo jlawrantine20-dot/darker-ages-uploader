@@ -159,12 +159,12 @@ async function announce(
 
 function validated(input: RestockInput) {
   const units = Math.trunc(input.units);
-  if (!(units >= 1 && units <= 10_000)) throw new InputError('units must be between 1 and 10000');
-  if (input.mode !== 'hold' && input.mode !== 'race') throw new InputError("mode must be 'hold' or 'race'");
+  if (!(units >= 1 && units <= 10_000)) throw new InputError('units_range');
+  if (input.mode !== 'hold' && input.mode !== 'race') throw new InputError('mode_invalid');
   const holdMinutes = Math.trunc(input.holdMinutes ?? 120);
   const perUnit = Math.trunc(input.perUnit ?? 5);
-  if (!(holdMinutes >= 5 && holdMinutes <= 7 * 24 * 60)) throw new InputError('holdMinutes must be between 5 and 10080');
-  if (!(perUnit >= 1 && perUnit <= 50)) throw new InputError('perUnit must be between 1 and 50');
+  if (!(holdMinutes >= 5 && holdMinutes <= 7 * 24 * 60)) throw new InputError('hold_range');
+  if (!(perUnit >= 1 && perUnit <= 50)) throw new InputError('per_unit_range');
   return { units, mode: input.mode, holdMinutes, perUnit, limit: input.mode === 'hold' ? units : units * perUnit };
 }
 
@@ -172,11 +172,11 @@ function validated(input: RestockInput) {
 export async function previewRestock(ctx: Ctx, input: RestockInput, now: Date) {
   const v = validated(input);
   const [product] = await ctx.db.query<ProductRow>('select * from products where id = $1', [input.productId]);
-  if (!product) throw new InputError('product not found');
+  if (!product) throw new InputError('product_not_found');
   const [seller] = await ctx.db.query<Seller>('select * from sellers where id = $1', [product.seller_id]);
   const waiting = await waitingCount(ctx.db, product.id);
-  const [next] = await ctx.db.query<{ name: string | null }>(
-    `select c.name from interests i join consents k on k.id = i.consent_id and k.revoked_at is null join contacts c on c.id = i.contact_id
+  const [next] = await ctx.db.query<{ name: string | null; language: 'en' | 'fr' | null }>(
+    `select c.name, c.language from interests i join consents k on k.id = i.consent_id and k.revoked_at is null join contacts c on c.id = i.contact_id
       where i.product_id = $1 and i.status = 'waiting' order by i.created_at, i.seq limit 1`,
     [product.id],
   );
@@ -184,7 +184,8 @@ export async function previewRestock(ctx: Ctx, input: RestockInput, now: Date) {
   const soldOutNotes = v.mode === 'race' ? Math.max(0, toMessage - v.units) : 0;
   const url = `${ctx.config.publicUrl.replace(/\/$/, '')}/pay/…`;
   const until = new Date(now.getTime() + v.holdMinutes * 60_000);
-  const preview = say(seller.language, v.mode, { name: next?.name, product, priceMinor: product.price_minor, units: v.units, waiting, told: toMessage, until, url }, fmt(seller));
+  // Shown exactly as the first person will get it: in their own language when it's known.
+  const preview = say(next ? langOf(seller, next) : seller.language, v.mode, { name: next?.name, product, priceMinor: product.price_minor, units: v.units, waiting, told: toMessage, until, url }, fmt(seller));
   const marketing = messageCost(ctx, seller.country, 'marketing');
   const utility = messageCost(ctx, seller.country, 'utility');
   return {
@@ -202,9 +203,9 @@ export async function startRestock(ctx: Ctx, input: RestockInput, now: Date) {
   const { units, holdMinutes, perUnit, limit } = validated(input);
   const result = await ctx.db.tx(async (q) => {
     const [locked] = await q.query<{ id: string }>('select id from products where id = $1 for update', [input.productId]);
-    if (!locked) throw new InputError('product not found');
+    if (!locked) throw new InputError('product_not_found');
     if (await openRestockFor(q, input.productId)) {
-      throw new InputError('A restock for this item is still running. Wait for it to finish before adding more.');
+      throw new InputError('restock_running');
     }
     await q.query('update products set stock = stock + $2 where id = $1', [input.productId, units]);
     const [r] = await q.query<{ id: string }>(

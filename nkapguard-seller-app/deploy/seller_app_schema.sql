@@ -214,6 +214,12 @@ create table if not exists seller_app.channel_pending (
   expires_at timestamptz not null
 );
 
+create table if not exists seller_app.fx_rates (
+  currency text primary key,
+  per_usd numeric not null check (per_usd > 0),
+  updated_at timestamptz not null default now()
+);
+
 -- Defence in depth: row-level security on, with no policies, so even if the schema were
 -- exposed later, the anon and authenticated roles would see nothing.
 do $$

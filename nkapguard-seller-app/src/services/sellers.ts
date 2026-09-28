@@ -67,24 +67,24 @@ export async function uniqueSlug(q: Q, name: string): Promise<string> {
 /** Fill in currency, language and time zone from the country when not given, and check everything. */
 export function resolveSellerInput(b: SellerInput, current?: Seller) {
   const country = (b.country ?? current?.country ?? '').toUpperCase();
-  if (!/^[A-Z]{2}$/.test(country)) throw new InputError('country must be a two-letter code, like CM or NG');
+  if (!/^[A-Z]{2}$/.test(country)) throw new InputError('country_code');
   const m = country !== current?.country ? marketFor(country) : null;
   const currency = (b.currency ?? m?.currency ?? current?.currency ?? '').toUpperCase();
   const language = b.language ?? m?.language ?? current?.language ?? 'en';
   const timezone = b.timezone ?? m?.timezone ?? current?.timezone ?? '';
-  if (!isCurrency(currency)) throw new InputError(`Choose a currency for ${country}, like XAF or USD.`);
-  if (!LANGS.includes(language as Lang)) throw new InputError(`language must be one of: ${LANGS.join(', ')}`);
-  if (!isTimezone(timezone)) throw new InputError(`Choose a time zone for ${country}, like Africa/Douala.`);
+  if (!isCurrency(currency)) throw new InputError('currency_for', { country });
+  if (!LANGS.includes(language as Lang)) throw new InputError('language_invalid');
+  if (!isTimezone(timezone)) throw new InputError('timezone_for', { country });
   const name = (b.name ?? current?.name ?? '').trim();
-  if (!name) throw new InputError('Give the shop a name.');
+  if (!name) throw new InputError('shop_name');
   const slug = b.slug === undefined ? current?.slug ?? null : b.slug.trim().toLowerCase();
   if (slug !== null && !/^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$/.test(slug)) {
-    throw new InputError('The shop link can use lowercase letters, numbers and dashes, 3 to 40 characters, like hair-plug.');
+    throw new InputError('slug_invalid');
   }
   let waDisplayPhone = current?.wa_display_phone ?? null;
   if (b.waDisplayPhone !== undefined) {
     waDisplayPhone = b.waDisplayPhone.trim() ? normalizePhone(b.waDisplayPhone, country) : null;
-    if (b.waDisplayPhone.trim() && !waDisplayPhone) throw new InputError("That WhatsApp number doesn't look right. Include the country code, like +237 6 77 12 34 56.");
+    if (b.waDisplayPhone.trim() && !waDisplayPhone) throw new InputError('wa_display_invalid');
   }
   return { name, country, currency, language: language as Lang, timezone, slug, waDisplayPhone };
 }
@@ -95,10 +95,10 @@ export async function setPaymentProvider(
   b: { provider: Provider; secretKey?: string; webhookSecret?: string },
 ) {
   const info = PROVIDER_INFO[b.provider];
-  if (!info) throw new InputError(`Unknown payment provider: ${b.provider}`);
+  if (!info) throw new InputError('provider_unknown', { provider: String(b.provider) });
   if (b.provider !== 'test') {
-    if (!b.secretKey?.trim()) throw new InputError(`Paste your ${info.label.split(' (')[0]} secret key.`);
-    if (info.needsWebhookSecret && !b.webhookSecret?.trim()) throw new InputError(`${info.label.split(' (')[0]} also needs its webhook secret.`);
+    if (!b.secretKey?.trim()) throw new InputError('paste_secret', { provider: info.label.split(' (')[0] });
+    if (info.needsWebhookSecret && !b.webhookSecret?.trim()) throw new InputError('needs_webhook_secret', { provider: info.label.split(' (')[0] });
   }
   const enc = (v?: string) => (v?.trim() ? encryptSecret(v.trim(), ctx.config.appSecret) : null);
   await ctx.db.query(

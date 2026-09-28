@@ -10,7 +10,7 @@ import type { SocialChannel } from '../channels/meta.js';
 import { decryptSecret, encryptSecret } from '../crypto.js';
 import type { Config } from '../config.js';
 import type { Ctx } from './context.js';
-import { InputError } from './errors.js';
+import { InputError, uiLang, type UiLang } from './errors.js';
 
 export const CHANNEL_NAMES: Record<SocialChannel, string> = { instagram: 'Instagram', facebook: 'Messenger' };
 
@@ -32,21 +32,29 @@ function sign(config: Config, payload: object): string {
   const mac = createHmac('sha256', `oauth-state:${config.appSecret}`).update(body).digest('base64url');
   return `${body}.${mac}`;
 }
+/** The app language the seller started a connection in, so the result is shown in it. Only a display hint, so unchecked. */
+export function stateLang(state: string | undefined): UiLang {
+  try {
+    return uiLang(JSON.parse(Buffer.from((state ?? '').split('.')[0], 'base64url').toString()).l);
+  } catch {
+    return 'en';
+  }
+}
 function unsign<T>(config: Config, state: string | undefined): T {
   const [body, mac] = (state ?? '').split('.');
   const expected = createHmac('sha256', `oauth-state:${config.appSecret}`).update(body ?? '').digest();
   const given = Buffer.from(mac ?? '', 'base64url');
-  if (!body || given.length !== expected.length || !timingSafeEqual(given, expected)) throw new InputError('This sign-in link is not valid. Start again from Settings.');
+  if (!body || given.length !== expected.length || !timingSafeEqual(given, expected)) throw new InputError('oauth_invalid');
   const payload = JSON.parse(Buffer.from(body, 'base64url').toString()) as T & { e: number };
-  if (payload.e < Date.now()) throw new InputError('This sign-in took too long. Start again from Settings.');
+  if (payload.e < Date.now()) throw new InputError('oauth_expired');
   return payload;
 }
 
 /** The Instagram or Facebook sign-in page for a shop. */
-export function connectUrl(ctx: Ctx, channel: SocialChannel, sellerId: string): string {
+export function connectUrl(ctx: Ctx, channel: SocialChannel, sellerId: string, lang: UiLang = 'en'): string {
   const { config } = ctx;
-  if (!channelAvailable(config, channel)) throw new InputError(`${CHANNEL_NAMES[channel]} isn't set up on the server yet.`);
-  const state = sign(config, { s: sellerId, c: channel, e: Date.now() + STATE_TTL_MS });
+  if (!channelAvailable(config, channel)) throw new InputError('channel_unavailable', { channel: CHANNEL_NAMES[channel] });
+  const state = sign(config, { s: sellerId, c: channel, e: Date.now() + STATE_TTL_MS, l: lang });
   const q = (o: Record<string, string>) => new URLSearchParams(o).toString();
   if (channel === 'instagram') {
     return `https://www.instagram.com/oauth/authorize?${q({ client_id: config.meta.igAppId, redirect_uri: redirectUri(config, channel), response_type: 'code', scope: IG_SCOPES.join(','), state })}`;
@@ -59,7 +67,7 @@ async function getJson(ctx: Ctx, url: string, init?: RequestInit): Promise<any> 
   const json = (await res.json().catch(() => ({}))) as any;
   if (!res.ok || json.error) {
     const why = json.error?.message ?? json.error_message ?? `HTTP ${res.status}`;
-    throw new InputError(`Meta refused the connection: ${why}`);
+    throw new InputError('meta_refused', { why });
   }
   return json;
 }
@@ -69,7 +77,7 @@ async function saveAccount(
   a: { channel: SocialChannel; externalId: string; name: string | null; username: string | null; token: string; expiresAt: Date | null },
 ) {
   const [other] = await ctx.db.query<{ seller_id: string }>('select seller_id from channel_accounts where channel = $1 and external_id = $2', [a.channel, a.externalId]);
-  if (other && other.seller_id !== sellerId) throw new InputError(`This ${CHANNEL_NAMES[a.channel]} account is already connected to another shop.`);
+  if (other && other.seller_id !== sellerId) throw new InputError('channel_taken', { channel: CHANNEL_NAMES[a.channel] });
   // One account per channel per shop: connecting a new one replaces the old.
   await ctx.db.query('delete from channel_accounts where seller_id = $1 and channel = $2 and external_id <> $3', [sellerId, a.channel, a.externalId]);
   await ctx.db.query(
@@ -121,7 +129,7 @@ export async function completeFacebook(ctx: Ctx, code: string, state: string): P
   const short = await getJson(ctx, `https://graph.facebook.com/${v}/oauth/access_token?${q({ client_id: config.meta.appId, client_secret: config.meta.appSecret, redirect_uri: redirectUri(config, 'facebook'), code })}`);
   const long = await getJson(ctx, `https://graph.facebook.com/${v}/oauth/access_token?${q({ grant_type: 'fb_exchange_token', client_id: config.meta.appId, client_secret: config.meta.appSecret, fb_exchange_token: short.access_token })}`);
   const pages: Page[] = (await getJson(ctx, `https://graph.facebook.com/${v}/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(long.access_token)}`)).data ?? [];
-  if (!pages.length) throw new InputError("This Facebook account doesn't manage any Page. Create a Page for your shop first.");
+  if (!pages.length) throw new InputError('no_pages');
   if (pages.length === 1) {
     await connectPage(ctx, sellerId, pages[0]);
     return { sellerId };
@@ -135,7 +143,7 @@ export async function completeFacebook(ctx: Ctx, code: string, state: string): P
 
 async function pendingPages(ctx: Ctx, pendingId: string, sellerId: string): Promise<Page[]> {
   const [row] = await ctx.db.query<{ pages_enc: string }>('select pages_enc from channel_pending where id = $1 and seller_id = $2 and expires_at > now()', [pendingId, sellerId]);
-  if (!row) throw new InputError('That choice expired. Connect Messenger again from Settings.');
+  if (!row) throw new InputError('page_choice_expired');
   return JSON.parse(decryptSecret(row.pages_enc, ctx.config.appSecret)) as Page[];
 }
 
@@ -146,7 +154,7 @@ export async function listPendingPages(ctx: Ctx, pendingId: string, sellerId: st
 
 export async function choosePendingPage(ctx: Ctx, pendingId: string, sellerId: string, pageId: string) {
   const page = (await pendingPages(ctx, pendingId, sellerId)).find((p) => p.id === pageId);
-  if (!page) throw new InputError('Pick one of the Pages listed.');
+  if (!page) throw new InputError('pick_listed_page');
   await connectPage(ctx, sellerId, page);
   await ctx.db.query('delete from channel_pending where id = $1', [pendingId]);
 }

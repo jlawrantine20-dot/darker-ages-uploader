@@ -275,7 +275,7 @@ describe('restock in hold mode', () => {
   it('refuses a restock with bad input', async () => {
     env = await setup();
     await expect(startRestock(env.ctx, { productId: env.brown, units: 0, mode: 'hold' }, T0)).rejects.toThrow('units');
-    await expect(startRestock(env.ctx, { productId: env.brown, units: 2, mode: 'lottery' as 'hold' }, T0)).rejects.toThrow('mode');
+    await expect(startRestock(env.ctx, { productId: env.brown, units: 2, mode: 'lottery' as 'hold' }, T0)).rejects.toThrow('hold one per unit or open a race');
   });
 });
 

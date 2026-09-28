@@ -126,7 +126,7 @@ describe('HTTP API', () => {
     const { restockId } = await r.json();
     const detail = await (await app.request(`/api/restocks/${restockId}`)).json();
     expect(await (await post(`/dev/pay/${detail.offers[0].payment_ref}`, {})).json()).toEqual({ outcome: 'paid' });
-    expect(await (await post(`/api/products/${env.brown}/restocks`, { units: 0, mode: 'hold' })).json()).toEqual({ error: 'units must be between 1 and 10000' });
+    expect(await (await post(`/api/products/${env.brown}/restocks`, { units: 0, mode: 'hold' })).json()).toEqual({ error: 'Enter between 1 and 10,000 units.' });
   });
 
   it('turns a tapped link into a checkout only while the hold stands', async () => {

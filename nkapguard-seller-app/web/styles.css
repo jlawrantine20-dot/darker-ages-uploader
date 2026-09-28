@@ -166,3 +166,7 @@ details.test .form{padding:0 12px 12px}
 
 .qr{width:180px;max-width:60%;margin:8px 0 12px;background:#fff;border-radius:12px;padding:8px}
 .qr svg{display:block;width:100%;height:auto}
+/* FR / EN switch in the header */
+.langtog{flex:none;display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--surface-2)}
+.langtog button{border:0;background:none;color:var(--muted);font:600 12px/1 var(--body);padding:8px 10px;min-width:38px;cursor:pointer}
+.langtog button[aria-pressed="true"]{background:var(--ink);color:var(--surface)}

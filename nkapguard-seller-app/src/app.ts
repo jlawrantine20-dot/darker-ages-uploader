@@ -10,13 +10,14 @@ import { toMajor, toMinor } from './domain/money.js';
 import { whatsappWindowOpen } from './domain/windows.js';
 import { PROVIDER_INFO } from './payments/providers.js';
 import type { Ctx } from './services/context.js';
-import { InputError } from './services/errors.js';
+import { InputError, render, uiLang } from './services/errors.js';
 import { handleInbound, handleSocialInbound } from './services/inbound.js';
 import { parseMetaWebhook } from './channels/meta.js';
 import { encryptSecret } from './crypto.js';
-import { CHANNEL_NAMES, appBase, channelAvailable, choosePendingPage, completeFacebook, completeInstagram, connectUrl, deleteMetaUser, listPendingPages, parseSignedRequest, refreshInstagramTokens } from './services/channels.js';
+import { CHANNEL_NAMES, appBase, stateLang, channelAvailable, choosePendingPage, completeFacebook, completeInstagram, connectUrl, deleteMetaUser, listPendingPages, parseSignedRequest, refreshInstagramTokens } from './services/channels.js';
 import { dispatch } from './services/outbound.js';
 import { listTemplates, submitTemplates } from './services/templates.js';
+import { fxRates, refreshFx } from './services/fx.js';
 import { baseRef, handlePayment, previewRestock, startRestock, tick } from './services/restock.js';
 import { escapeHtml, page, pageText } from './pages.js';
 import { normalizePhone, phoneCountry } from './domain/phone.js';
@@ -33,16 +34,18 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
   const app = new Hono<{ Variables: { viewer: Viewer } }>();
   const { config, db } = ctx;
 
+  // Errors are written in the language the seller app is set to (X-Lang: fr or en).
   app.onError((err, c) => {
-    if (err instanceof InputError) return c.json({ error: err.message }, 400);
-    if (err instanceof AuthError) return c.json({ error: err.message }, err.message.startsWith('Too many') ? 429 : 400);
-    if (err instanceof ForbiddenError) return c.json({ error: err.message === 'Not found.' ? 'Not found.' : err.message }, err.message === 'Not found.' ? 404 : 403);
+    const lang = uiLang(c.req.header('x-lang'));
+    if (err instanceof InputError) return c.json({ error: err.in(lang) }, 400);
+    if (err instanceof AuthError) return c.json({ error: err.in(lang) }, err.key === 'too_many_codes' ? 429 : 400);
+    if (err instanceof ForbiddenError) return c.json({ error: err.in(lang) }, err.key === 'not_found' ? 404 : 403);
     console.error(err);
-    return c.json({ error: 'Something went wrong on our side.' }, 500);
+    return c.json({ error: render(lang, 'server_error') }, 500);
   });
 
   // The seller app may live on a different host from the API, so allow it to call in.
-  app.use('*', cors({ origin: config.allowedOrigins.includes('*') ? '*' : config.allowedOrigins, allowHeaders: ['Authorization', 'Content-Type'], allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'] }));
+  app.use('*', cors({ origin: config.allowedOrigins.includes('*') ? '*' : config.allowedOrigins, allowHeaders: ['Authorization', 'Content-Type', 'X-Lang'], allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'] }));
 
   app.get('/health', (c) => c.json({ ok: true, dryRun: config.dryRun }));
 
@@ -60,11 +63,13 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
   };
 
   /** Country defaults, languages and payment providers. Public: the sign-in screen needs the country list. */
-  const marketsBody = () => ({
+  const marketsBody = async () => ({
     countries: Object.entries(MARKETS).map(([code, m]) => ({ code, ...m, rates: ratesFor(code) })),
     languages: LANGS,
     providers: PROVIDER_INFO,
     rateGroups: RATE_GROUPS,
+    // For showing Meta's USD fees in each shop's currency.
+    fx: await fxRates(ctx),
   });
 
   // ---- Instagram and Messenger webhook (Meta app: "instagram" and "page" objects) ----
@@ -267,14 +272,14 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
   const scoped = async (c: C) => {
     const id = c.req.query('sellerId') || null;
     if (c.get('viewer').kind === 'admin' && !id) return null;
-    if (!id) throw new InputError('sellerId is required');
+    if (!id) throw new InputError('shop_required');
     await guard(c, id);
     return id;
   };
 
   const sellerOr404 = async (id: string) => {
     const s = await getSeller(db, id);
-    if (!s) throw new InputError('No shop with that id.');
+    if (!s) throw new InputError('no_shop');
     return s;
   };
 
@@ -308,8 +313,8 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     return c.json({ ok: true });
   });
 
-  app.get('/markets', (c) => c.json(marketsBody()));
-  app.get('/api/markets', (c) => c.json(marketsBody()));
+  app.get('/markets', async (c) => c.json(await marketsBody()));
+  app.get('/api/markets', async (c) => c.json(await marketsBody()));
 
 
   app.get('/api/sellers', async (c) => {
@@ -325,7 +330,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
 
   app.post('/api/sellers', async (c) => {
     const b = await c.req.json<{ name: string; waPhoneNumberId: string; country: string; currency?: string; language?: string; timezone?: string }>();
-    if (!b.waPhoneNumberId?.trim()) throw new InputError('Add the WhatsApp phone number id from Meta.');
+    if (!b.waPhoneNumberId?.trim()) throw new InputError('wa_phone_id');
     const v = resolveSellerInput(b);
     const viewer = c.get('viewer');
     const row = await db.tx(async (q) => {
@@ -352,7 +357,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
       if (v.currency !== current.currency) {
         const [{ n }] = await q.query<{ n: number }>('select count(*)::int as n from products where seller_id = $1', [current.id]);
         const rate = Number(b.rate);
-        if (n > 0 && !(rate > 0)) throw new InputError(`Enter how many ${v.currency} make 1 ${current.currency}, so your prices can be converted.`);
+        if (n > 0 && !(rate > 0)) throw new InputError('rate_needed', { to: v.currency, from: current.currency });
         if (n > 0) {
           const products = await q.query<{ id: string; price_minor: number }>('select id, price_minor from products where seller_id = $1', [current.id]);
           for (const p of products) {
@@ -362,7 +367,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
       }
       if (v.slug && v.slug !== current.slug) {
         const [taken] = await q.query('select 1 from sellers where slug = $1 and id <> $2', [v.slug, current.id]);
-        if (taken) throw new InputError(`The link "${v.slug}" is taken. Try another.`);
+        if (taken) throw new InputError('slug_taken', { slug: String(v.slug) });
       }
       const [s] = await q.query<Seller>(
         `update sellers set name = $2, country = $3, currency = $4, language = $5, timezone = $6, slug = $7, wa_display_phone = $8
@@ -383,7 +388,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
 
   app.post('/api/products', async (c) => {
     const b = await c.req.json<{ sellerId: string; name: string; variant?: string; aliases?: string[]; price: number; stock?: number }>();
-    if (!b.sellerId || !b.name?.trim() || !(b.price >= 0)) throw new InputError('sellerId, name and price are required');
+    if (!b.sellerId || !b.name?.trim() || !(b.price >= 0)) throw new InputError('product_required');
     await guard(c, b.sellerId);
     const s = await sellerOr404(b.sellerId);
     const [row] = await db.query(
@@ -425,8 +430,8 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
   app.patch('/api/products/:id', async (c) => {
     await guardOf(c, 'product', c.req.param('id'));
     const b = await c.req.json<{ stock?: number; price?: number; aliases?: string[]; name?: string; variant?: string }>();
-    if (b.stock !== undefined && !(Number.isInteger(b.stock) && b.stock >= 0)) throw new InputError('stock must be a whole number, 0 or more');
-    if (b.price !== undefined && !(b.price >= 0)) throw new InputError('price must be 0 or more');
+    if (b.stock !== undefined && !(Number.isInteger(b.stock) && b.stock >= 0)) throw new InputError('stock_whole');
+    if (b.price !== undefined && !(b.price >= 0)) throw new InputError('price_min');
     const [owner] = await db.query<{ currency: string }>(
       'select s.currency from products p join sellers s on s.id = p.seller_id where p.id = $1',
       [c.req.param('id')],
@@ -485,9 +490,9 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
       `select c.id, c.name, c.username, c.wa_id, c.channel, c.last_inbound_at, m.body as last_body, m.direction as last_direction, m.created_at as last_at,
               (select count(*)::int from messages x where x.contact_id = c.id and x.direction = 'in'
                  and x.created_at > coalesce(c.seller_read_at, 'epoch'::timestamptz)) as unread,
-              coalesce((select array_agg(trim(p.name || ' ' || p.variant) order by i.created_at, i.seq)
+              coalesce((select json_agg(json_build_object('name', p.name, 'variant', p.variant) order by i.created_at, i.seq)
                           from interests i join products p on p.id = i.product_id
-                         where i.contact_id = c.id and i.status = 'waiting'), '{}') as waiting_for,
+                         where i.contact_id = c.id and i.status = 'waiting'), '[]'::json) as waiting_for,
               (c.awaiting_consent_product_id is not null) as awaiting_consent
          from contacts c
          left join lateral (select body, direction, created_at from messages where contact_id = c.id order by created_at desc, seq desc limit 1) m on true
@@ -521,7 +526,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
   app.post('/api/chats/:id/reply', async (c) => {
     await guardOf(c, 'chat', c.req.param('id'));
     const { body } = await c.req.json<{ body: string }>();
-    if (!body?.trim()) throw new InputError('Type a message first.');
+    if (!body?.trim()) throw new InputError('type_message');
     const [row] = await db.query<{
       id: string; seller_id: string; wa_id: string; channel: 'whatsapp' | 'instagram' | 'facebook'; channel_account_id: string | null;
       last_inbound_at: Date | null; wa_phone_number_id: string; country: string; language: string;
@@ -532,7 +537,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     if (!row) return c.json({ error: 'No chat with that id.' }, 404);
     const app_ = row.channel === 'instagram' ? 'Instagram' : row.channel === 'facebook' ? 'Messenger' : 'WhatsApp';
     const limit = row.channel === 'instagram' ? 1000 : row.channel === 'facebook' ? 2000 : 4096;
-    if (body.length > limit) throw new InputError(`${app_} messages can be at most ${limit} characters.`);
+    if (body.length > limit) throw new InputError('message_too_long', { app: app_, limit });
     const now = clock();
     if (!whatsappWindowOpen(row.last_inbound_at, now)) {
       return c.json({
@@ -608,13 +613,15 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     const sent = (await tick(ctx, now)).length;
     // Once an hour is plenty for tokens that last 60 days.
     const refreshed = now.getUTCMinutes() === 0 ? await refreshInstagramTokens(ctx, now) : 0;
+    // Exchange rates for showing fees in local money; refreshFx only fetches twice a day.
+    await refreshFx(ctx, now);
     return c.json({ sent, refreshed });
   });
 
   // ---- Optional channels: Instagram and Messenger, connected per shop ----
   const channelOwner = async (c: C, id: string) => {
     const [row] = await db.query<{ seller_id: string }>('select seller_id from channel_accounts where id = $1', [id]);
-    if (!row) throw new ForbiddenError('Not found.');
+    if (!row) throw new ForbiddenError('not_found');
     await guard(c, row.seller_id, 'owner');
     return row.seller_id;
   };
@@ -634,10 +641,10 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
 
   app.post('/api/channels/:channel/connect', async (c) => {
     const channel = c.req.param('channel');
-    if (channel !== 'instagram' && channel !== 'facebook') throw new InputError('channel must be instagram or facebook');
+    if (channel !== 'instagram' && channel !== 'facebook') throw new InputError('channel_param');
     const { sellerId } = await c.req.json<{ sellerId: string }>();
     await guard(c, sellerId, 'owner');
-    return c.json({ url: connectUrl(ctx, channel, sellerId) });
+    return c.json({ url: connectUrl(ctx, channel, sellerId, uiLang(c.req.header('x-lang'))) });
   });
 
   app.patch('/api/channels/:id', async (c) => {
@@ -697,7 +704,9 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     const channel = c.req.param('channel');
     if (channel !== 'instagram' && channel !== 'facebook') return c.notFound();
     const { code, state, error_description: why } = c.req.query();
-    if (!code) return backToSettings(c, { channel_error: why || `${CHANNEL_NAMES[channel]} was not connected.` });
+    const lang = stateLang(state);
+    const failed = render(lang, 'channel_not_connected', { channel: CHANNEL_NAMES[channel] });
+    if (!code) return backToSettings(c, { channel_error: why ? `${failed} (${why})` : failed });
     try {
       if (channel === 'instagram') {
         await completeInstagram(ctx, code, state);
@@ -707,14 +716,14 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
       return backToSettings(c, r.pendingId ? { pick_page: r.pendingId } : { connected: channel });
     } catch (err) {
       console.error(err);
-      return backToSettings(c, { channel_error: err instanceof InputError ? err.message : `${CHANNEL_NAMES[channel]} was not connected. Try again.` });
+      return backToSettings(c, { channel_error: err instanceof InputError ? err.in(lang) : failed });
     }
   });
 
   // ---- Operator: submit the WhatsApp templates to Meta and see their review status ----
   const wabaOf = (c: Context) => {
     const id = c.req.query('wabaId') ?? '';
-    if (!/^\d{5,20}$/.test(id)) throw new InputError('Pass ?wabaId=, the WhatsApp Business Account id from API Setup.');
+    if (!/^\d{5,20}$/.test(id)) throw new InputError('waba_param');
     return id;
   };
   app.get('/api/admin/templates', async (c) => {
@@ -737,11 +746,11 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
       const b = await c.req.json<{ sellerId: string; from: string; name?: string; text: string; channel?: 'whatsapp' | 'instagram' | 'facebook'; comment?: boolean }>();
       await guard(c, b.sellerId);
       const seller = (await getSeller(db, b.sellerId))!;
-      if (!b.from || !b.text) throw new InputError('from and text are required');
+      if (!b.from || !b.text) throw new InputError('from_text_required');
       if (b.channel && b.channel !== 'whatsapp') {
         // Pretend to be an Instagram or Messenger customer of the shop's connected account.
         const [account] = await db.query<{ external_id: string }>('select external_id from channel_accounts where seller_id = $1 and channel = $2', [seller.id, b.channel]);
-        if (!account) throw new InputError(`Connect ${b.channel === 'instagram' ? 'Instagram' : 'Messenger'} in Settings first.`);
+        if (!account) throw new InputError('connect_first', { channel: b.channel === 'instagram' ? 'Instagram' : 'Messenger' });
         const at = clock();
         const r = await handleSocialInbound(ctx, {
           channel: b.channel, accountId: account.external_id, from: b.from.trim().replace(/^@/, ''), username: b.from.trim().replace(/^@/, ''), name: b.name,
@@ -750,7 +759,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
         return c.json({ action: r.action });
       }
       const from = normalizePhone(b.from, seller.country);
-      if (!from) throw new InputError(`That doesn't look like a valid phone number for ${seller.country}.`);
+      if (!from) throw new InputError('phone_for_country', { country: seller.country });
       const r = await handleInbound(ctx, { phoneNumberId: seller.wa_phone_number_id, from, name: b.name, text: b.text, providerId: `dev-${Date.now()}`, at: clock() });
       return c.json({ action: r.action });
     });
@@ -759,7 +768,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     app.post('/dev/channels', async (c) => {
       const { sellerId, channel } = await c.req.json<{ sellerId: string; channel: 'instagram' | 'facebook' }>();
       await guard(c, sellerId, 'owner');
-      if (channel !== 'instagram' && channel !== 'facebook') throw new InputError('channel must be instagram or facebook');
+      if (channel !== 'instagram' && channel !== 'facebook') throw new InputError('channel_param');
       const seller = (await getSeller(db, sellerId))!;
       await db.query('delete from channel_accounts where seller_id = $1 and channel = $2', [sellerId, channel]);
       await db.query(

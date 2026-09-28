@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto
 import type { Q } from '../db.js';
 import { normalizePhone } from '../domain/phone.js';
 import type { Ctx } from './context.js';
-import { InputError } from './errors.js';
+import { AppError, InputError } from './errors.js';
 
 export const CODE_TTL_MS = 10 * 60_000;
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60_000;
@@ -13,7 +13,7 @@ export const MAX_ATTEMPTS = 5;
 
 const sha256 = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
 
-export class AuthError extends Error {}
+export class AuthError extends AppError {}
 
 /** Who is calling the API: the operator (admin token) or a signed-in person. */
 export type Viewer = { kind: 'admin' } | { kind: 'user'; userId: string };
@@ -22,7 +22,7 @@ export type Role = 'owner' | 'staff';
 
 function phoneOrThrow(phone: string, country: string): string {
   const waId = normalizePhone(phone ?? '', country ?? '');
-  if (!waId) throw new InputError('Enter your WhatsApp number, with the country code if it is not a local number.');
+  if (!waId) throw new InputError('phone_invalid');
   return waId;
 }
 
@@ -36,7 +36,7 @@ export async function startLogin(ctx: Ctx, phone: string, country: string, now: 
     'select count(*)::int as n from login_codes where wa_id = $1 and created_at > $2',
     [waId, new Date(now.getTime() - 60 * 60_000)],
   );
-  if (n >= MAX_CODES_PER_HOUR) throw new AuthError('Too many codes requested for this number. Try again in an hour.');
+  if (n >= MAX_CODES_PER_HOUR) throw new AuthError('too_many_codes');
   const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
   await ctx.db.query(
     'insert into login_codes (wa_id, code_hash, created_at, expires_at) values ($1, $2, $3, $4)',
@@ -75,7 +75,7 @@ export async function verifyLogin(ctx: Ctx, phone: string, country: string, code
     ]);
     return { token, user };
   });
-  if (!result) throw new AuthError('That code is wrong or has expired. Request a new one.');
+  if (!result) throw new AuthError('code_wrong');
   return result;
 }
 
@@ -104,7 +104,7 @@ export async function roleIn(q: Q, viewer: Viewer, sellerId: string): Promise<Ro
   return m?.role ?? null;
 }
 
-export class ForbiddenError extends Error {}
+export class ForbiddenError extends AppError {}
 
 /**
  * Throw unless the viewer may act in this shop. Missing shops and shops the viewer is not
@@ -112,8 +112,8 @@ export class ForbiddenError extends Error {}
  */
 export async function requireRole(q: Q, viewer: Viewer, sellerId: string | null | undefined, need: Role = 'staff'): Promise<Role> {
   const role = sellerId ? await roleIn(q, viewer, sellerId) : null;
-  if (!role) throw new ForbiddenError('Not found.');
-  if (need === 'owner' && role !== 'owner') throw new ForbiddenError('Only the shop owner can do this.');
+  if (!role) throw new ForbiddenError('not_found');
+  if (need === 'owner' && role !== 'owner') throw new ForbiddenError('owner_only');
   return role;
 }
 
@@ -129,7 +129,7 @@ export async function shopOf(q: Q, kind: 'product' | 'restock' | 'chat', id: str
 }
 
 export async function addMember(q: Q, sellerId: string, phone: string, country: string, role: Role) {
-  if (role !== 'owner' && role !== 'staff') throw new InputError("role must be 'owner' or 'staff'");
+  if (role !== 'owner' && role !== 'staff') throw new InputError('role_invalid');
   const waId = phoneOrThrow(phone, country);
   const [user] = await q.query<{ id: string }>(
     `insert into users (wa_id) values ($1) on conflict (wa_id) do update set wa_id = excluded.wa_id returning id`,
@@ -144,6 +144,6 @@ export async function addMember(q: Q, sellerId: string, phone: string, country: 
 
 export async function removeMember(q: Q, sellerId: string, userId: string) {
   const owners = await q.query<{ user_id: string }>(`select user_id from shop_members where seller_id = $1 and role = 'owner'`, [sellerId]);
-  if (owners.length === 1 && owners[0].user_id === userId) throw new InputError('A shop needs at least one owner. Make someone else owner first.');
+  if (owners.length === 1 && owners[0].user_id === userId) throw new InputError('last_owner');
   await q.query('delete from shop_members where seller_id = $1 and user_id = $2', [sellerId, userId]);
 }
