@@ -28,6 +28,8 @@ export interface Config {
   meta: { appId: string; appSecret: string; igAppId: string; igAppSecret: string; graphVersion: string };
   /** NKAPGUARD's own WhatsApp number, which sends sign-in codes to sellers. */
   platform: { phoneNumberId: string; loginTemplate: string; loginTemplateLanguage: string };
+  /** Web Push (VAPID) keys for notifications on sellers' phones. Empty turns notifications off. */
+  push: { publicKey: string; privateKey: string; subject: string };
   /** Where the seller app is hosted, when it is not on the API's own host. Customer pages are drawn there. */
   appUrl: string;
   /** Origins allowed to call the API from a browser. */
@@ -64,6 +66,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
         refund: env.WA_TEMPLATE_REFUND ?? 'payment_refund_v1',
       },
     },
+    push: { publicKey: env.VAPID_PUBLIC_KEY ?? '', privateKey: env.VAPID_PRIVATE_KEY ?? '', subject: env.VAPID_SUBJECT ?? 'mailto:support@nkapguard.com' },
     appUrl: env.APP_URL ?? '',
     allowedOrigins: (env.ALLOWED_ORIGINS ?? '*').split(',').map((o) => o.trim()).filter(Boolean),
     openTestMode: dryRun && env.OPEN_TEST_MODE !== 'false',

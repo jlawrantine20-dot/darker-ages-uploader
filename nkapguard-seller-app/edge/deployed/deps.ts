@@ -34,5 +34,8 @@ const esm = (ns: Record<string, unknown>) => ({ ...ns });
     META_APP_ID: '1391270936503479',
     // Operator key, required once DRY_RUN=false.
     ADMIN_TOKEN: '<set at deploy time; never committed>',
+    // Web Push keys for notifications on sellers' phones (scripts/vapid-keys.ts).
+    VAPID_PUBLIC_KEY: '<set at deploy time>',
+    VAPID_PRIVATE_KEY: '<set at deploy time; never committed>',
   },
 };

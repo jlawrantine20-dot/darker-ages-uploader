@@ -18,6 +18,8 @@ import { CHANNEL_NAMES, appBase, stateLang, channelAvailable, choosePendingPage,
 import { dispatch } from './services/outbound.js';
 import { listTemplates, submitTemplates } from './services/templates.js';
 import { fxRates, refreshFx } from './services/fx.js';
+import { pushEnabled, removeSubscription, saveSubscription } from './services/push.js';
+import { sendWebPush } from './channels/webpush.js';
 import { HELD_BY_ORDERS_SQL, cancelOrder, expireOrders, handleOrderPayment, isOrderRef, markOrderPaid, orderForCheckout } from './services/orders.js';
 import { baseRef, handlePayment, previewRestock, startRestock, tick } from './services/restock.js';
 import { escapeHtml, page, pageText } from './pages.js';
@@ -608,6 +610,47 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
       [sellerId],
     );
     return c.json(rows);
+  });
+
+  // ---- Notifications on the seller's phone (Web Push) ----
+  app.get('/api/push', async (c) => {
+    const v = c.get('viewer');
+    const endpoint = c.req.query('endpoint');
+    const [row] = v.kind === 'user' && endpoint ? await db.query('select 1 from push_subscriptions where user_id = $1 and endpoint = $2', [v.userId, endpoint]) : [];
+    return c.json({ available: pushEnabled(ctx), publicKey: config.push.publicKey || null, subscribed: !!row });
+  });
+  app.post('/api/push', async (c) => {
+    const v = c.get('viewer');
+    if (v.kind !== 'user') throw new ForbiddenError('not_found');
+    const b = await c.req.json<{ endpoint?: string; keys?: { p256dh?: string; auth?: string } }>();
+    if (!b.endpoint?.startsWith('https://') || !b.keys?.p256dh || !b.keys?.auth) throw new InputError('push_invalid');
+    await saveSubscription(ctx, v.userId, { endpoint: b.endpoint, p256dh: b.keys.p256dh, auth: b.keys.auth }, uiLang(c.req.header('x-lang')));
+    return c.json({ ok: true });
+  });
+  // A test notification to the signed-in person's phones, so they can see it works.
+  app.post('/api/push/test', async (c) => {
+    const v = c.get('viewer');
+    if (v.kind !== 'user') throw new ForbiddenError('not_found');
+    const subs = await db.query<{ endpoint: string; p256dh: string; auth: string; lang: 'en' | 'fr' }>('select endpoint, p256dh, auth, lang from push_subscriptions where user_id = $1', [v.userId]);
+    let sent = 0;
+    for (const sub of subs) {
+      const fr = sub.lang === 'fr';
+      const status = await sendWebPush(sub, {
+        title: fr ? 'Les notifications fonctionnent' : 'Notifications are working',
+        body: fr ? "Les nouveaux messages, commandes et paiements s'afficheront ici." : "New messages, orders and payments will show up here.",
+        url: '#/settings', tag: 'test',
+      }, config.push, ctx.fetch ?? fetch).catch(() => 0);
+      if (status === 404 || status === 410) await removeSubscription(ctx, v.userId, sub.endpoint);
+      else if (status > 0 && status < 300) sent++;
+    }
+    return c.json({ sent });
+  });
+  app.delete('/api/push', async (c) => {
+    const v = c.get('viewer');
+    if (v.kind !== 'user') throw new ForbiddenError('not_found');
+    const b = await c.req.json<{ endpoint?: string }>();
+    if (b.endpoint) await removeSubscription(ctx, v.userId, b.endpoint);
+    return c.json({ ok: true });
   });
 
   // ---- Chat orders: what customers ordered, what's paid, what's waiting for payment ----

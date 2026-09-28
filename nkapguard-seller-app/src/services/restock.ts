@@ -7,6 +7,7 @@ import { InputError } from './errors.js';
 import { freeStock } from './inbound.js';
 import { handleOrderPayment, isOrderRef } from './orders.js';
 import { dispatch, messageCost } from './outbound.js';
+import { notifyShop, paymentNotice } from './push.js';
 import { fmt, type Seller } from './sellers.js';
 
 export { InputError } from './errors.js';
@@ -289,6 +290,7 @@ export async function handlePayment(ctx: Ctx, rawEvent: PaymentEvent, now: Date)
       await q.query(`update offers set status = 'missed', refund_due = true where id = $1`, [offer.id]);
       return {
         outcome: 'refund_due' as const,
+        notice: { seller, product, who: offer.name ?? `+${offer.wa_id}` },
         outs: [{
           ...to, kind: 'text' as const, body: say(to.language, 'refund', { product }, f),
           fallback: { template: 'refund' as const, category: 'utility' as const, params: slots(to.language, 'refund', { product }, f), preview: say(to.language, 'refund', { product }, f) },
@@ -317,7 +319,12 @@ export async function handlePayment(ctx: Ctx, rawEvent: PaymentEvent, now: Date)
         outs.push({ ...recipient(seller, l), kind: 'template', template: 'soldOut', category: 'utility', params: slots(langOf(seller, l), 'soldOut', facts, f), preview: say(langOf(seller, l), 'soldOut', facts, f) });
       }
     }
-    return { outcome: 'paid' as const, outs };
+    return { outcome: 'paid' as const, outs, notice: { seller, product, who: offer.name ?? `+${offer.wa_id}` } };
   });
-  return { outcome: res.outcome, sent: await dispatch(ctx, res.outs, now) };
+  const sent = await dispatch(ctx, res.outs, now);
+  if ('notice' in res && res.notice) {
+    const { seller, product, who } = res.notice;
+    await notifyShop(ctx, seller.id, paymentNotice(who, product, 1, { minor: Number(product.price_minor), currency: seller.currency, country: seller.country }, res.outcome === 'refund_due'));
+  }
+  return { outcome: res.outcome, sent };
 }

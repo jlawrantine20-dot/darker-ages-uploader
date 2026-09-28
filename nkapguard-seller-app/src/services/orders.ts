@@ -11,6 +11,7 @@ import type { PaymentEvent } from '../payments/providers.js';
 import type { Ctx, DispatchResult, Outbound, Recipient } from './context.js';
 import { InputError } from './errors.js';
 import { dispatch } from './outbound.js';
+import { notifyShop, paymentNotice } from './push.js';
 import { fmt, type Seller } from './sellers.js';
 
 /** How long an order keeps its units aside while the customer pays. */
@@ -137,9 +138,15 @@ export async function handleOrderPayment(ctx: Ctx, event: PaymentEvent, now: Dat
     if (event.amountMinor < Number(c.order.amount_minor) || (event.currency && event.currency.toUpperCase() !== c.seller.currency)) {
       return { outcome: 'underpaid' as const, outs: [] };
     }
-    return settle(q, c, 'online', now);
+    return { ...(await settle(q, c, 'online', now)), c };
   });
-  return { outcome: res.outcome, sent: await dispatch(ctx, res.outs, now) };
+  const sent = await dispatch(ctx, res.outs, now);
+  if ('c' in res && res.c) {
+    const { c } = res;
+    const who = c.contact.name ?? `+${c.contact.wa_id}`;
+    await notifyShop(ctx, c.seller.id, paymentNotice(who, c.product, c.order.quantity, { minor: Number(c.order.amount_minor), currency: c.seller.currency, country: c.seller.country }, res.outcome === 'refund_due'));
+  }
+  return { outcome: res.outcome, sent };
 }
 
 /** The seller got the money another way (cash, a transfer to their own number) and marks it paid. */

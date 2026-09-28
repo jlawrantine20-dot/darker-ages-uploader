@@ -241,6 +241,17 @@ create index if not exists orders_contact on seller_app.orders (contact_id, crea
 alter table seller_app.contacts add column if not exists awaiting_order_product_id uuid references seller_app.products(id) on delete set null;
 alter table seller_app.contacts add column if not exists awaiting_order_at timestamptz;
 
+create table if not exists seller_app.push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references seller_app.users(id) on delete cascade,
+  endpoint text not null unique,
+  p256dh text not null,
+  auth text not null,
+  lang text not null default 'en' check (lang in ('en', 'fr')),
+  created_at timestamptz not null default now()
+);
+create index if not exists push_subscriptions_user on seller_app.push_subscriptions (user_id);
+
 -- Defence in depth: row-level security on, with no policies, so even if the schema were
 -- exposed later, the anon and authenticated roles would see nothing.
 do $$

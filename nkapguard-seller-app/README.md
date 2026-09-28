@@ -110,6 +110,12 @@ India and Brazil. Any other country works once you enter its currency and time z
   - Insights: sales from chat orders and from alerts, fees in the shop's currency, what to
     reorder, refunds due, and the consent log.
   - Settings for the shop and for payments.
+  - Installable on the phone's home screen (it opens full screen, like any app), with
+    notifications for new messages, new orders and payments, even when it's closed. Each
+    phone turns them on in Settings and gets them in its own app language. On iPhone, the
+    app must be installed first (iOS 16.4 or later).
+    Set `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` (make them with
+    `npx tsx scripts/vapid-keys.ts`) to turn notifications on.
 - **Test mode (the default):** nothing is sent and payments are simulated. The app can load
   a sample shop in the country you pick, and lets you message the shop as a customer.
 

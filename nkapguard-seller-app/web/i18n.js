@@ -198,6 +198,19 @@ const EN = {
   'ins.chatSales': 'Sales from chat orders', 'ins.chatOrders': 'Chat orders paid',
   'out.ordered': 'NKAPGUARD sent a payment link', 'out.ordered_manual': 'Order noted: you arrange the payment',
   'out.order_again': 'NKAPGUARD sent the payment link again', 'out.asked_quantity': 'NKAPGUARD asked how many',
+  // This phone: install and notifications
+  'dev.title': 'On this phone', 'dev.install': 'Install the app',
+  'dev.installWhat': 'Opens full screen from your home screen, like any other app.', 'dev.installed': 'Installed',
+  'dev.installIos': 'In Safari, tap Share, then “Add to Home Screen”.',
+  'dev.installOther': "Open your browser's menu and choose “Install app” or “Add to Home screen”.",
+  'dev.notif': 'Notifications', 'dev.notifWhat': 'New messages, new orders and payments, even when the app is closed.',
+  'dev.notifOn': 'On', 'dev.notifOff': 'Off', 'dev.turnOn': 'Turn on', 'dev.turnOff': 'Turn off', 'dev.test': 'Send a test',
+  'dev.blocked': 'Notifications are blocked for this site. Allow them in your browser settings, then come back here.',
+  'dev.unsupported': "This browser can't show notifications.",
+  'dev.iosFirst': 'On iPhone, install the app first (see above), then open it from your home screen to turn on notifications.',
+  'dev.notReady': "Notifications aren't set up on the server yet.",
+  'dev.enabled': 'Notifications turned on', 'dev.disabled': 'Notifications turned off', 'dev.testSent': 'Test sent. It should appear in a few seconds.',
+  'dev.adminOnly': 'Sign in with your WhatsApp number to get notifications on this phone.',
 };
 
 const FR = {
@@ -382,6 +395,18 @@ const FR = {
   'ins.chatSales': 'Ventes des commandes', 'ins.chatOrders': 'Commandes payées',
   'out.ordered': 'NKAPGUARD a envoyé un lien de paiement', 'out.ordered_manual': 'Commande notée : vous gérez le paiement',
   'out.order_again': 'NKAPGUARD a renvoyé le lien de paiement', 'out.asked_quantity': 'NKAPGUARD a demandé la quantité',
+  'dev.title': 'Sur ce téléphone', 'dev.install': "Installer l'application",
+  'dev.installWhat': "Elle s'ouvre en plein écran depuis votre écran d'accueil, comme une vraie application.", 'dev.installed': 'Installée',
+  'dev.installIos': "Dans Safari, touchez Partager, puis « Sur l'écran d'accueil ».",
+  'dev.installOther': "Ouvrez le menu du navigateur et choisissez « Installer l'application » ou « Ajouter à l'écran d'accueil ».",
+  'dev.notif': 'Notifications', 'dev.notifWhat': "Nouveaux messages, nouvelles commandes et paiements, même quand l'application est fermée.",
+  'dev.notifOn': 'Activées', 'dev.notifOff': 'Désactivées', 'dev.turnOn': 'Activer', 'dev.turnOff': 'Désactiver', 'dev.test': 'Envoyer un essai',
+  'dev.blocked': 'Les notifications sont bloquées pour ce site. Autorisez-les dans les réglages du navigateur, puis revenez ici.',
+  'dev.unsupported': 'Ce navigateur ne peut pas afficher de notifications.',
+  'dev.iosFirst': "Sur iPhone, installez d'abord l'application (voir ci-dessus), puis ouvrez-la depuis l'écran d'accueil pour activer les notifications.",
+  'dev.notReady': 'Les notifications ne sont pas encore configurées sur le serveur.',
+  'dev.enabled': 'Notifications activées', 'dev.disabled': 'Notifications désactivées', 'dev.testSent': 'Essai envoyé. Il devrait apparaître dans quelques secondes.',
+  'dev.adminOnly': 'Connectez-vous avec votre numéro WhatsApp pour recevoir les notifications sur ce téléphone.',
 };
 
 export const DICTS = { en: EN, fr: FR };

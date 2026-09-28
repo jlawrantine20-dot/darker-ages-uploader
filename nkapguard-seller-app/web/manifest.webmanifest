@@ -1,0 +1,16 @@
+{
+  "name": "NKAPGUARD Seller App",
+  "short_name": "NKAPGUARD",
+  "description": "Discussions, commandes et stock de votre boutique. Chats, orders and stock for your shop.",
+  "start_url": "./#/chats",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#E9EEEB",
+  "theme_color": "#0B6B55",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

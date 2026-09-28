@@ -517,6 +517,7 @@ views.settings = async () => {
   main.innerHTML = `
     ${S.dryRun ? `<div class="banner">${t('set.testBanner')}</div>` : ''}
     ${owner ? '' : `<div class="banner">${t('set.staffBanner')}</div>`}
+    ${await deviceSection()}
     ${shopPage(s, owner)}
     <div class="sect"${owner ? '' : ' hidden'}>${t('set.getPaid')}</div>
     <form class="form" data-form="payments" style="padding-top:4px"${owner ? '' : ' hidden'}>
@@ -547,6 +548,69 @@ views.settings = async () => {
     <div class="line"><span class="pos"><span class="ch tiktok" style="padding:4px"><i></i></span></span><span>TikTok<span class="q">${t('ch.tiktok')}</span></span>${s.slug ? `<button class="btn sm" data-act="copy-shop">${t('ch.copyLink')}</button>` : '<span></span>'}</div>
     <div class="pad btns" style="margin:0"><a class="btn" href="#/setup">${t('set.switchShop')}</a><button class="btn danger" data-act="signout">${t('set.signOut')}</button></div>`;
 };
+// ---------- this phone: install and notifications ----------
+const standalone = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const swReady = () => (navigator.serviceWorker ? Promise.race([navigator.serviceWorker.ready, new Promise((r) => setTimeout(() => r(null), 3000))]) : Promise.resolve(null));
+async function currentSub() {
+  const reg = await swReady();
+  return reg ? reg.pushManager.getSubscription() : null;
+}
+function urlKey(b64) {
+  const pad = '='.repeat((4 - (b64.length % 4)) % 4);
+  const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+}
+async function deviceSection() {
+  const install = standalone()
+    ? `<span class="pill paid">${t('dev.installed')}</span>`
+    : S.installPrompt ? `<button class="btn sm" data-act="install">${t('dev.install')}</button>` : '<span></span>';
+  const installHint = standalone() || S.installPrompt ? '' : ` ${isIos() ? t('dev.installIos') : t('dev.installOther')}`;
+  let notif = '';
+  let action = '<span></span>';
+  const me = await api('/api/me').catch(() => ({}));
+  if (me.admin) notif = t('dev.adminOnly');
+  else if (!pushSupported()) notif = isIos() && !standalone() ? t('dev.iosFirst') : t('dev.unsupported');
+  else if (Notification.permission === 'denied') notif = t('dev.blocked');
+  else {
+    const sub = await currentSub();
+    const st = await api(`/api/push${sub ? `?endpoint=${encodeURIComponent(sub.endpoint)}` : ''}`).catch(() => ({ available: false }));
+    if (!st.available) notif = t('dev.notReady');
+    else if (st.subscribed) {
+      notif = `${t('dev.notifWhat')}`;
+      action = `<span class="pill paid">${t('dev.notifOn')}</span>`;
+      S.pushOn = true;
+    } else {
+      notif = t('dev.notifWhat');
+      action = `<button class="btn sm" data-act="push-on">${t('dev.turnOn')}</button>`;
+      S.pushOn = false;
+    }
+    S.pushKey = st.publicKey;
+  }
+  return `<div class="sect">${t('dev.title')}</div>
+    <div class="line"><span class="pos">⤓</span><span>${t('dev.install')}<span class="q">${t('dev.installWhat')}${installHint}</span></span>${install}</div>
+    <div class="line"><span class="pos">🔔</span><span>${t('dev.notif')}<span class="q">${notif}</span></span>${action}</div>
+    ${S.pushOn ? `<div class="pad btns" style="margin:0;padding-top:0"><button class="btn sm" data-act="push-test">${t('dev.test')}</button><button class="btn sm" data-act="push-off">${t('dev.turnOff')}</button></div>` : ''}`;
+}
+async function pushOn() {
+  if ((await Notification.requestPermission()) !== 'granted') { toast(t('dev.blocked')); return; }
+  const reg = await swReady();
+  if (!reg) { toast(t('dev.unsupported')); return; }
+  const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlKey(S.pushKey) }));
+  await api('/api/push', { method: 'POST', body: sub.toJSON() });
+  toast(t('dev.enabled'));
+}
+async function pushOff() {
+  const sub = await currentSub();
+  if (sub) {
+    await api('/api/push', { method: 'DELETE', body: { endpoint: sub.endpoint } }).catch(() => {});
+    await sub.unsubscribe().catch(() => {});
+  }
+  S.pushOn = false;
+  toast(t('dev.disabled'));
+}
+
 /** One optional channel in Settings: connect it, or pause, turn comment replies on or off, and disconnect. */
 function channelCard(ch, channels, s, owner) {
   const a = channels.accounts.find((x) => x.channel === ch);
@@ -652,6 +716,8 @@ document.addEventListener('click', (e) => {
   if (!b || b.dataset.lang === lang()) return;
   setLang(b.dataset.lang);
   route(true);
+  // Notifications on this phone switch language too.
+  if (S.pushOn) currentSub().then((sub) => sub && api('/api/push', { method: 'POST', body: sub.toJSON() })).catch(() => {});
 });
 
 document.addEventListener('click', async (e) => {
@@ -747,6 +813,15 @@ document.addEventListener('click', async (e) => {
       a.click();
       return;
     }
+    if (act === 'install') {
+      const p = S.installPrompt;
+      S.installPrompt = null;
+      if (p) { await p.prompt(); await p.userChoice.catch(() => null); }
+      return route(true);
+    }
+    if (act === 'push-on') { el.disabled = true; await pushOn(); return route(true); }
+    if (act === 'push-off') { await pushOff(); return route(true); }
+    if (act === 'push-test') { await api('/api/push/test', { method: 'POST' }); toast(t('dev.testSent')); return; }
     if (act === 'tick') { await api('/api/tick', { method: 'POST' }); toast(t('rs.checked')); return route(true); }
     if (act === 'signout') {
       try { await api('/auth/logout', { method: 'POST' }); } catch { /* already signed out */ }
@@ -893,6 +968,20 @@ async function loadDemo() {
 }
 
 // ---------- start ----------
+// The background worker shows notifications and keeps the app's files for quick opening.
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  S.installPrompt = e;
+  if (location.hash === '#/settings') route(true);
+});
+/** Open a chat or Orders from a notification, switching shop first if it came from another one. */
+function openFrom(url, shop) {
+  if (shop && shop !== sellerId()) { set('nkg.seller', shop); setSeller(null); }
+  if (url) location.hash = url.replace(/^#/, '');
+  route();
+}
+navigator.serviceWorker?.addEventListener('message', (e) => { if (e.data?.type === 'open') openFrom(e.data.url, e.data.sellerId); });
 try { S.dryRun = (await api('/health')).dryRun; } catch { /* server down: views will show the error */ }
 // Coming back from Instagram or Facebook sign-in: say what happened, then tidy the address.
 {
@@ -900,6 +989,7 @@ try { S.dryRun = (await api('/health')).dryRun; } catch { /* server down: views 
   if (q.get('connected')) setTimeout(() => toast(t('ch.connected', { app: chName[q.get('connected')] ?? q.get('connected') })), 300);
   if (q.get('channel_error')) setTimeout(() => toast(q.get('channel_error')), 300);
   if (q.get('pick_page')) S.pickPage = q.get('pick_page');
+  if (q.get('shop') && q.get('shop') !== sellerId()) { set('nkg.seller', q.get('shop')); }
   if ([...q.keys()].length) history.replaceState(null, '', location.pathname + location.hash);
 }
 route();

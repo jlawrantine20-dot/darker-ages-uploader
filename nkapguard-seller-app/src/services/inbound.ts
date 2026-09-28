@@ -7,6 +7,7 @@ import type { Q } from '../db.js';
 import type { Ctx, DispatchResult, Outbound, Recipient } from './context.js';
 import { appBase } from './channels.js';
 import { dispatch, socialAccount, socialFor } from './outbound.js';
+import { messageNotice, notifyShop, orderNotice } from './push.js';
 import { HELD_BY_ORDERS_SQL, createOrder, heldOrder, takesPaymentsOnline } from './orders.js';
 import { fmt, type Seller } from './sellers.js';
 
@@ -142,7 +143,7 @@ async function handle(ctx: Ctx, seller: Seller, account: AccountRow | null, msg:
   const f = fmt(seller);
   const whatsapp = msg.channel === 'whatsapp';
 
-  const { action, outs } = await ctx.db.tx(async (q) => {
+  const { action, outs, contact } = await ctx.db.tx(async (q) => {
     const contact = await upsertContact(q, seller, account, msg, true);
     await q.query(
       `insert into messages (seller_id, contact_id, channel, direction, kind, body, provider_id, created_at)
@@ -156,10 +157,23 @@ async function handle(ctx: Ctx, seller: Seller, account: AccountRow | null, msg:
       lastInboundAt: contact.last_inbound_at, country: seller.country, language: lang, channel: msg.channel,
     };
     const reply = (body: string): Outbound[] => [{ ...to, kind: 'text', body }];
-    return decide(ctx, q, seller, contact, msg, lang, f, reply);
+    return { ...(await decide(ctx, q, seller, contact, msg, lang, f, reply)), contact };
   });
 
-  return { action, sent: await dispatch(ctx, outs, msg.at) };
+  const sent = await dispatch(ctx, outs, msg.at);
+  // Tell the seller's phones: a new order, or simply a new message.
+  const who = contact.name ?? (whatsapp ? `+${contact.wa_id}` : msg.username ? `@${msg.username}` : contact.wa_id);
+  const [order] = action === 'ordered' || action === 'ordered_manual'
+    ? await ctx.db.query<{ quantity: number; amount_minor: string; name: string; variant: string }>(
+        `select o.quantity, o.amount_minor, p.name, p.variant from orders o join products p on p.id = o.product_id
+          where o.contact_id = $1 order by o.created_at desc limit 1`,
+        [contact.id],
+      )
+    : [];
+  await notifyShop(ctx, seller.id, order
+    ? orderNotice(who, order, order.quantity, { minor: Number(order.amount_minor), currency: seller.currency, country: seller.country })
+    : messageNotice(who, msg.text, contact.id));
+  return { action, sent };
 }
 
 /** What to answer. Waitlists and consent live on WhatsApp; Instagram and Messenger hand off to it. */

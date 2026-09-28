@@ -84,6 +84,7 @@ const MESSAGES = {
   phone_for_country: { en: (p: P) => `That doesn't look like a valid phone number for ${p.country}.`, fr: (p: P) => `Ce numéro ne semble pas valide pour ${p.country}.` },
   order_not_found: { en: () => "This order doesn't exist or was deleted.", fr: () => "Cette commande n'existe pas ou a été supprimée." },
   order_closed: { en: () => 'This order is already closed.', fr: () => 'Cette commande est déjà clôturée.' },
+  push_invalid: { en: () => "This browser didn't give a valid notification address. Try again.", fr: () => "Ce navigateur n'a pas fourni d'adresse de notification valable. Réessayez." },
   server_error: { en: () => 'Something went wrong on our side. Try again in a moment.', fr: () => 'Un problème est survenu de notre côté. Réessayez dans un instant.' },
 } satisfies Record<string, Record<UiLang, (p: P) => string>>;
 
