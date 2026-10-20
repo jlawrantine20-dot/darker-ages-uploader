@@ -25,7 +25,13 @@ export interface Seller {
   payment_webhook_secret_enc: string | null;
   /** Send one reminder to customers who went quiet (see services/followups.ts). */
   follow_ups: boolean;
+  /** Where customers can send money when there's no payment gateway (see services/directpay.ts). */
+  pay_methods: { label: string; account: string; holder?: string; note?: string }[];
+  /** How much stock customers are told: 'exact', 'low' (only at or below low_stock_at), or 'hidden'. */
+  stock_display: 'exact' | 'low' | 'hidden';
+  low_stock_at: number;
 }
+
 
 /** A seller as the API shows it: never includes secrets. */
 export function publicSeller(s: Seller) {

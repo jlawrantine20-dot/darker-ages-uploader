@@ -311,6 +311,15 @@ create unique index if not exists messages_inbound_once on seller_app.messages (
   where direction = 'in' and provider_id is not null;
 alter table seller_app.offers add column if not exists amount_minor bigint;
 
+alter table seller_app.sellers add column if not exists pay_methods jsonb not null default '[]';
+alter table seller_app.orders add column if not exists claimed_at timestamptz;
+alter table seller_app.orders add column if not exists claim_note text;
+alter table seller_app.offers add column if not exists claimed_at timestamptz;
+alter table seller_app.offers add column if not exists claim_note text;
+
+alter table seller_app.sellers add column if not exists stock_display text not null default 'exact' check (stock_display in ('exact', 'low', 'hidden'));
+alter table seller_app.sellers add column if not exists low_stock_at integer not null default 5 check (low_stock_at between 1 and 50);
+
 -- Defence in depth: row-level security on, with no policies, so even if the schema were
 -- exposed later, the anon and authenticated roles would see nothing.
 do $$

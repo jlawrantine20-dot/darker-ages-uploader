@@ -93,7 +93,7 @@ export async function runFollowUps(ctx: Ctx, now: Date): Promise<DispatchResult[
         sellerId: seller.id, from: whatsapp ? seller.wa_phone_number_id : r.channel_account_id!, contactId: r.contact_id, to: r.wa_id,
         channel: r.channel as Recipient['channel'], lastInboundAt: r.last_inbound_at, country: seller.country, language: lang,
       };
-      const facts = { name: r.name, product, priceMinor: Number(product.price_minor), stock: free };
+      const facts = { name: r.name, product, priceMinor: Number(product.price_minor), stock: free, display: seller };
       outs.push({ ...to, kind: 'text', body: say(lang, kind === 'quiet' ? 'followUp' : 'orderExpired', facts, fmt(seller)), imageUrl: photoUrl(ctx, product) ?? undefined });
       await ctx.db.query('insert into follow_ups (seller_id, contact_id, product_id, kind, sent_at) values ($1, $2, $3, $4, $5)', [seller.id, r.contact_id, product.id, kind, now]);
       // A YES to the reminder places the order, like a YES to the first answer.

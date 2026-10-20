@@ -6,7 +6,7 @@ import { cors } from 'hono/cors';
 import type { MiddlewareHandler } from 'hono';
 import { parseWebhook, verifyMetaSignature } from './channels/whatsapp.js';
 import { LANGS, MARKETS, RATE_GROUPS, ratesFor } from './domain/markets.js';
-import { toMajor, toMinor } from './domain/money.js';
+import { formatMoney, toMajor, toMinor } from './domain/money.js';
 import { whatsappWindowOpen } from './domain/windows.js';
 import { PROVIDER_INFO } from './payments/providers.js';
 import type { Ctx } from './services/context.js';
@@ -25,9 +25,10 @@ import { pushEnabled, removeSubscription, saveSubscription } from './services/pu
 import { sendWebPush } from './channels/webpush.js';
 import { HELD_BY_ORDERS_SQL, cancelOrder, expireOrders, handleOrderPayment, isOrderRef, markOrderPaid, orderForCheckout } from './services/orders.js';
 import { baseRef, handlePayment, previewRestock, startRestock, tick } from './services/restock.js';
-import { escapeHtml, page, pageText } from './pages.js';
+import { DEFAULT_PAY_WITH, PAY_WITH, claimFromPage, confirmOffer, directCheckout, payMode, rejectClaim, setPayMethods } from './services/directpay.js';
+import { escapeHtml, page, pageText, directHtml } from './pages.js';
 import { normalizePhone, phoneCountry } from './domain/phone.js';
-import { productLabel } from './domain/copy.js';
+import { parts, productLabel } from './domain/copy.js';
 import { AuthError, ForbiddenError, addMember, logout, removeMember, requireRole, shopOf, startLogin, verifyLogin, viewerFor, type Role, type Viewer } from './services/auth.js';
 import { getSeller, money, providerFor, publicSeller, resolveSellerInput, setPaymentProvider, uniqueSlug, type Seller, type SellerInput } from './services/sellers.js';
 
@@ -59,18 +60,33 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
    * Show a customer a short page. When the seller app is hosted elsewhere (APP_URL), the page
    * is drawn there, because some API hosts (Supabase) refuse to serve HTML.
    */
-  const customerPage = (c: Context, lang: string, title: string, body: string, status: 200 | 404 | 410 | 503 = 200, test?: { ref: string; pay: string }) => {
+  const customerPage = (c: Context, lang: string, title: string, body: string, status: 200 | 404 | 410 | 503 = 200, test?: { ref: string; pay: string }, direct?: ReturnType<typeof directCheckout> & { payRef: string; texts: Record<string, string> }) => {
     if (config.appUrl) {
-      const data = encodeURIComponent(JSON.stringify({ lang, title, body, status, test }));
+      const data = encodeURIComponent(JSON.stringify({ lang, title, body, status, test, direct, api: config.publicUrl.replace(/\/$/, '') }));
       return c.redirect(`${config.appUrl.replace(/\/$/, '')}/pay.html#${data}`, 302);
     }
-    const extra = test ? `<form method="post"><button>${escapeHtml(test.pay)}</button></form>` : '';
+    const extra = test ? `<form method="post"><button>${escapeHtml(test.pay)}</button></form>`
+      : direct ? directHtml(lang, direct) : '';
     return c.html(page(lang, title, body, extra), status);
+  };
+
+  /**
+   * The payment page of a shop without a gateway: where to send the money, the reference, and
+   * an "I've paid" button. With nothing set up, it asks the customer to arrange it on WhatsApp.
+   */
+  const directPage = (c: Context, lang: string, seller: Seller, ref: string, amountMinor: number, label: string, claimed: boolean) => {
+    const t = pageText(lang);
+    const shop = (s: string) => s.replace('{shop}', seller.name);
+    const d = directCheckout(seller, ref, amountMinor, label, claimed);
+    if (!d.methods.length) return customerPage(c, lang, t.manualTitle, shop(t.manualBody));
+    const amount = formatMoney(amountMinor, seller.currency, parts(lang)[0], seller.country);
+    const texts = { intro: shop(t.directIntro), refLabel: t.refLabel, noteLabel: t.noteLabel, claim: t.claim, copy: t.copy, copied: t.copied, amount };
+    return customerPage(c, lang, `${t.directTitle} ${amount}`, claimed ? shop(t.alreadyClaimed) : `${seller.name} · ${label}`, 200, undefined, { ...d, payRef: ref, texts });
   };
 
   /** Country defaults, languages and payment providers. Public: the sign-in screen needs the country list. */
   const marketsBody = async () => ({
-    countries: Object.entries(MARKETS).map(([code, m]) => ({ code, ...m, rates: ratesFor(code) })),
+    countries: Object.entries(MARKETS).map(([code, m]) => ({ code, ...m, rates: ratesFor(code), payWith: PAY_WITH[code] ?? DEFAULT_PAY_WITH })),
     languages: LANGS,
     providers: PROVIDER_INFO,
     rateGroups: RATE_GROUPS,
@@ -150,10 +166,10 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
   // ---- Payment links customers tap. Checkout is created only now, and only if the offer still stands. ----
   const loadOffer = async (ref: string) =>
     (await db.query<{
-      offer_id: string; status: string; expires_at: Date | null; closed_at: Date | null; price_minor: string;
+      offer_id: string; status: string; expires_at: Date | null; closed_at: Date | null; price_minor: string; amount_minor: string | null; claimed_at: Date | null;
       name: string; variant: string; wa_id: string; contact_name: string | null; seller_id: string; language: 'en' | 'fr' | null;
     }>(
-      `select o.id as offer_id, o.status, o.expires_at, r.closed_at, p.price_minor, p.name, p.variant, c.wa_id, c.name as contact_name, p.seller_id, c.language
+      `select o.id as offer_id, o.status, o.expires_at, r.closed_at, p.price_minor, o.amount_minor, o.claimed_at, p.name, p.variant, c.wa_id, c.name as contact_name, p.seller_id, c.language
          from offers o join restocks r on r.id = o.restock_id join products p on p.id = r.product_id
          join interests i on i.id = o.interest_id join contacts c on c.id = i.contact_id
         where o.payment_ref = $1`,
@@ -170,6 +186,11 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     const now = clock();
     if (order.status !== 'held' || order.expires_at <= now) {
       return customerPage(c, lang, t.ended, order.status === 'paid' ? t.endedPaid : t.orderEnded, 410);
+    }
+    const mode = payMode(ctx, seller);
+    if (mode !== 'online') {
+      const label = `${order.quantity > 1 ? `${order.quantity} × ` : ''}${productLabel(product, lang)}${order.delivery_zone ? ` + ${order.delivery_zone}` : ''}`;
+      return directPage(c, lang, seller, order.payment_ref, Number(order.amount_minor), label, !!(order as { claimed_at?: Date | null }).claimed_at);
     }
     try {
       const label = productLabel(product, lang);
@@ -204,6 +225,9 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
       const why = o.status === 'paid' ? t.endedPaid : o.status === 'expired' || o.status === 'held' ? t.endedHeld : t.endedSold;
       return customerPage(c, lang, t.ended, why, 410);
     }
+    if (payMode(ctx, seller) !== 'online') {
+      return directPage(c, lang, seller, baseRef(c.req.param('ref')), Number(o.amount_minor ?? o.price_minor), productLabel({ name: o.name, variant: o.variant }, lang), !!o.claimed_at);
+    }
     try {
       const label = productLabel({ name: o.name, variant: o.variant }, lang);
       const { url } = await providerFor(ctx, seller).createLink({
@@ -221,6 +245,27 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
       console.error(err);
       return customerPage(c, lang, t.unavailable, t.tryAgain, 503);
     }
+  });
+
+  /** "I've paid" from the payment page of a shop paid straight to its own number. */
+  app.post('/pay/:ref/claim', async (c) => {
+    const type = c.req.header('content-type') ?? '';
+    const note = type.includes('json') ? (await c.req.json<{ note?: string }>().catch(() => ({ note: '' }))).note : String((await c.req.parseBody()).note ?? '');
+    const ref = baseRef(c.req.param('ref'));
+    const outcome = await claimFromPage(ctx, ref, note?.trim() || null, clock());
+    const [row] = await db.query<{ seller_id: string; language: string | null }>(
+      `select o.seller_id, c.language from orders o join contacts c on c.id = o.contact_id where o.payment_ref = $1
+       union all select p.seller_id, c.language from offers f join restocks r on r.id = f.restock_id join products p on p.id = r.product_id
+         join interests i on i.id = f.interest_id join contacts c on c.id = i.contact_id where f.payment_ref = $1`,
+      [ref],
+    );
+    const seller = row ? await getSeller(db, row.seller_id) : null;
+    const lang = row?.language ?? seller?.language ?? 'en';
+    const t = pageText(lang);
+    const title = outcome === 'claimed' ? t.claimedTitle : t.ended;
+    const body = outcome === 'claimed' ? t.claimedBody.replace('{shop}', seller?.name ?? '') : t.orderEnded;
+    if (c.req.header('accept')?.includes('application/json')) return c.json({ outcome, title, body });
+    return c.html(page(lang, title, body), outcome === 'claimed' ? 200 : 410);
   });
 
   // Public shop page data: what the shop sells and whether it's available. No stock counts,
@@ -399,7 +444,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
   app.patch('/api/sellers/:id', async (c) => {
     await guard(c, c.req.param('id'), 'owner');
     const current = await sellerOr404(c.req.param('id'));
-    const b = await c.req.json<SellerInput & { rate?: number }>();
+    const b = await c.req.json<SellerInput & { rate?: number; stockDisplay?: string; lowStockAt?: number }>();
     const v = resolveSellerInput(b, current);
     const row = await db.tx(async (q) => {
       // Prices are stored in the currency's smallest unit, so a new currency needs the
@@ -432,9 +477,12 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
         if (taken) throw new InputError('slug_taken', { slug: String(v.slug) });
       }
       const [s] = await q.query<Seller>(
-        `update sellers set name = $2, country = $3, currency = $4, language = $5, timezone = $6, slug = $7, wa_display_phone = $8, follow_ups = $9
+        `update sellers set name = $2, country = $3, currency = $4, language = $5, timezone = $6, slug = $7, wa_display_phone = $8, follow_ups = $9,
+                stock_display = $10, low_stock_at = $11
           where id = $1 returning *`,
-        [current.id, v.name, v.country, v.currency, v.language, v.timezone, v.slug ?? (await uniqueSlug(q, v.name)), v.waDisplayPhone, typeof b.followUps === 'boolean' ? b.followUps : current.follow_ups],
+        [current.id, v.name, v.country, v.currency, v.language, v.timezone, v.slug ?? (await uniqueSlug(q, v.name)), v.waDisplayPhone, typeof b.followUps === 'boolean' ? b.followUps : current.follow_ups,
+          ['exact', 'low', 'hidden'].includes(b.stockDisplay ?? '') ? b.stockDisplay : current.stock_display,
+          Number.isInteger(b.lowStockAt) && b.lowStockAt! >= 1 && b.lowStockAt! <= 50 ? b.lowStockAt : current.low_stock_at],
       );
       return s;
     });
@@ -558,7 +606,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     const [restock] = await db.query('select * from restocks where id = $1', [c.req.param('id')]);
     if (!restock) return c.json({ error: 'No restock with that id.' }, 404);
     const offers = await db.query(
-      `select o.status, o.sent_at, o.expires_at, o.paid_at, o.refund_due, o.payment_url, o.payment_ref, c.name, c.wa_id
+      `select o.id, o.status, o.sent_at, o.expires_at, o.paid_at, o.refund_due, o.payment_url, o.payment_ref, o.claimed_at, o.claim_note, c.name, c.wa_id
          from offers o join interests i on i.id = o.interest_id join contacts c on c.id = i.contact_id
         where o.restock_id = $1 order by o.sent_at, i.created_at, i.seq`,
       [c.req.param('id')],
@@ -741,7 +789,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
   app.get('/api/orders', async (c) => {
     const sellerId = await scoped(c);
     const rows = await db.query(
-      `select o.id, o.quantity, o.amount_minor, o.status, o.channel, o.paid_via, o.created_at, o.expires_at, o.paid_at, o.delivery_zone, o.delivery_fee_minor,
+      `select o.id, o.quantity, o.amount_minor, o.status, o.channel, o.paid_via, o.created_at, o.expires_at, o.paid_at, o.delivery_zone, o.delivery_fee_minor, o.claimed_at, o.claim_note,
               c.id as contact_id, c.name, c.username, c.wa_id, c.channel as contact_channel, p.name as product, p.variant
          from orders o join contacts c on c.id = o.contact_id join products p on p.id = o.product_id
         where ($1::uuid is null or o.seller_id = $1) order by o.created_at desc limit 200`,
@@ -758,6 +806,32 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     await orderShop(c, c.req.param('id'));
     const r = await markOrderPaid(ctx, c.req.param('id'), clock());
     return c.json({ outcome: r.outcome });
+  });
+  app.post('/api/orders/:id/unclaim', async (c) => {
+    await orderShop(c, c.req.param('id'));
+    await rejectClaim(ctx, 'order', c.req.param('id'), clock());
+    return c.json({ ok: true });
+  });
+  const offerShop = async (c: C, id: string) => {
+    const [row] = await db.query<{ restock_id: string }>('select restock_id from offers where id = $1', [id]);
+    if (!row) throw new ForbiddenError('not_found');
+    await guardOf(c, 'restock', row.restock_id);
+  };
+  app.post('/api/offers/:id/paid', async (c) => {
+    await offerShop(c, c.req.param('id'));
+    const r = await confirmOffer(ctx, c.req.param('id'), clock());
+    return c.json({ outcome: r.outcome });
+  });
+  app.post('/api/offers/:id/unclaim', async (c) => {
+    await offerShop(c, c.req.param('id'));
+    await rejectClaim(ctx, 'offer', c.req.param('id'), clock());
+    return c.json({ ok: true });
+  });
+  app.put('/api/sellers/:id/pay-methods', async (c) => {
+    await guard(c, c.req.param('id'), 'owner');
+    const s = await sellerOr404(c.req.param('id'));
+    await setPayMethods(db, s.id, (await c.req.json<{ methods?: unknown }>()).methods);
+    return c.json(publicSeller((await getSeller(db, s.id))!));
   });
   app.post('/api/orders/:id/cancel', async (c) => {
     await orderShop(c, c.req.param('id'));

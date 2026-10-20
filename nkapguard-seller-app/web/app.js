@@ -455,6 +455,7 @@ views.orders = async () => {
   const shown = S.orderFilter === 'toPay' ? list.filter((o) => ['held', 'expired', 'refund_due'].includes(o.status)) : S.orderFilter === 'paid' ? list.filter((o) => o.status === 'paid') : list;
   const f = (k, text, n) => `<button class="chip ${S.orderFilter === k ? 'on' : ''}" data-ofilter="${k}">${text}${n ? `<span class="c">${n}</span>` : ''}</button>`;
   const pill = (o) => {
+    if (o.status === 'held' && o.claimed_at) return `<span class="pill notified">${t('ord.claimed')}</span>`;
     if (o.status === 'held') return `<span class="pill held">${t('ord.held', { left: mins(Math.round((new Date(o.expires_at) - Date.now()) / 6e4)) })}</span>`;
     if (o.status === 'paid') return `<span class="pill paid">${t('ord.paid', { at: when(o.paid_at) })}${o.paid_via === 'manual' ? ` · ${t('ord.byHand')}` : ''}</span>`;
     if (o.status === 'refund_due') return `<span class="pill refund">${t('ord.refund')}</span>`;
@@ -463,9 +464,11 @@ views.orders = async () => {
   };
   const customer = (o) => who({ channel: o.contact_channel, name: o.name, username: o.username, wa_id: o.wa_id });
   const paid = list.filter((o) => o.status === 'paid');
+  const toCheck = list.filter((o) => o.status === 'held' && o.claimed_at).length;
   const toCollect = toPay.reduce((a, o) => a + Number(o.amount_minor), 0);
   main.innerHTML = `
-    ${!S.dryRun && !S.seller?.payments_connected ? banner(t('ord.manualNote'), 'info') : ''}
+    ${!S.dryRun && !S.seller?.payments_connected && !(S.seller?.pay_methods ?? []).length ? banner(t('ord.manualNote', { href: '#/settings' }), 'info') : ''}
+    ${toCheck ? banner(t('ord.checkBanner', { n: toCheck }), 'ok') : ''}
     ${list.length ? `<div class="tiles">
       <div class="tile"><span class="ico gold">${ICON.clock}</span><span class="k">${t('ord.toCollect')}</span><b class="num">${money(toCollect)}</b></div>
       <div class="tile"><span class="ico">${ICON.check}</span><span class="k">${t('ord.paidTab')}</span><b class="num">${paid.length}</b></div>
@@ -474,7 +477,9 @@ views.orders = async () => {
     <div class="group">${shown.map((o) => `<div class="order">
       <div class="order-top">${avatar(customer(o))}<div class="order-id"><a href="#/chat/${esc(o.contact_id)}" class="order-who">${esc(customer(o))}</a><span class="hint">${when(o.created_at)}${o.delivery_zone ? ` · ${t('ord.delivery', { zone: esc(o.delivery_zone), fee: o.delivery_fee_minor > 0 ? money(o.delivery_fee_minor) : t('dl.free') })}` : ''}</span></div>${pill(o)}</div>
       <div class="order-what"><b>${o.quantity} × ${label({ name: o.product, variant: o.variant })}</b><span class="num">${money(o.amount_minor)}</span></div>
-      ${['held', 'expired'].includes(o.status) ? `<div class="btns split"><button class="btn primary sm" data-order-paid="${esc(o.id)}" data-name="${esc(customer(o))}">${ICON.check}${t('ord.markPaid')}</button><button class="btn sm" data-order-cancel="${esc(o.id)}">${t('ord.cancel')}</button></div>` : ''}
+      ${o.status === 'held' && o.claimed_at ? `<div class="claim">${ICON.money}<span>${o.claim_note && o.claim_note !== 'photo' ? t('ord.claimNote', { note: esc(o.claim_note) }) : o.claim_note === 'photo' ? t('ord.claimPhoto') : t('ord.claimSaid')}</span></div>
+        <div class="btns split"><button class="btn primary sm" data-order-paid="${esc(o.id)}" data-name="${esc(customer(o))}" data-claimed="1">${ICON.check}${t('ord.confirm')}</button><button class="btn sm" data-order-unclaim="${esc(o.id)}" data-name="${esc(customer(o))}">${t('ord.notReceived')}</button></div>`
+      : ['held', 'expired'].includes(o.status) ? `<div class="btns split"><button class="btn primary sm" data-order-paid="${esc(o.id)}" data-name="${esc(customer(o))}">${ICON.check}${t('ord.markPaid')}</button><button class="btn sm" data-order-cancel="${esc(o.id)}">${t('ord.cancel')}</button></div>` : ''}
     </div>`).join('')
       || (list.length ? empty('check', t('ord.nothing')) : empty('orders', t('ord.emptyTitle'), t('ord.empty')))}</div>
     <p class="lead" style="padding-top:14px">${t('ord.how')}</p>`;
@@ -607,6 +612,7 @@ views.restock = async ([id]) => {
   const slots = Array.from({ length: Math.min(r.units, 12) }, (_, k) => (k < sold ? 'sold' : k < sold + held ? 'held' : ''));
   const pill = (o) => {
     if (o.refund_due) return `<span class="pill refund">${t('rs.paidLate')}</span>`;
+    if (o.claimed_at && ['held', 'notified'].includes(o.status)) return `<span class="pill notified">${t('ord.claimed')}</span>`;
     if (o.status === 'held') return `<span class="pill held">${t('rs.held', { left: mins(Math.round((new Date(o.expires_at) - Date.now()) / 6e4)) })}</span>`;
     if (o.status === 'paid') return `<span class="pill paid">${t('rs.paid', { at: clock(o.paid_at) })}</span>`;
     if (o.status === 'expired') return `<span class="pill expired">${t('rs.holdEnded')}</span>`;
@@ -619,7 +625,10 @@ views.restock = async ([id]) => {
     ${r.closed_at ? banner(t('rs.doneBanner', { sold, left: r.units - sold }), 'ok') : ''}
     ${sect(t('rs.who'), offers.length)}
     <div class="group">${offers.map((o) => `<div class="line">${avatar(o.name ?? o.wa_id)}<span>${esc(o.name ?? phone(o.wa_id))}<span class="q">${phone(o.wa_id)} · ${clock(o.sent_at)}</span></span>
-      <span class="end">${pill(o)}${S.dryRun && ['held', 'notified'].includes(o.status) ? `<button class="btn sm" data-pay="${esc(o.payment_ref)}">${t('rs.testPaid')}</button>` : ''}</span></div>`).join('') || empty('user', t('rs.nobody'))}</div>
+      <span class="end">${pill(o)}${o.claimed_at && ['held', 'notified'].includes(o.status)
+        ? `<span class="btns" style="margin:0"><button class="btn primary sm" data-offer-paid="${esc(o.id)}">${t('ord.confirm')}</button><button class="btn sm" data-offer-unclaim="${esc(o.id)}" data-name="${esc(o.name ?? phone(o.wa_id))}">${t('ord.notReceived')}</button></span>`
+        : S.dryRun && ['held', 'notified'].includes(o.status) ? `<button class="btn sm" data-pay="${esc(o.payment_ref)}">${t('rs.testPaid')}</button>` : ''}</span></div>
+      ${o.claim_note && o.claim_note !== 'photo' && ['held', 'notified'].includes(o.status) ? `<div class="claim" style="margin:0 16px 12px">${ICON.money}<span>${t('ord.claimNote', { note: esc(o.claim_note) })}</span></div>` : ''}`).join('') || empty('user', t('rs.nobody'))}</div>
     ${!r.closed_at && r.mode === 'hold' ? `<p class="lead" style="padding-top:12px">${t('rs.holdsNote')}${S.dryRun ? ` <button class="btn sm" data-act="tick">${t('rs.testTick')}</button>` : ''}</p>` : ''}`;
 };
 
@@ -700,6 +709,9 @@ views.settings = async () => {
     ${await deviceSection()}
     ${shopPage(s, owner)}
     ${owner ? `${sect(t('set.getPaid'))}
+    ${directPaySection(s, m)}
+    <h3 class="sub-sect">${t('dp.gateway')}</h3>
+    <p class="lead">${t('dp.gatewayHint')}</p>
     <div class="group"><form class="form" data-form="payments">
       <label>${t('set.provider')}<select id="pay-provider" data-provider>${order.map((k) => `<option value="${k}" ${k === s.payment_provider ? 'selected' : ''}>${esc(t(`pv.${k}`))}${suggested.includes(k) ? ` · ${t('set.suggested')}` : ''}</option>`).join('')}</select>
         <span class="hint">${t('set.providerHint')}</span></label>
@@ -712,6 +724,9 @@ views.settings = async () => {
     <div class="group"><form class="form" data-form="shop">
       <label>${t('shop.name')}<input id="s-name" value="${esc(s.name)}" required></label>
       ${shopFields(mk, s)}
+      <label>${t('stk.label')}<select id="s-stock" data-stock>${['exact', 'low', 'hidden'].map((k) => `<option value="${k}" ${(s.stock_display ?? 'exact') === k ? 'selected' : ''}>${t(`stk.${k}`)}</option>`).join('')}</select>
+        <span class="hint" id="s-stock-hint">${stockHint(s.stock_display ?? 'exact', s.low_stock_at ?? 5)}</span></label>
+      <label id="s-low-wrap" ${(s.stock_display ?? 'exact') === 'low' ? '' : 'hidden'}>${t('stk.lowAt')}<input id="s-low" type="number" inputmode="numeric" min="1" max="50" value="${s.low_stock_at ?? 5}"><span class="hint">${t('stk.lowAtHint')}</span></label>
       <label class="check"><input type="checkbox" id="s-followups" ${s.follow_ups !== false ? 'checked' : ''}><span>${t('fu.label')}<span class="hint">${t('fu.hint')}</span></span></label>
       <label id="s-rate-wrap" data-from="${esc(s.currency)}" hidden><span id="s-rate-label">${t('rate.title')}</span><input id="s-rate" type="number" min="0" step="any"><span class="hint" id="s-rate-hint"></span></label>
       <p class="err" hidden></p>
@@ -732,6 +747,34 @@ views.settings = async () => {
       <div class="btns">${pagePicker.map((p) => `<button class="btn" data-act="pick-page" data-page="${esc(p.id)}">${esc(p.name)}</button>`).join('')}</div></div>` : ''}
     <div class="pad btns split" style="margin-top:12px"><a class="btn" href="#/setup">${ICON.swap}${t('set.switchShop')}</a><button class="btn danger" data-act="signout">${ICON.logout}${t('set.signOut')}</button></div>`;
 };
+/** What customers will read about stock, for the setting's hint. */
+const stockHint = (mode, n) => (mode === 'low' ? t('stk.hintLow', { n }) : mode === 'hidden' ? t('stk.hintHidden') : t('stk.hintExact'));
+document.addEventListener('input', (e) => {
+  if (!e.target.matches('[data-stock], #s-low')) return;
+  const form = e.target.closest('form');
+  const mode = $('#s-stock', form).value;
+  $('#s-low-wrap', form).hidden = mode !== 'low';
+  $('#s-stock-hint', form).textContent = stockHint(mode, Number($('#s-low', form).value) || 5);
+});
+
+/** Direct payment: the seller's own mobile money numbers or bank accounts (owner only). */
+function directPaySection(s, m) {
+  const methods = s.pay_methods ?? [];
+  const suggest = m?.payWith ?? ['Bank transfer'];
+  return `<p class="lead">${t('dp.intro')}</p>
+    <div class="group">${methods.map((x, i) => `<div class="line"><span class="pos accent">${ICON.money}</span><span>${esc(x.label)} · ${esc(x.account)}<span class="q">${[x.holder, x.note].filter(Boolean).map(esc).join(' · ') || t('dp.noHolder')}</span></span><button class="btn sm ghost" data-method-remove="${i}">${t('dp.remove')}</button></div>`).join('')
+      || empty('money', t('dp.noneTitle'), t('dp.none'))}
+    ${methods.length < 5 ? `<form class="form" data-form="paymethod">
+      <div class="row2">
+        <label>${t('dp.method')}<input id="pm-label" list="pm-list" required maxlength="40" placeholder="${esc(suggest[0])}"><datalist id="pm-list">${suggest.map((x) => `<option value="${esc(x)}">`).join('')}</datalist></label>
+        <label>${t('dp.account')}<input id="pm-account" required maxlength="60" inputmode="tel" placeholder="${esc(samplePhone())}"></label>
+      </div>
+      <label>${t('dp.holder')}<input id="pm-holder" maxlength="60" placeholder="${esc(s.name)}"><span class="hint">${t('dp.holderHint')}</span></label>
+      <label>${t('dp.note')}<input id="pm-note" maxlength="160" placeholder="${esc(t('dp.notePh'))}"></label>
+      <p class="err" hidden></p>
+      <button class="btn primary block">${ICON.plus}${t('dp.add')}</button></form>` : ''}</div>`;
+}
+
 /** Delivery areas and fees (owner only). */
 async function deliverySection(s) {
   const zones = await api(`/api/delivery-zones?sellerId=${s.id}`);
@@ -938,8 +981,22 @@ document.addEventListener('click', (e) => {
 });
 
 document.addEventListener('click', async (e) => {
-  const el = e.target.closest('[data-photo-remove],[data-zone-remove],[data-pick],[data-filter],[data-ofilter],[data-order-paid],[data-order-cancel],[data-cfg],[data-mode],[data-hold],[data-act],[data-pay],[data-remove-member]');
+  const el = e.target.closest('[data-order-unclaim],[data-offer-paid],[data-offer-unclaim],[data-method-remove],[data-photo-remove],[data-zone-remove],[data-pick],[data-filter],[data-ofilter],[data-order-paid],[data-order-cancel],[data-cfg],[data-mode],[data-hold],[data-act],[data-pay],[data-remove-member]');
   if (!el) return;
+  if (el.dataset.orderUnclaim || el.dataset.offerUnclaim) {
+    if (!confirm(t('ord.notReceivedAsk', { name: el.dataset.name }))) return;
+    try { await api(el.dataset.orderUnclaim ? `/api/orders/${el.dataset.orderUnclaim}/unclaim` : `/api/offers/${el.dataset.offerUnclaim}/unclaim`, { method: 'POST' }); toast(t('ord.notReceivedDone')); } catch (err) { toast(err.message); }
+    return route(true);
+  }
+  if (el.dataset.offerPaid) {
+    try { const r = await api(`/api/offers/${el.dataset.offerPaid}/paid`, { method: 'POST' }); toast(r.outcome === 'paid' ? t('rs.markedPaid') : t('rs.payResult', { r: t(`pay.${r.outcome}`) })); } catch (err) { toast(err.message); }
+    return route(true);
+  }
+  if (el.dataset.methodRemove !== undefined) {
+    const methods = (S.seller.pay_methods ?? []).filter((_, i) => String(i) !== el.dataset.methodRemove);
+    try { setSeller({ ...S.seller, ...await api(`/api/sellers/${sellerId()}/pay-methods`, { method: 'PUT', body: { methods } }) }); toast(t('dp.saved')); } catch (err) { toast(err.message); }
+    return route(true);
+  }
   if (el.dataset.photoRemove) {
     try { await api(`/api/products/${el.dataset.photoRemove}/photo`, { method: 'DELETE' }); toast(t('ph.removed')); } catch (err) { toast(err.message); }
     return route(true);
@@ -950,7 +1007,7 @@ document.addEventListener('click', async (e) => {
   }
   if (el.dataset.ofilter) { S.orderFilter = el.dataset.ofilter; return route(true); }
   if (el.dataset.orderPaid) {
-    if (!confirm(t('ord.markPaidAsk', { name: el.dataset.name }))) return;
+    if (!el.dataset.claimed && !confirm(t('ord.markPaidAsk', { name: el.dataset.name }))) return;
     try { await api(`/api/orders/${el.dataset.orderPaid}/paid`, { method: 'POST' }); toast(t('ord.markedPaid')); } catch (err) { toast(err.message); }
     return route(true);
   }
@@ -1102,7 +1159,7 @@ document.addEventListener('submit', async (e) => {
       case 'shop': {
         const rateWrap = $('#s-rate-wrap', form);
         const rate = rateWrap && !rateWrap.hidden ? Number(val('s-rate')) : undefined;
-        setSeller({ ...S.seller, ...await api(`/api/sellers/${sellerId()}`, { method: 'PATCH', body: { name: val('s-name'), ...shopValues(form), rate, followUps: $('#s-followups', form).checked } }) });
+        setSeller({ ...S.seller, ...await api(`/api/sellers/${sellerId()}`, { method: 'PATCH', body: { name: val('s-name'), ...shopValues(form), rate, followUps: $('#s-followups', form).checked, stockDisplay: val('s-stock'), lowStockAt: Number(val('s-low')) || 5 } }) });
         toast(rate ? t('set.shopConverted') : t('set.shopSaved'));
       }
         return route(true);
@@ -1118,6 +1175,12 @@ document.addEventListener('submit', async (e) => {
         await route(true);
         if (provider !== 'test') $('#pay-hook').innerHTML = t('set.webhookUrl', { url: esc(r.webhookUrl) });
         return;
+      }
+      case 'paymethod': {
+        const methods = [...(S.seller.pay_methods ?? []), { label: val('pm-label'), account: val('pm-account'), holder: val('pm-holder'), note: val('pm-note') }];
+        setSeller({ ...S.seller, ...await api(`/api/sellers/${sellerId()}/pay-methods`, { method: 'PUT', body: { methods } }) });
+        toast(t('dp.saved'));
+        return route(true);
       }
       case 'zone':
         await api('/api/delivery-zones', { method: 'POST', body: { sellerId: sellerId(), name: val('z-name'), fee: Number(val('z-fee')), aliases: val('z-aliases').split(',').map((a) => a.trim()).filter(Boolean) } });

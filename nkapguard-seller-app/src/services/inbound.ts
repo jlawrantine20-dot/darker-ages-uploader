@@ -9,13 +9,14 @@ import { appBase } from './channels.js';
 import { dispatch, socialAccount, socialFor } from './outbound.js';
 import { photoUrl } from './photos.js';
 import { messageNotice, notifyShop, orderNotice } from './push.js';
-import { HELD_BY_ORDERS_SQL, createOrder, heldOrder, takesPaymentsOnline } from './orders.js';
+import { HELD_BY_ORDERS_SQL, createOrder, heldOrder } from './orders.js';
+import { claimFromChat, methodsOf, notifyClaim, payMode, shortRef } from './directpay.js';
 import { fmt, type Seller } from './sellers.js';
 
 export type InboundAction =
   | 'unknown_seller' | 'stopped' | 'joined' | 'already_waiting' | 'offered' | 'in_stock' | 'asked_variant' | 'sold_out' | 'shop_link' | 'unhandled'
-  | 'ordered' | 'ordered_manual' | 'order_again' | 'asked_quantity' | 'asked_zone' | 'delivery_fee'
-  | 'price_alert_offered' | 'price_alert_joined' | 'duplicate';
+  | 'ordered' | 'ordered_manual' | 'ordered_direct' | 'order_again' | 'asked_quantity' | 'asked_zone' | 'delivery_fee'
+  | 'price_alert_offered' | 'price_alert_joined' | 'payment_claimed' | 'duplicate';
 
 interface ContactRow {
   id: string;
@@ -87,6 +88,7 @@ interface Incoming {
   text: string;
   providerId: string;
   at: Date;
+  image?: boolean;
 }
 
 interface AccountRow {
@@ -101,7 +103,7 @@ interface AccountRow {
 export async function handleInbound(ctx: Ctx, msg: InboundText): Promise<{ action: InboundAction; sent: DispatchResult[] }> {
   const [seller] = await ctx.db.query<Seller>('select * from sellers where wa_phone_number_id = $1', [msg.phoneNumberId]);
   if (!seller) return { action: 'unknown_seller', sent: [] };
-  return handle(ctx, seller, null, { channel: 'whatsapp', from: msg.from, name: msg.name, text: msg.text, providerId: msg.providerId, at: msg.at });
+  return handle(ctx, seller, null, { channel: 'whatsapp', from: msg.from, name: msg.name, text: msg.text, providerId: msg.providerId, at: msg.at, image: msg.image });
 }
 
 /**
@@ -159,14 +161,14 @@ async function handle(ctx: Ctx, seller: Seller, account: AccountRow | null, msg:
   const f = fmt(seller);
   const whatsapp = msg.channel === 'whatsapp';
 
-  const { action, outs, contact } = await ctx.db.tx(async (q) => {
+  const { action, outs, contact, claim } = await ctx.db.tx(async (q) => {
     const contact = await upsertContact(q, seller, account, msg, true);
     const logged = await q.query(
       `insert into messages (seller_id, contact_id, channel, direction, kind, body, provider_id, created_at)
        values ($1, $2, $3, 'in', 'text', $4, $5, $6)
        on conflict (seller_id, channel, provider_id) where direction = 'in' and provider_id is not null do nothing
        returning id`,
-      [seller.id, contact.id, msg.channel, msg.text, msg.providerId, msg.at],
+      [seller.id, contact.id, msg.channel, msg.image ? `📷${msg.text ? ` ${msg.text}` : ''}` : msg.text, msg.providerId, msg.at],
     );
     // A second delivery of a message we already handled: answer nothing.
     if (!logged.length) return { action: 'duplicate' as const, outs: [] as Outbound[], contact };
@@ -182,9 +184,13 @@ async function handle(ctx: Ctx, seller: Seller, account: AccountRow | null, msg:
 
   if (action === 'duplicate') return { action, sent: [] };
   const sent = await dispatch(ctx, outs, msg.at);
-  // Tell the seller's phones: a new order, or simply a new message.
+  // Tell the seller's phones: a payment to check, a new order, or simply a new message.
   const who = contact.name ?? (whatsapp ? `+${contact.wa_id}` : msg.username ? `@${msg.username}` : contact.wa_id);
-  const [order] = action === 'ordered' || action === 'ordered_manual'
+  if (claim) {
+    await notifyClaim(ctx, seller, claim.claim, who, claim.note);
+    return { action, sent };
+  }
+  const [order] = action === 'ordered' || action === 'ordered_manual' || action === 'ordered_direct'
     ? await ctx.db.query<{ quantity: number; amount_minor: string; name: string; variant: string }>(
         `select o.quantity, o.amount_minor, p.name, p.variant from orders o join products p on p.id = o.product_id
           where o.contact_id = $1 order by o.created_at desc limit 1`,
@@ -201,7 +207,7 @@ async function handle(ctx: Ctx, seller: Seller, account: AccountRow | null, msg:
 async function decide(
   ctx: Ctx, q: Q, seller: Seller, contact: ContactRow, msg: Incoming, lang: string, f: ReturnType<typeof fmt>,
   reply: (body: string) => Outbound[],
-): Promise<{ action: InboundAction; outs: Outbound[] }> {
+): Promise<{ action: InboundAction; outs: Outbound[]; claim?: Awaited<ReturnType<typeof claimFromChat>> }> {
   const whatsapp = msg.channel === 'whatsapp';
 
   const joinWaitlist = async (product: ProductRow) => {
@@ -233,6 +239,15 @@ async function decide(
     await q.query('update contacts set awaiting_consent_product_id = null, awaiting_consent_at = null where id = $1', [contact.id]);
     return { action: 'stopped', outs: reply(say(lang, 'stopped', { seller: seller.name }, f)) };
   }
+
+  // "J'ai payé", a receipt or a screenshot, for a shop paid straight to its own number: the
+  // seller is told to check. Shops paid through a gateway know about payments without asking.
+  if (payMode(ctx, seller) !== 'online') {
+    const claim = await claimFromChat(q, seller, contact.id, msg.text, !!msg.image, msg.at);
+    if (claim) return { action: 'payment_claimed' as const, outs: reply(say(lang, 'claimThanks', { seller: seller.name }, f)), claim };
+  }
+  // Any other photo is left for the seller to look at.
+  if (msg.image && !msg.text.trim()) return { action: 'unhandled' as const, outs: [] };
 
   const promptLive =
     contact.awaiting_consent_product_id &&
@@ -276,7 +291,7 @@ async function decide(
       // "To order, reply YES": remember what a yes would be for.
       await q.query('update contacts set awaiting_order_product_id = $2, awaiting_order_at = $3, awaiting_consent_product_id = null, awaiting_consent_at = null where id = $1', [contact.id, product.id, msg.at]);
       // With the product's photo when it has one: customers buy what they can see.
-      const outs = reply(say(lang, 'inStock', { name: contact.name, product, priceMinor: product.price_minor, stock: free }, f));
+      const outs = reply(say(lang, 'inStock', { name: contact.name, product, priceMinor: product.price_minor, stock: free, display: seller }, f));
       const photo = photoUrl(ctx, product);
       if (photo && outs[0]?.kind === 'text') outs[0].imageUrl = photo;
       return { action: 'in_stock' as const, outs };
@@ -307,8 +322,9 @@ async function decide(
     // Already held for them: repeat it rather than holding more units.
     if (again) {
       const againZone = again.delivery_zone ? { name: again.delivery_zone, fee_minor: Number(again.delivery_fee_minor) } : undefined;
-      const facts = { product, quantity: again.quantity, priceMinor: Number(again.amount_minor), until: until(again), url: link(again.payment_ref), zone: againZone };
-      return { action: 'order_again' as const, outs: reply(say(lang, takesPaymentsOnline(ctx, seller) ? 'orderAgain' : 'orderManual', facts, f)) };
+      const facts = { product, quantity: again.quantity, priceMinor: Number(again.amount_minor), until: until(again), url: link(again.payment_ref), zone: againZone, methods: methodsOf(seller), ref: shortRef(again.payment_ref) };
+      const key = { online: 'orderAgain', direct: 'orderDirectAgain', manual: 'orderManual' } as const;
+      return { action: 'order_again' as const, outs: reply(say(lang, key[payMode(ctx, seller)], facts, f)) };
     }
     if (free <= 0) return answerFor(product);
     if (quantity > free) {
@@ -332,11 +348,13 @@ async function decide(
       [contact.id, zone?.id ?? null],
     );
     const order = await createOrder(q, seller.id, contact.id, product, quantity, msg.channel, msg.at, zone);
-    const facts = { product, quantity, priceMinor: Number(order.amount_minor), until: order.expires_at, url: link(order.payment_ref), zone: zone ?? undefined };
-    // Without an online payment provider, the seller arranges payment (cash, mobile money transfer) and marks it paid.
-    return takesPaymentsOnline(ctx, seller)
-      ? { action: 'ordered' as const, outs: reply(say(lang, 'orderLink', facts, f)) }
-      : { action: 'ordered_manual' as const, outs: reply(say(lang, 'orderManual', facts, f)) };
+    const facts = { product, quantity, priceMinor: Number(order.amount_minor), until: order.expires_at, url: link(order.payment_ref), zone: zone ?? undefined, methods: methodsOf(seller), ref: shortRef(order.payment_ref) };
+    // A gateway sends a payment link; direct payment lists the seller's own numbers; with
+    // neither, the seller arranges payment in the chat and marks it paid.
+    const mode = payMode(ctx, seller);
+    if (mode === 'online') return { action: 'ordered' as const, outs: reply(say(lang, 'orderLink', facts, f)) };
+    if (mode === 'direct') return { action: 'ordered_direct' as const, outs: reply(say(lang, 'orderDirect', facts, f)) };
+    return { action: 'ordered_manual' as const, outs: reply(say(lang, 'orderManual', facts, f)) };
   };
 
   // Bargaining ("trop cher", "last price?") about a product we know: offer a price-drop alert.
@@ -429,7 +447,7 @@ async function decide(
       await q.query('update contacts set awaiting_choice_name = $2, awaiting_choice_at = $3 where id = $1', [contact.id, fold(family[0].name), msg.at]);
       return {
         action: 'asked_variant',
-        outs: reply(say(lang, 'whichVariant', { name: contact.name, product: { name: family[0].name, variant: '' }, options }, f)),
+        outs: reply(say(lang, 'whichVariant', { name: contact.name, product: { name: family[0].name, variant: '' }, options, display: seller }, f)),
       };
     }
   }

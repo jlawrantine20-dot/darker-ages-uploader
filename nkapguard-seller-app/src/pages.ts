@@ -17,6 +17,18 @@ const TEXT = {
     testBody: 'This shop is in test mode. No money moves.',
     testPay: 'Pay',
     testDone: 'Test payment received',
+    directTitle: 'Pay',
+    directIntro: 'Send exactly this amount to one of the accounts below. Put the reference in the reason if you can, then tap the button so {shop} can check and confirm.',
+    refLabel: 'Reference',
+    noteLabel: 'Transaction ID (optional)',
+    claim: "I've paid",
+    copy: 'Copy',
+    copied: 'Copied',
+    claimedTitle: 'Thank you!',
+    claimedBody: '{shop} is checking your payment and will confirm on WhatsApp shortly.',
+    alreadyClaimed: 'You told us you have paid. {shop} is checking it and will confirm on WhatsApp.',
+    manualTitle: 'Payment',
+    manualBody: 'Write to {shop} on WhatsApp to arrange payment.',
   },
   fr: {
     ended: 'Cette offre est terminée',
@@ -32,16 +44,31 @@ const TEXT = {
     testBody: "Cette boutique est en mode test. Aucun argent n'est débité.",
     testPay: 'Payer',
     testDone: 'Paiement de test reçu',
+    directTitle: 'Payer',
+    directIntro: "Envoyez exactement ce montant sur l'un des comptes ci-dessous. Indiquez la référence en motif si possible, puis touchez le bouton pour que {shop} vérifie et confirme.",
+    refLabel: 'Référence',
+    noteLabel: 'ID de la transaction (facultatif)',
+    claim: "J'ai payé",
+    copy: 'Copier',
+    copied: 'Copié',
+    claimedTitle: 'Merci !',
+    claimedBody: '{shop} vérifie votre paiement et vous confirme sur WhatsApp très vite.',
+    alreadyClaimed: 'Vous nous avez signalé votre paiement. {shop} le vérifie et vous confirmera sur WhatsApp.',
+    manualTitle: 'Paiement',
+    manualBody: 'Écrivez à {shop} sur WhatsApp pour convenir du paiement.',
   },
 };
 
 export type PageText = (typeof TEXT)['en'];
 
+/** Button and label texts: both languages on one line for bilingual shops. */
+const SHORT = new Set(['testPay', 'directTitle', 'refLabel', 'noteLabel', 'claim', 'copy', 'copied', 'manualTitle']);
+
 /** Page wording in the shop's language. Bilingual shops get French, then English, one per line. */
 export function pageText(lang: string): PageText {
   if (lang !== 'fr+en') return TEXT[lang as 'en' | 'fr'] ?? TEXT.en;
   const both = {} as PageText;
-  for (const k of Object.keys(TEXT.en) as (keyof PageText)[]) both[k] = k === 'testPay' ? `${TEXT.fr[k]} / ${TEXT.en[k]}` : `${TEXT.fr[k]}\n${TEXT.en[k]}`;
+  for (const k of Object.keys(TEXT.en) as (keyof PageText)[]) both[k] = SHORT.has(k) ? `${TEXT.fr[k]} / ${TEXT.en[k]}` : `${TEXT.fr[k]}\n${TEXT.en[k]}`;
   return both;
 }
 
@@ -58,3 +85,12 @@ button{width:100%;padding:15px;border:0;border-radius:14px;background:var(--acce
 }
 
 export const escapeHtml = esc;
+
+/** The direct-payment part of the page, for hosts that draw it on the server. */
+export function directHtml(lang: string, d: { methods: { label: string; account: string; holder?: string; note?: string }[]; ref: string; payRef: string; claimed: boolean; texts: Record<string, string> }): string {
+  const t = d.texts;
+  const methods = d.methods.map((m) => `<p><b>${esc(m.label)}</b><br>${esc(m.account)}${m.holder ? ` · ${esc(m.holder)}` : ''}${m.note ? `<br>${esc(m.note)}` : ''}</p>`).join('');
+  const form = d.claimed ? '' : `<form method="post" action="${esc(d.payRef)}/claim"><p><label>${esc(t.noteLabel)}<br><input name="note" maxlength="80" style="width:100%;padding:10px;border-radius:10px;border:1px solid #ccc"></label></p><button>${esc(t.claim)}</button></form>`;
+  void lang;
+  return `${methods}<p>${esc(t.refLabel)} : <b>${esc(d.ref)}</b></p>${form}`;
+}

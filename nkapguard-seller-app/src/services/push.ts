@@ -83,6 +83,14 @@ export const orderNotice = (who: string, p: { name: string; variant: string }, q
   tag: 'orders',
 });
 
+/** A customer says they sent money to the shop's own number or account: someone should check. */
+export const claimNotice = (who: string, p: { name: string; variant: string }, quantity: number, m: Money, note: string | null, kind: 'order' | 'offer') => (lang: UiLang): Notice => ({
+  title: lang === 'fr' ? 'Paiement à vérifier' : 'Payment to check',
+  body: `${who} · ${item(p, quantity, lang)} · ${amount(m, lang)}${note && note !== 'photo' ? ` · ${note}` : note === 'photo' ? (lang === 'fr' ? ' · capture envoyée' : ' · screenshot sent') : ''}`,
+  url: kind === 'order' ? '#/orders' : '#/products',
+  tag: `claim-${Date.now()}`,
+});
+
 /** Money came in, or came in too late and needs refunding. */
 export const paymentNotice = (who: string, p: { name: string; variant: string }, quantity: number, m: Money, refund = false) => (lang: UiLang): Notice => ({
   title: refund ? (lang === 'fr' ? 'Remboursement à faire' : 'Refund to send') : lang === 'fr' ? 'Paiement reçu' : 'Payment received',

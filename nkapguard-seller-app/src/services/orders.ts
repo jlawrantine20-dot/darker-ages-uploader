@@ -40,9 +40,6 @@ export const isOrderRef = (ref: string) => ref.startsWith('ord_');
 /** Units of a product kept aside by unpaid orders. */
 export const HELD_BY_ORDERS_SQL = `coalesce((select sum(quantity)::int from orders o where o.product_id = p.id and o.status = 'held'), 0)`;
 
-/** Whether this shop can send a payment link: live with a provider connected, or in test mode. */
-export const takesPaymentsOnline = (ctx: Ctx, s: Seller) => ctx.config.dryRun || (s.payment_provider !== 'test' && !!s.payment_secret_enc);
-
 export async function createOrder(
   q: Q, sellerId: string, contactId: string, product: { id: string; price_minor: number }, quantity: number, channel: string, now: Date,
   zone?: { id: string; name: string; fee_minor: number } | null,

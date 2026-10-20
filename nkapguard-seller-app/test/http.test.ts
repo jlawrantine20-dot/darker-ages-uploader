@@ -35,7 +35,9 @@ describe('WhatsApp webhook plumbing', () => {
       { from: wa(1), id: 'i', timestamp: '1', type: 'image', image: {} },
     );
     const msgs = parseWebhook(p);
-    expect(msgs.map((m) => m.text)).toEqual(['hello', 'OUI']);
+    // Photos come through too (a payment screenshot counts as "I've paid"), with their caption as text.
+    expect(msgs.map((m) => m.text)).toEqual(['hello', 'OUI', '']);
+    expect(msgs[2].image).toBe(true);
     expect(msgs[0]).toMatchObject({ phoneNumberId: PHONE_ID, name: 'Amaka Obi', at: T0 });
     expect(parseWebhook({ entry: [{ changes: [{ value: { metadata: { phone_number_id: 'x' }, statuses: [{}] } }] }] })).toEqual([]);
   });

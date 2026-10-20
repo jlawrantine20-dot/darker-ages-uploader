@@ -449,3 +449,9 @@ main.quiet > *{animation:none!important}
   .shell.bare main{max-width:none;margin:0 auto}
   .shell:not(.bare) .top{max-width:960px}
 }
+/* direct payment */
+.sub-sect{margin:0;padding:22px 20px 4px;font:750 15px/1.3 var(--font);letter-spacing:-.01em;color:var(--ink)}
+.claim{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:12px;background:var(--accent-soft);color:var(--accent-ink);font:650 13px/1.4 var(--font)}
+.claim svg{width:17px;height:17px}
+.line > .btn{max-width:44%;white-space:normal;line-height:1.25}
+@media (max-width:420px){ .line:has(> .btn:not(.ghost)){grid-template-columns:36px minmax(0,1fr)} .line:has(> .btn:not(.ghost)) > .btn{grid-column:2;justify-self:start;max-width:none} }

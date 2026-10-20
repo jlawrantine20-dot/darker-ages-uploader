@@ -34,6 +34,29 @@ export interface Facts {
   oldPriceMinor?: number;
   /** The shop's delivery areas, for "which area are you in?". */
   zones?: { name: string; fee_minor: number }[];
+  /** Where to send money, for shops that take direct payment. */
+  methods?: { label: string; account: string; holder?: string; note?: string }[];
+  /** The short code to put in the transfer's reason. */
+  ref?: string;
+  /** How much stock the shop tells customers (see stockShown). Without it, the exact count. */
+  display?: StockDisplay;
+}
+
+export interface StockDisplay {
+  stock_display: 'exact' | 'low' | 'hidden';
+  low_stock_at: number;
+}
+
+/**
+ * What a customer may be told about stock: the live count ('count'), the live count as a
+ * scarcity line ('low'), or nothing ('none'). Never a number other than the real one, so
+ * "only 3 left" is always true.
+ */
+export function stockShown(d: StockDisplay | undefined, free: number): 'count' | 'low' | 'none' {
+  const mode = d?.stock_display ?? 'exact';
+  if (mode === 'hidden') return 'none';
+  if (mode === 'low') return free <= (d?.low_stock_at ?? 5) ? 'low' : 'none';
+  return free === 1 ? 'low' : 'count';
 }
 
 /** Shop settings needed to format money and time. */
@@ -65,6 +88,11 @@ interface Args {
   zonesOr: string;
   /** Added after an order's price: " (livraison à Akwa comprise)", or "" without delivery. */
   delivery: string;
+  /** "• MTN MoMo : 6 77 12 34 56 (Nadège)", one line per way to pay. */
+  methods: string;
+  ref: string;
+  /** What to say about the stock count: see stockShown. */
+  stockNote: 'count' | 'low' | 'none';
 }
 
 export type Key =
@@ -73,7 +101,8 @@ export type Key =
   | 'orderLink' | 'orderManual' | 'orderAgain' | 'orderShort' | 'orderRefund'
   | 'followUp' | 'orderExpired'
   | 'deliveryFee' | 'deliveryZones' | 'askZone'
-  | 'priceDrop' | 'priceAlertOffer' | 'priceAlertJoined';
+  | 'priceDrop' | 'priceAlertOffer' | 'priceAlertJoined'
+  | 'orderDirect' | 'orderDirectAgain' | 'claimThanks' | 'claimMissing';
 type Sentences = Record<Key, (a: Args) => string> & { fallbackName: string };
 
 // Each language is written as a native speaker would text a customer, not translated line by
@@ -90,12 +119,19 @@ const en: Sentences = {
   offerAlert: (a) =>
     `Hi ${a.first}, the ${a.label} is sold out at the moment. Want us to message you here as soon as it's back? Just reply YES. (Reply STOP anytime to opt out.)`,
   inStock: (a) =>
-    `Hi ${a.first}, yes, we have the ${a.label} in stock at ${a.price}. ${a.stock === 1 ? "It's the last one!" : `We've got ${a.stock} left.`} To order, just reply YES.`,
+    `Hi ${a.first}, yes, we have the ${a.label} in stock at ${a.price}. ${a.stockNote === 'none' ? '' : a.stock === 1 ? "It's the last one! " : a.stockNote === 'low' ? `Only ${a.stock} left! ` : `We've got ${a.stock} left. `}To order, just reply YES.`,
   orderLink: (a) =>
     `Great, ${a.quantity > 1 ? `${a.quantity} × ${a.label} are` : `the ${a.label} is`} yours! We're holding ${a.quantity > 1 ? 'them' : 'it'} for you until ${a.until}. Pay ${a.price}${a.delivery} here to confirm your order:\n${a.url}`,
   orderManual: (a) =>
     `Great, noted! We're keeping ${a.quantity > 1 ? `${a.quantity} × ${a.label}` : `the ${a.label}`} aside for you until ${a.until}. We'll message you shortly to arrange payment of ${a.price}${a.delivery}.`,
   orderAgain: (a) => `Your ${a.label} is already held for you until ${a.until}. Pay ${a.price}${a.delivery} here to confirm:\n${a.url}`,
+  orderDirect: (a) =>
+    `Great, ${a.quantity > 1 ? `${a.quantity} × ${a.label} are` : `the ${a.label} is`} yours! We're holding ${a.quantity > 1 ? 'them' : 'it'} for you until ${a.until}. To confirm, send ${a.price}${a.delivery} to:\n${a.methods}\nReference: ${a.ref}. Then reply PAID here (a screenshot works too) and we'll check and confirm shortly. All the details: ${a.url}`,
+  orderDirectAgain: (a) =>
+    `Your ${a.label} is held for you until ${a.until}. To confirm, send ${a.price}${a.delivery} to:\n${a.methods}\nReference: ${a.ref}. Then reply PAID here.`,
+  claimThanks: (a) => `Thank you! ${a.seller} is checking the payment and will confirm here shortly.`,
+  claimMissing: (a) =>
+    `Hi ${a.first}, we haven't received your payment of ${a.price} for the ${a.label} yet. Could you check that it went through and send us the transaction ID?`,
   priceDrop: (a) => `Hi ${a.first}, good news: the ${a.label} is now ${a.price} (it was ${a.oldPrice}). Reply YES to order it. (Reply STOP to opt out.)`,
   priceAlertOffer: (a) =>
     `Hi ${a.first}, the price of the ${a.label} is fixed for now (${a.price}). Want us to tell you here if it drops? Just reply YES. (Reply STOP anytime to opt out.)`,
@@ -105,7 +141,7 @@ const en: Sentences = {
   askZone: (a) => `Great! Where should we deliver to? ${a.zonesOr}.`,
   orderShort: (a) => `We only have ${a.stock} left of the ${a.label}. How many would you like?`,
   followUp: (a) =>
-    `Hi ${a.first}, still interested in the ${a.label}? ${a.stock === 1 ? `It's the last one, at ${a.price}.` : `We've got ${a.stock} left at ${a.price}.`} Just reply YES and it's yours.`,
+    `Hi ${a.first}, still interested in the ${a.label}? ${a.stockNote === 'none' ? `It's still available at ${a.price}.` : a.stock === 1 ? `It's the last one, at ${a.price}.` : a.stockNote === 'low' ? `Only ${a.stock} left, at ${a.price}.` : `We've got ${a.stock} left at ${a.price}.`} Just reply YES and it's yours.`,
   orderExpired: (a) => `Your hold on the ${a.label} has ended, but it's still available at ${a.price}. Reply YES if you'd still like it.`,
   orderRefund: (a) =>
     `We received your payment, but the ${a.label} sold out after your hold ended. We're refunding you in full. Sorry about that!`,
@@ -134,12 +170,19 @@ const fr: Sentences = {
   offerAlert: (a) =>
     `Bonjour ${a.first} ! Le modèle ${a.label} est momentanément en rupture de stock. Souhaitez-vous que nous vous prévenions ici dès son retour ? Répondez simplement OUI. (Répondez STOP à tout moment pour ne plus recevoir de messages.)`,
   inStock: (a) =>
-    `Bonjour ${a.first} ! Oui, le modèle ${a.label} est disponible au prix de ${a.price}. ${a.stock === 1 ? "C'est le dernier !" : `Il nous en reste ${a.stock}.`} Pour le commander, répondez simplement OUI.`,
+    `Bonjour ${a.first} ! Oui, le modèle ${a.label} est disponible au prix de ${a.price}. ${a.stockNote === 'none' ? '' : a.stock === 1 ? "C'est le dernier ! " : a.stockNote === 'low' ? `Plus que ${a.stock} en stock ! ` : `Il nous en reste ${a.stock}. `}Pour le commander, répondez simplement OUI.`,
   orderLink: (a) =>
     `Parfait, ${a.quantity > 1 ? `c'est noté pour ${a.quantity} × ${a.label}` : `le modèle ${a.label} est à vous`} ! Nous vous ${a.quantity > 1 ? 'les' : 'le'} réservons jusqu'à ${a.until}. Réglez ${a.price}${a.delivery} ici pour confirmer votre commande :\n${a.url}`,
   orderManual: (a) =>
     `Parfait, c'est noté ! Nous vous mettons ${a.quantity > 1 ? `${a.quantity} × ${a.label}` : `le modèle ${a.label}`} de côté jusqu'à ${a.until}. Nous vous écrivons très vite pour le paiement de ${a.price}${a.delivery}.`,
   orderAgain: (a) => `Le modèle ${a.label} vous est déjà réservé jusqu'à ${a.until}. Réglez ${a.price}${a.delivery} ici pour confirmer :\n${a.url}`,
+  orderDirect: (a) =>
+    `Parfait, ${a.quantity > 1 ? `c'est noté pour ${a.quantity} × ${a.label}` : `le modèle ${a.label} est à vous`} ! Nous vous ${a.quantity > 1 ? 'les' : 'le'} réservons jusqu'à ${a.until}. Pour confirmer, envoyez ${a.price}${a.delivery} à :\n${a.methods}\nRéférence : ${a.ref}. Répondez ensuite PAYÉ ici (une capture d'écran convient aussi) : nous vérifions et confirmons très vite. Tous les détails : ${a.url}`,
+  orderDirectAgain: (a) =>
+    `Le modèle ${a.label} vous est réservé jusqu'à ${a.until}. Pour confirmer, envoyez ${a.price}${a.delivery} à :\n${a.methods}\nRéférence : ${a.ref}. Répondez ensuite PAYÉ ici.`,
+  claimThanks: (a) => `Merci ! ${a.seller} vérifie le paiement et vous confirme ici très vite.`,
+  claimMissing: (a) =>
+    `Bonjour ${a.first}, nous n'avons pas encore reçu votre paiement de ${a.price} pour le modèle ${a.label}. Pouvez-vous vérifier qu'il est bien passé et nous envoyer l'ID de la transaction ?`,
   priceDrop: (a) =>
     `Bonjour ${a.first}, bonne nouvelle : le modèle ${a.label} passe à ${a.price} (au lieu de ${a.oldPrice}). Répondez OUI pour le commander. (Répondez STOP pour ne plus recevoir de messages.)`,
   priceAlertOffer: (a) =>
@@ -150,7 +193,7 @@ const fr: Sentences = {
   askZone: (a) => `Parfait ! Où faut-il vous livrer ? ${a.zonesOr}.`,
   orderShort: (a) => `Il ne nous en reste que ${a.stock} pour le modèle ${a.label}. Combien en voulez-vous ?`,
   followUp: (a) =>
-    `Bonjour ${a.first}, le modèle ${a.label} vous intéresse toujours ? ${a.stock === 1 ? `C'est le dernier, à ${a.price}.` : `Il nous en reste ${a.stock}, à ${a.price}.`} Répondez simplement OUI pour le commander.`,
+    `Bonjour ${a.first}, le modèle ${a.label} vous intéresse toujours ? ${a.stockNote === 'none' ? `Il est toujours disponible, à ${a.price}.` : a.stock === 1 ? `C'est le dernier, à ${a.price}.` : a.stockNote === 'low' ? `Plus que ${a.stock} en stock, à ${a.price}.` : `Il nous en reste ${a.stock}, à ${a.price}.`} Répondez simplement OUI pour le commander.`,
   orderExpired: (a) => `La réservation du modèle ${a.label} a expiré, mais il est encore disponible à ${a.price}. Répondez OUI si vous le voulez toujours.`,
   orderRefund: (a) =>
     `Nous avons bien reçu votre paiement, mais le modèle ${a.label} a été vendu après la fin de votre réservation. Nous vous remboursons intégralement. Toutes nos excuses !`,
@@ -210,12 +253,13 @@ export function clockTime(d: Date, timezone: string, lang: string = 'en'): strin
 }
 
 /** "brown (sold out) or jet black (6 in stock)"; "marron (en rupture) ou noir (6 en stock)". */
-function options(l: Base, list: { variant: string; free: number }[]): string {
+function options(l: Base, list: { variant: string; free: number }[], display?: StockDisplay): string {
   const items = list.map(({ variant, free }) => {
     const [frName, enName] = variantParts(variant);
     const name = (l === 'fr' ? frName : enName).toLowerCase();
-    if (l === 'fr') return `${name} (${free > 0 ? `${free} en stock` : 'en rupture'})`;
-    return `${name} (${free > 0 ? `${free} in stock` : 'sold out'})`;
+    const note = stockShown(display, free);
+    if (l === 'fr') return `${name} (${free <= 0 ? 'en rupture' : note === 'none' ? 'en stock' : note === 'low' && display ? `plus que ${free}` : `${free} en stock`})`;
+    return `${name} (${free <= 0 ? 'sold out' : note === 'none' ? 'in stock' : note === 'low' && display ? `only ${free} left` : `${free} in stock`})`;
   });
   return new Intl.ListFormat(l, { type: 'disjunction' }).format(items);
 }
@@ -240,8 +284,9 @@ function args(l: Base, f: Facts, fmt: Fmt): Args {
     url: f.url ?? '',
     position: f.position ?? 0,
     stock: f.stock ?? 0,
+    stockNote: stockShown(f.display, f.stock ?? 0),
     seller: f.seller ?? '',
-    options: options(l, f.options ?? []),
+    options: options(l, f.options ?? [], f.display),
     quantity: f.quantity ?? 1,
     oldPrice: f.oldPriceMinor === undefined ? '' : formatMoney(f.oldPriceMinor, fmt.currency, l, fmt.country),
     zone: f.zone?.name ?? '',
@@ -251,6 +296,8 @@ function args(l: Base, f: Facts, fmt: Fmt): Args {
     delivery: !f.zone ? '' : f.zone.fee_minor > 0
       ? l === 'fr' ? ` (livraison à ${f.zone.name} comprise)` : ` (including delivery to ${f.zone.name})`
       : l === 'fr' ? ` (${f.zone.name}, gratuit)` : ` (${f.zone.name}, free)`,
+    methods: (f.methods ?? []).map((m) => `• ${m.label}${l === 'fr' ? ' : ' : ': '}${m.account}${m.holder ? ` (${m.holder})` : ''}${m.note ? `. ${m.note}` : ''}`).join('\n'),
+    ref: f.ref ?? '',
   };
 }
 

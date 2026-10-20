@@ -95,9 +95,11 @@ export interface InboundText {
   text: string;
   providerId: string;
   at: Date;
+  /** A photo, such as a payment screenshot. Its caption, if any, is the text. */
+  image?: boolean;
 }
 
-/** Pull customer text messages (and button taps) out of a Cloud API webhook payload. */
+/** Pull customer text messages, button taps and photos out of a Cloud API webhook payload. */
 export function parseWebhook(body: unknown): InboundText[] {
   const out: InboundText[] = [];
   const entries = (body as { entry?: unknown[] })?.entry ?? [];
@@ -114,14 +116,17 @@ export function parseWebhook(body: unknown): InboundText[] {
           m.type === 'text' ? m.text?.body
           : m.type === 'button' ? m.button?.text
           : m.type === 'interactive' ? (m.interactive?.button_reply?.title ?? m.interactive?.list_reply?.title)
+          : m.type === 'image' ? (m.image?.caption ?? '')
           : undefined;
-        if (!text) continue;
+        const image = m.type === 'image';
+        if (!text && !image) continue;
         out.push({
           phoneNumberId,
           from: m.from,
           name: names.get(m.from),
-          text,
+          text: text ?? '',
           providerId: m.id,
+          ...(image ? { image: true } : {}),
           at: new Date(Number(m.timestamp) * 1000),
         });
       }

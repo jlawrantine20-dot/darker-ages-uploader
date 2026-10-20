@@ -27,6 +27,21 @@ p{color:var(--muted);margin:0 0 14px}
 button{width:100%;min-height:52px;margin-top:8px;padding:14px;border:0;border-radius:14px;color:#fff;background:linear-gradient(180deg,var(--brand-2),var(--brand));font:700 16px var(--font);cursor:pointer;box-shadow:0 8px 18px -10px rgba(10,90,72,.8)}
 button:disabled{opacity:.6}
 .foot{font-size:12.5px;color:var(--muted)}
+.amount{margin:-4px 0 18px;font:800 34px/1.1 var(--font);letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.methods{display:grid;gap:10px;margin:4px 0 14px;text-align:left}
+.method{display:flex;align-items:center;gap:12px;padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--bg)}
+.method .w{flex:1;min-width:0}
+.method small{display:block;font:700 12px/1.3 var(--font);letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.method b{display:block;margin-top:2px;font:800 19px/1.25 var(--font);letter-spacing:.01em;overflow-wrap:anywhere}
+.method span{display:block;margin-top:2px;font-size:13.5px;color:var(--muted)}
+.copy{flex:none;width:auto;min-height:38px;margin:0;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:700 13px var(--font);box-shadow:none}
+.copy.done{color:var(--ok);border-color:var(--ok)}
+.reff{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 16px;padding:12px 14px;border-radius:14px;background:var(--info-soft);text-align:left}
+.reff small{display:block;font:700 12px var(--font);color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.reff b{font:800 18px var(--font);letter-spacing:.12em}
+label.note{display:block;margin:0 0 4px;text-align:left;font:700 13.5px var(--font);color:var(--muted)}
+input.note{width:100%;min-height:48px;margin:6px 0 4px;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:500 15px var(--font)}
+input.note:focus{outline:none;border-color:var(--brand-2);box-shadow:0 0 0 4px rgba(14,122,98,.16)}
 </style>
 <script src="config.js"></script>
 </head>
@@ -34,7 +49,7 @@ button:disabled{opacity:.6}
 <div class="brand"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 8h13l-1.1 11.1a2 2 0 0 1-2 1.9H8.6a2 2 0 0 1-2-1.9z"/><path d="M9 10.5V7a3 3 0 0 1 6 0v3.5"/><path d="m9.5 15 1.8 1.8 3.4-3.6"/></svg></span>NKAPGUARD</div>
 <main id="m"><h1>NKAPGUARD</h1></main>
 <script>
-// Customer pages sent here by the API: offer ended, payment received, test checkout.
+// Customer pages sent here by the API: offer ended, payment received, test checkout, direct payment.
 (function () {
   var m = document.getElementById('m');
   var ICONS = {
@@ -60,6 +75,72 @@ button:disabled{opacity:.6}
   document.title = String(data.title).split('\n')[0];
   // A test checkout shows a card; a finished payment a tick; an offer that ended or an outage a clock.
   draw(data.title, data.body || '', data.test ? 'info' : data.status && data.status !== 200 ? 'warn' : 'ok');
+  // A shop paid straight to its own number: the amount, where to send it, and "I've paid".
+  var d = data.direct;
+  if (d && d.methods && d.methods.length) {
+    var tx = d.texts || {};
+    var api = (window.NKG_API || data.api || '').replace(/\/$/, '');
+    m.querySelector('.st').className = 'st ' + (d.claimed ? 'warn' : 'info');
+    if (d.claimed) return;
+    var intro = document.createElement('p');
+    intro.textContent = tx.intro;
+    m.appendChild(intro);
+    function copyBtn(text) {
+      var c = document.createElement('button');
+      c.type = 'button';
+      c.className = 'copy';
+      c.textContent = tx.copy;
+      c.onclick = function () {
+        var done = function () { c.textContent = tx.copied; c.classList.add('done'); setTimeout(function () { c.textContent = tx.copy; c.classList.remove('done'); }, 1800); };
+        if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, done); else done();
+      };
+      return c;
+    }
+    var list = document.createElement('div');
+    list.className = 'methods';
+    d.methods.forEach(function (x) {
+      var row = document.createElement('div');
+      row.className = 'method';
+      var w = document.createElement('div');
+      w.className = 'w';
+      var l = document.createElement('small'); l.textContent = x.label; w.appendChild(l);
+      var a = document.createElement('b'); a.textContent = x.account; w.appendChild(a);
+      if (x.holder) { var hd = document.createElement('span'); hd.textContent = x.holder; w.appendChild(hd); }
+      if (x.note) { var nt = document.createElement('span'); nt.textContent = x.note; w.appendChild(nt); }
+      row.appendChild(w);
+      row.appendChild(copyBtn(x.account.replace(/\s+/g, '')));
+      list.appendChild(row);
+    });
+    m.appendChild(list);
+    var rf = document.createElement('div');
+    rf.className = 'reff';
+    var rw = document.createElement('div');
+    var rl = document.createElement('small'); rl.textContent = tx.refLabel; rw.appendChild(rl);
+    var rv = document.createElement('b'); rv.textContent = d.ref; rw.appendChild(rv);
+    rf.appendChild(rw);
+    rf.appendChild(copyBtn(d.ref));
+    m.appendChild(rf);
+    var lab = document.createElement('label');
+    lab.className = 'note';
+    lab.textContent = tx.noteLabel;
+    var inp = document.createElement('input');
+    inp.className = 'note';
+    inp.maxLength = 80;
+    inp.autocomplete = 'off';
+    lab.appendChild(inp);
+    m.appendChild(lab);
+    var go = document.createElement('button');
+    go.textContent = tx.claim;
+    go.onclick = function () {
+      go.disabled = true;
+      fetch(api + '/pay/' + encodeURIComponent(d.payRef) + '/claim', { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify({ note: inp.value }) })
+        .then(function (r) { return r.json(); })
+        .then(function (r) { draw(r.title, r.body, r.outcome === 'claimed' ? 'ok' : 'warn'); })
+        .catch(function () { go.disabled = false; });
+    };
+    m.appendChild(go);
+    return;
+  }
   if (data.test && data.test.ref) {
     var b = document.createElement('button');
     b.textContent = data.test.pay;
