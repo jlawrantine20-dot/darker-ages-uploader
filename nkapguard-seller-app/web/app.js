@@ -753,6 +753,8 @@ async function deliverySection(s) {
 // ---------- this phone: install and notifications ----------
 const standalone = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
 const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+/** A computer with a mouse or trackpad, rather than a phone or tablet. */
+const isComputer = () => window.matchMedia?.('(pointer: fine) and (hover: hover)').matches && !isIos();
 const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 const swReady = () => (navigator.serviceWorker ? Promise.race([navigator.serviceWorker.ready, new Promise((r) => setTimeout(() => r(null), 3000))]) : Promise.resolve(null));
 async function currentSub() {
@@ -768,7 +770,7 @@ async function deviceSection() {
   const install = standalone()
     ? `<span class="pill paid">${t('dev.installed')}</span>`
     : S.installPrompt ? `<button class="btn sm" data-act="install">${t('dev.install')}</button>` : '<span></span>';
-  const installHint = standalone() || S.installPrompt ? '' : ` ${isIos() ? t('dev.installIos') : t('dev.installOther')}`;
+  const installHint = standalone() || S.installPrompt ? '' : ` ${isIos() ? t('dev.installIos') : isComputer() ? t('dev.installPc') : t('dev.installOther')}`;
   let notif = '';
   let action = '<span></span>';
   const me = await api('/api/me').catch(() => ({}));
@@ -792,7 +794,7 @@ async function deviceSection() {
   }
   return `${sect(t('dev.title'))}
     <div class="group">
-    <div class="line"><span class="pos accent">${ICON.download}</span><span>${t('dev.install')}<span class="q">${t('dev.installWhat')}${installHint}</span></span>${install}</div>
+    <div class="line"><span class="pos accent">${isComputer() ? ICON.download : ICON.phone}</span><span>${t('dev.install')}<span class="q">${isComputer() ? t('dev.installWhatPc') : t('dev.installWhat')}${installHint}</span></span>${install}</div>
     <div class="line"><span class="pos accent">${ICON.bell}</span><span>${t('dev.notif')}<span class="q">${notif}</span></span>${action}</div>
     ${S.pushOn ? `<div class="pad btns" style="margin:0"><button class="btn sm" data-act="push-test">${t('dev.test')}</button><button class="btn sm ghost" data-act="push-off">${t('dev.turnOff')}</button></div>` : ''}
     </div>`;
