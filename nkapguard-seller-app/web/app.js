@@ -198,7 +198,8 @@ views.login = async (_p, msg) => {
     <label>${t('login.country')}<select id="l-country">${countryOptions(mk, country)}</select>
       <span class="hint">${t('login.countryHint')}</span></label>
     <label>${t('login.phone')}<input id="l-phone" type="tel" autocomplete="tel" required value="${esc(S.login?.phone ?? '')}" placeholder="6 77 12 34 56"></label>
-    <button class="btn primary block">${t('login.send')}</button></form>`;
+    <button class="btn primary block">${t('login.send')}</button></form>
+    <p class="hint" style="text-align:center;margin:24px 16px 0">${t('login.legal')}</p>`;
 };
 
 views.setup = async () => {

@@ -19,6 +19,7 @@ const EN = {
   'login.sent': (p) => `We sent a 6-digit code to <b>${p.phone}</b> on WhatsApp.`,
   'login.testCode': (p) => `<b>Test mode.</b> Nothing is sent, so here is your code: <b>${p.code}</b>`,
   'login.code': 'Code', 'login.signIn': 'Sign in', 'login.otherNumber': 'Use a different number',
+  'login.legal': 'Ets NKAPGUARD · Douala, Cameroon · RCCM CM-DLA-01-2026-A10-02057 · +237 6 70 67 10 28<br><a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a> · <a href="data-deletion.html">Data deletion</a>',
 
   // Shops
   'setup.sub': 'Your shops', 'setup.choose': 'Choose a shop', 'setup.addAnother': 'Or add another shop', 'setup.add': 'Add your shop',
@@ -254,6 +255,7 @@ const FR = {
   'login.sent': (p) => `Nous avons envoyé un code à 6 chiffres au <b>${p.phone}</b> sur WhatsApp.`,
   'login.testCode': (p) => `<b>Mode test.</b> Rien n'est envoyé, voici donc votre code : <b>${p.code}</b>`,
   'login.code': 'Code', 'login.signIn': 'Se connecter', 'login.otherNumber': 'Utiliser un autre numéro',
+  'login.legal': 'Ets NKAPGUARD · Douala, Cameroun · RCCM CM-DLA-01-2026-A10-02057 · +237 6 70 67 10 28<br><a href="privacy.html">Confidentialité</a> · <a href="terms.html">Conditions</a> · <a href="data-deletion.html">Suppression des données</a>',
 
   'setup.sub': 'Vos boutiques', 'setup.choose': 'Choisissez une boutique', 'setup.addAnother': 'Ou ajoutez une autre boutique', 'setup.add': 'Ajoutez votre boutique',
   'shop.name': 'Nom de la boutique', 'shop.namePh': 'Douala Hair Plug',
