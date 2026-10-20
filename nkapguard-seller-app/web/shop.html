@@ -3,47 +3,65 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0B6B55">
+<meta name="theme-color" content="#0A5A48">
 <title>Boutique</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&family=Figtree:wght@400;500;600;700&display=swap">
+<link rel="preload" href="fonts/jakarta-latin.woff2" as="font" type="font/woff2" crossorigin>
 <style>
-:root{color-scheme:light;--page:#E9EEEB;--surface:#fff;--surface-2:#F3F6F4;--ink:#15201A;--muted:#5B6961;--line:#DCE3DF;
-  --accent:#0B6B55;--on-accent:#fff;--wa:#1FA855;--good:#1D7A43;--good-bg:#DFF3E6;--bad:#A8322A;--bad-bg:#FBE3E0;
-  --display:"Bricolage Grotesque","Avenir Next",system-ui,sans-serif;--body:"Figtree","Segoe UI",system-ui,sans-serif}
-@media (prefers-color-scheme:dark){:root{color-scheme:dark;--page:#0C110F;--surface:#141A17;--surface-2:#1B2320;--ink:#E6EDE9;
-  --muted:#95A49C;--line:#2A3530;--accent:#3CC49E;--on-accent:#052019;--good:#6FD39A;--good-bg:#173A26;--bad:#F08A80;--bad-bg:#3A1D1A}}
+@font-face{font-family:"Jakarta";src:url(fonts/jakarta-latin.woff2) format("woff2");font-weight:200 800;font-display:swap;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2212}
+@font-face{font-family:"Jakarta";src:url(fonts/jakarta-latin-ext.woff2) format("woff2");font-weight:200 800;font-display:swap;unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+1E00-1E9F,U+20A0-20AB,U+20AD-20C0}
+:root{color-scheme:light;--bg:#F2F5F3;--surface:#fff;--surface-2:#F6F8F7;--surface-3:#ECF0EE;--ink:#0E1A15;--ink-2:#34443D;--muted:#66766F;--line:#E4E9E6;--line-2:#D4DCD8;
+  --brand:#0A5A48;--brand-2:#0E7A62;--brand-deep:#06382D;--wa:#1DA851;--wa-2:#169446;--good:#16803C;--good-soft:#E2F4E7;--warn:#A55A06;--warn-soft:#FDF0DA;
+  --shadow:0 1px 2px rgba(14,26,21,.04),0 8px 24px -12px rgba(14,26,21,.2);--font:"Jakarta","Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#0A100E;--surface:#111916;--surface-2:#16201C;--surface-3:#1E2A25;--ink:#E9F0ED;--ink-2:#C3CFCA;--muted:#8C9D96;--line:#1F2B26;--line-2:#2A3832;
+  --good:#4FCF83;--good-soft:#123221;--warn:#F0A848;--warn-soft:#352610;--shadow:0 10px 30px -14px rgba(0,0,0,.7)}}
 *{box-sizing:border-box}
-body{margin:0;background:var(--page);color:var(--ink);font:16px/1.5 var(--body)}
-.wrap{max-width:560px;margin:0 auto;padding:20px 16px 40px}
-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:6px}
-h1{font:700 28px/1.15 var(--display);margin:0}
-.sub{color:var(--muted);margin:0 0 20px}
-.lang{flex:none;display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--surface)}
-.lang button{border:0;background:none;color:var(--muted);font:600 13px var(--body);padding:6px 12px;cursor:pointer}
-.lang button[aria-pressed="true"]{background:var(--accent);color:var(--on-accent)}
-.product{background:var(--surface);border-radius:16px;padding:16px;margin-bottom:12px}
-.product h2{font:700 18px/1.3 var(--display);margin:0 0 10px}
-.row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
-.row:first-of-type{border-top:0;padding-top:0}
-.what{min-width:0;flex:1}
-.pic{flex:none;width:64px;height:64px;border-radius:12px;object-fit:cover;background:var(--surface-2)}
-.variant{font-weight:600}
-.price{color:var(--muted);font-size:14px;font-variant-numeric:tabular-nums}
-.tag{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:1px 8px;margin-left:6px;vertical-align:1px}
-.tag.in{background:var(--good-bg);color:var(--good)}.tag.out{background:var(--bad-bg);color:var(--bad)}
-a.btn{flex:none;display:inline-flex;align-items:center;gap:6px;text-decoration:none;border-radius:12px;padding:10px 14px;font-weight:700;font-size:14px;
-  background:var(--wa);color:#fff;white-space:nowrap}
-a.btn.alt{background:var(--surface-2);color:var(--ink);border:1px solid var(--line)}
-.note{color:var(--muted);font-size:14px;text-align:center;margin-top:24px}
-.empty{background:var(--surface);border-radius:16px;padding:24px;color:var(--muted)}
-@media (max-width:420px){.row{flex-wrap:wrap}.row a.btn{flex-basis:100%;justify-content:center}}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 15px/1.5 var(--font);-webkit-font-smoothing:antialiased}
+.top{position:relative;overflow:hidden;color:#fff;padding:22px 16px 74px;background:radial-gradient(90% 120% at 100% 0%,rgba(232,179,78,.28),transparent 55%),radial-gradient(70% 90% at 0% 100%,rgba(60,203,162,.25),transparent 60%),linear-gradient(155deg,#0F7A61,#0A5A48 50%,#05332A)}
+.top::after{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(255,255,255,.08) 1px,transparent 1.3px);background-size:16px 16px;pointer-events:none}
+.top-in{position:relative;z-index:1;max-width:980px;margin:0 auto}
+.bar{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.chipwa{display:inline-flex;align-items:center;gap:7px;font:700 12.5px/1 var(--font);padding:8px 12px;border-radius:999px;background:rgba(255,255,255,.14);box-shadow:0 0 0 1px rgba(255,255,255,.18) inset}
+.chipwa svg{width:15px;height:15px}
+.lang{flex:none;display:flex;padding:3px;gap:2px;border-radius:999px;background:rgba(255,255,255,.14);box-shadow:0 0 0 1px rgba(255,255,255,.18) inset}
+.lang button{border:0;background:none;color:rgba(255,255,255,.8);font:700 11.5px/1 var(--font);letter-spacing:.04em;padding:7px 10px;border-radius:999px;cursor:pointer}
+.lang button[aria-pressed="true"]{background:#fff;color:var(--brand)}
+.id{display:flex;align-items:center;gap:14px;margin-top:26px}
+.logo{flex:none;width:58px;height:58px;border-radius:18px;display:grid;place-items:center;background:#fff;color:var(--brand);font:800 21px var(--font);box-shadow:0 10px 24px -10px rgba(0,0,0,.5)}
+h1{margin:0;font:800 27px/1.15 var(--font);letter-spacing:-.03em}
+.sub{margin:6px 0 0;color:rgba(255,255,255,.82);font-size:14.5px;line-height:1.5;max-width:560px}
+.wrap{position:relative;z-index:2;max-width:980px;margin:-50px auto 0;padding:0 12px 40px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media (min-width:640px){.grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.wrap{padding:0 16px 48px}}
+@media (min-width:920px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.item{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden;box-shadow:var(--shadow)}
+.ph{position:relative;aspect-ratio:1/1;background:var(--surface-3);display:grid;place-items:center;overflow:hidden}
+.ph img{width:100%;height:100%;object-fit:cover;display:block}
+.ph .ini{font:800 34px var(--font);letter-spacing:-.02em;color:var(--av-ink);}
+.badge{position:absolute;left:10px;top:10px;display:inline-flex;align-items:center;gap:6px;font:700 11.5px/1 var(--font);padding:6px 9px;border-radius:999px;background:rgba(255,255,255,.94);color:var(--good);box-shadow:0 2px 8px rgba(0,0,0,.12)}
+.badge::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.badge.out{color:var(--warn)}
+.body{display:flex;flex-direction:column;gap:2px;padding:12px 12px 12px;flex:1}
+.name{font:700 14.5px/1.3 var(--font);letter-spacing:-.01em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.variant{font-size:13px;color:var(--muted)}
+.price{margin:6px 0 10px;font:800 17px/1.1 var(--font);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.body .go{margin-top:auto}
+a.btn{display:flex;align-items:center;justify-content:center;gap:7px;min-height:42px;padding:9px 10px;border-radius:12px;text-decoration:none;font:700 13.5px/1.2 var(--font);text-align:center;background:linear-gradient(180deg,var(--wa),var(--wa-2));color:#fff;box-shadow:0 6px 14px -8px rgba(29,168,81,.8)}
+a.btn svg{width:17px;height:17px;flex:none}
+a.btn.alt{background:var(--surface-2);color:var(--ink);border:1px solid var(--line-2);box-shadow:none}
+.note{color:var(--muted);font-size:13px;text-align:center;margin:26px 0 0;text-wrap:balance}
+.note svg{width:15px;height:15px;color:var(--wa);vertical-align:-3px;margin-right:6px}
+.powered{margin:10px 0 0;text-align:center;font:600 12px var(--font);color:var(--muted)}
+.powered b{color:var(--ink-2)}
+.empty{margin:0;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:28px 20px;color:var(--muted);text-align:center;box-shadow:var(--shadow)}
+.skel{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.skel i{display:block;aspect-ratio:3/4;border-radius:18px;background:linear-gradient(90deg,var(--surface-3),var(--surface-2),var(--surface-3));background-size:200% 100%;animation:sh 1.2s linear infinite}
+@keyframes sh{to{background-position:-200% 0}}
 </style>
 <script src="config.js"></script>
 </head>
 <body>
-<div class="wrap" id="app"><p class="empty">…</p></div>
+<header class="top"><div class="top-in" id="head"></div></header>
+<div class="wrap" id="app"><div class="skel"><i></i><i></i><i></i><i></i></div></div>
 <script>
 // A seller's public shop page: what's in stock, and a WhatsApp button for each item that opens
 // a chat with the question already written. The NKAPGUARD app then answers it like any other
@@ -51,9 +69,10 @@ a.btn.alt{background:var(--surface-2);color:var(--ink);border:1px solid var(--li
 (function () {
   var TEXT = {
     fr: {
-      sub: 'Touchez un article pour le commander sur WhatsApp, ou pour recevoir une alerte à son retour.',
+      sub: 'Commandez sur WhatsApp en un geste, ou demandez une alerte quand un article revient.',
+      chip: 'Commande sur WhatsApp', powered: 'Boutique propulsée par <b>NKAPGUARD</b>',
       inStock: 'En stock', soldOut: 'En rupture',
-      order: 'Commander sur WhatsApp', alert: 'Me prévenir à son retour',
+      order: 'Commander', alert: 'Me prévenir',
       // Sending this places the order: the shop answers with a payment link right away.
       ask: function (label) { return 'Bonjour, je voudrais commander le modèle ' + label + ", s'il vous plaît."; },
       // Sending this is the customer's own request for an alert, so it joins the waitlist in one tap.
@@ -65,9 +84,10 @@ a.btn.alt{background:var(--surface-2);color:var(--ink);border:1px solid var(--li
       offline: 'La boutique ne répond pas pour le moment. Réessayez dans une minute.',
     },
     en: {
-      sub: 'Tap an item to order it on WhatsApp, or to hear when it is back.',
+      sub: 'Order on WhatsApp in one tap, or ask to hear when an item is back.',
+      chip: 'Orders on WhatsApp', powered: 'Shop powered by <b>NKAPGUARD</b>',
       inStock: 'In stock', soldOut: 'Sold out',
-      order: 'Order on WhatsApp', alert: "Alert me when it's back",
+      order: 'Order', alert: 'Notify me',
       ask: function (label) { return "Hi, I'd like to order the " + label + ', please.'; },
       alertMe: function (label) { return 'Hi, please let me know when the ' + label + ' is back.'; },
       note: function (shop) { return 'You message ' + shop + ' directly on WhatsApp.'; },
@@ -89,7 +109,7 @@ a.btn.alt{background:var(--surface-2);color:var(--ink);border:1px solid var(--li
     if (text != null) e.textContent = text;
     return e;
   }
-  function message(text) { app.textContent = ''; app.appendChild(el('p', 'empty', text)); }
+  function message(text) { drawHead(TEXT[lang]); app.textContent = ''; app.appendChild(el('p', 'empty', text)); }
 
   // "Marron / Brown": French takes the first word, English the second.
   function variantName(v, l) {
@@ -109,63 +129,91 @@ a.btn.alt{background:var(--surface-2);color:var(--ink);border:1px solid var(--li
     catch (e) { return new Intl.NumberFormat(l, opts).format(major); }
   }
 
-  function draw() {
-    var t = TEXT[lang];
-    document.documentElement.lang = lang;
-    document.title = shop.name;
-    app.textContent = '';
-
-    var head = el('header');
-    head.appendChild(el('h1', null, shop.name));
+  var WA = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.2a9.8 9.8 0 0 0-8.4 14.8L2.2 21.8l4.9-1.3A9.8 9.8 0 1 0 12 2.2Zm0 17.8a8 8 0 0 1-4.1-1.1l-.3-.2-2.9.8.8-2.8-.2-.3A8 8 0 1 1 12 20Zm4.4-6c-.2-.1-1.4-.7-1.7-.8-.2-.1-.4-.1-.5.1l-.8 1c-.1.2-.3.2-.5.1a6.6 6.6 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.5-.4h-.5a.9.9 0 0 0-.7.3 2.8 2.8 0 0 0-.9 2.1 4.9 4.9 0 0 0 1 2.6 11.2 11.2 0 0 0 4.3 3.8c1.6.7 2.2.7 3 .6.5-.1 1.4-.6 1.6-1.2.2-.6.2-1 .1-1.2l-.5-.2Z"/></svg>';
+  var BELL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>';
+  var TINTS = [['#E2F2EC', '#0A5A48'], ['#FBF1DB', '#8A5A0B'], ['#E6EEFD', '#1F4FB8'], ['#FCE7EF', '#A61E57'], ['#EDE8FC', '#5B3CC4'], ['#E0F3F7', '#0B6478'], ['#FDEBDF', '#A2470E'], ['#EAF1E2', '#3F6A12']];
+  function initials(name) { return String(name || '?').split(/\s+/).map(function (w) { return w[0] || ''; }).join('').slice(0, 2).toUpperCase(); }
+  function tint(name) { var h = 0; String(name).split('').forEach(function (c) { h = (h * 31 + c.charCodeAt(0)) >>> 0; }); return TINTS[h % TINTS.length]; }
+  var head = document.getElementById('head');
+  function drawHead(t) {
+    head.textContent = '';
+    var bar = el('div', 'bar');
+    var chip = el('span', 'chipwa');
+    chip.innerHTML = WA;
+    chip.appendChild(document.createTextNode(t.chip));
+    bar.appendChild(chip);
     var toggle = el('div', 'lang');
     ['fr', 'en'].forEach(function (l) {
       var b = el('button', null, l.toUpperCase());
       b.setAttribute('aria-pressed', String(l === lang));
-      b.onclick = function () { lang = l; draw(); };
+      b.onclick = function () { lang = l; shop ? draw() : message(TEXT[lang].noShop); };
       toggle.appendChild(b);
     });
-    head.appendChild(toggle);
-    app.appendChild(head);
+    bar.appendChild(toggle);
+    head.appendChild(bar);
+    if (!shop) return;
+    var id = el('div', 'id');
+    id.appendChild(el('span', 'logo', initials(shop.name)));
+    var txt = el('div');
+    txt.appendChild(el('h1', null, shop.name));
+    txt.appendChild(el('p', 'sub', t.sub));
+    id.appendChild(txt);
+    head.appendChild(id);
+  }
 
+  function draw() {
+    var t = TEXT[lang];
+    document.documentElement.lang = lang;
+    document.title = shop.name;
+    drawHead(t);
+    app.textContent = '';
     if (!shop.whatsapp) { app.appendChild(el('p', 'empty', t.noPhone)); return; }
     if (!shop.products.length) { app.appendChild(el('p', 'empty', t.empty)); return; }
-    app.appendChild(el('p', 'sub', t.sub));
 
-    // One card per product, one row per variant.
-    var groups = [];
-    shop.products.forEach(function (p) {
-      var g = groups[groups.length - 1];
-      if (!g || g.name !== p.name) groups.push(g = { name: p.name, items: [] });
-      g.items.push(p);
+    // One card per item: photo, name, colour, price and a WhatsApp button.
+    var grid = el('div', 'grid');
+    // What can be ordered now comes first; sold-out items follow, for alerts.
+    var items = shop.products.filter(function (p) { return p.available; }).concat(shop.products.filter(function (p) { return !p.available; }));
+    items.forEach(function (p) {
+      var card = el('article', 'item');
+      var ph = el('div', 'ph');
+      if (p.photo) {
+        var img = el('img');
+        img.src = p.photo;
+        img.alt = label(p, lang);
+        img.loading = 'lazy';
+        ph.appendChild(img);
+      } else {
+        var c = tint(p.name);
+        ph.style.background = c[0];
+        ph.style.setProperty('--av-ink', c[1]);
+        ph.appendChild(el('span', 'ini', initials(p.name)));
+      }
+      ph.appendChild(el('span', 'badge' + (p.available ? '' : ' out'), p.available ? t.inStock : t.soldOut));
+      card.appendChild(ph);
+      var body = el('div', 'body');
+      body.appendChild(el('div', 'name', p.name));
+      var v = variantName(p.variant, lang);
+      if (v) body.appendChild(el('div', 'variant', v));
+      body.appendChild(el('div', 'price', price(p.priceMinor, lang)));
+      var a = el('a', 'btn go' + (p.available ? '' : ' alt'));
+      a.innerHTML = p.available ? WA : BELL;
+      a.appendChild(document.createTextNode(p.available ? t.order : t.alert));
+      a.href = 'https://wa.me/' + shop.whatsapp + '?text=' + encodeURIComponent((p.available ? t.ask : t.alertMe)(label(p, lang)));
+      a.target = '_blank';
+      a.rel = 'noopener';
+      body.appendChild(a);
+      card.appendChild(body);
+      grid.appendChild(card);
     });
-    groups.forEach(function (g) {
-      var card = el('section', 'product');
-      card.appendChild(el('h2', null, g.name));
-      g.items.forEach(function (p) {
-        var row = el('div', 'row');
-        if (p.photo) {
-          var img = el('img', 'pic');
-          img.src = p.photo;
-          img.alt = label(p, lang);
-          img.loading = 'lazy';
-          row.appendChild(img);
-        }
-        var what = el('div', 'what');
-        var name = el('div', 'variant', variantName(p.variant, lang) || g.name);
-        name.appendChild(el('span', 'tag ' + (p.available ? 'in' : 'out'), p.available ? t.inStock : t.soldOut));
-        what.appendChild(name);
-        what.appendChild(el('div', 'price', price(p.priceMinor, lang)));
-        row.appendChild(what);
-        var a = el('a', 'btn' + (p.available ? '' : ' alt'), p.available ? t.order : t.alert);
-        a.href = 'https://wa.me/' + shop.whatsapp + '?text=' + encodeURIComponent((p.available ? t.ask : t.alertMe)(label(p, lang)));
-        a.target = '_blank';
-        a.rel = 'noopener';
-        row.appendChild(a);
-        card.appendChild(row);
-      });
-      app.appendChild(card);
-    });
-    app.appendChild(el('p', 'note', t.note(shop.name)));
+    app.appendChild(grid);
+    var note = el('p', 'note');
+    note.innerHTML = WA;
+    note.appendChild(document.createTextNode(t.note(shop.name)));
+    app.appendChild(note);
+    var pw = el('p', 'powered');
+    pw.innerHTML = t.powered;
+    app.appendChild(pw);
   }
 
   var guess = (navigator.language || '').toLowerCase().indexOf('fr') === 0 ? 'fr' : 'en';

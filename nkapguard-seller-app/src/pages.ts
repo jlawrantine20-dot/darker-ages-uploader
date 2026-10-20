@@ -48,12 +48,12 @@ export function pageText(lang: string): PageText {
 export function page(lang: string, title: string, body: string, extra = ''): string {
   return `<!doctype html><html lang="${esc(lang === 'fr+en' ? 'fr' : lang)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title.split('\n')[0])}</title><style>
-:root{color-scheme:light dark;--bg:#F3F6F4;--card:#fff;--ink:#15201A;--muted:#5B6961;--accent:#0B6B55;--on:#fff}
-@media (prefers-color-scheme:dark){:root{--bg:#0C110F;--card:#141A17;--ink:#E6EDE9;--muted:#95A49C;--accent:#3CC49E;--on:#052019}}
+:root{color-scheme:light dark;--bg:#F2F5F3;--card:#fff;--ink:#0E1A15;--muted:#66766F;--accent:#0A5A48;--on:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#0A100E;--card:#111916;--ink:#E9F0ED;--muted:#8C9D96;--accent:#3CCBA2;--on:#03201A}}
 body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif;padding:16px}
-main{max-width:420px;width:100%;background:var(--card);border-radius:16px;padding:24px}
-h1{font-size:22px;margin:0 0 8px}p{color:var(--muted);margin:0 0 16px}
-button{width:100%;padding:14px;border:0;border-radius:12px;background:var(--accent);color:var(--on);font:600 16px system-ui,sans-serif;cursor:pointer}
+main{max-width:420px;width:100%;background:var(--card);border-radius:22px;padding:28px 24px;box-shadow:0 24px 48px -24px rgba(14,26,21,.3)}
+h1{font-size:23px;letter-spacing:-.02em;margin:0 0 8px}p{color:var(--muted);margin:0 0 16px}
+button{width:100%;padding:15px;border:0;border-radius:14px;background:var(--accent);color:var(--on);font:600 16px system-ui,sans-serif;cursor:pointer}
 </style></head><body><main><h1>${title.split('\n').map(esc).join('<br>')}</h1>${body.split('\n').map((p) => `<p>${esc(p)}</p>`).join('')}${extra}</main></body></html>`;
 }
 

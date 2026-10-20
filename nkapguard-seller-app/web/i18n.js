@@ -20,6 +20,13 @@ const EN = {
   'login.testCode': (p) => `<b>Test mode.</b> Nothing is sent, so here is your code: <b>${p.code}</b>`,
   'login.code': 'Code', 'login.signIn': 'Sign in', 'login.otherNumber': 'Use a different number',
   'login.legal': 'Ets NKAPGUARD · Douala, Cameroon · RCCM CM-DLA-01-2026-A10-02057 · +237 6 70 67 10 28<br><a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a> · <a href="data-deletion.html">Data deletion</a>',
+  'login.title': 'Sign in', 'login.codeTitle': 'Enter your code', 'login.testCodeShort': 'Test mode: your code',
+  'login.hero': 'Sell on WhatsApp without losing a customer.',
+  'login.heroText': 'NKAPGUARD answers price and stock questions, takes orders and payments, and tells waiting customers when an item is back.',
+  'login.point1': 'Replies in French or English, day and night', 'login.point2': 'Mobile Money and card payments', 'login.point3': 'An alert for every new order',
+  'login.trust1': 'No password', 'login.trust2': 'One-time code by WhatsApp',
+  'chats.emptyTitle': 'No chats yet', 'ord.toCollect': 'Waiting for payment', 'ord.emptyTitle': 'No orders yet', 'stock.emptyTitle': 'Your stock is empty',
+  'ins.activity': 'Activity', 'ins.total': 'Sales this month', 'ins.totalNote': (p) => (p.orders === 1 ? '1 paid order' : `${p.orders} paid orders`),
 
   // Shops
   'setup.sub': 'Your shops', 'setup.choose': 'Choose a shop', 'setup.addAnother': 'Or add another shop', 'setup.add': 'Add your shop',
@@ -256,6 +263,13 @@ const FR = {
   'login.testCode': (p) => `<b>Mode test.</b> Rien n'est envoyé, voici donc votre code : <b>${p.code}</b>`,
   'login.code': 'Code', 'login.signIn': 'Se connecter', 'login.otherNumber': 'Utiliser un autre numéro',
   'login.legal': 'Ets NKAPGUARD · Douala, Cameroun · RCCM CM-DLA-01-2026-A10-02057 · +237 6 70 67 10 28<br><a href="privacy.html">Confidentialité</a> · <a href="terms.html">Conditions</a> · <a href="data-deletion.html">Suppression des données</a>',
+  'login.title': 'Connexion', 'login.codeTitle': 'Saisissez votre code', 'login.testCodeShort': 'Mode test : votre code',
+  'login.hero': 'Vendez sur WhatsApp sans perdre un seul client.',
+  'login.heroText': 'NKAPGUARD répond aux questions de prix et de stock, prend les commandes et les paiements, et prévient les clients en attente quand un article revient.',
+  'login.point1': 'Répond en français ou en anglais, jour et nuit', 'login.point2': 'Paiement par Mobile Money ou par carte', 'login.point3': 'Une alerte à chaque nouvelle commande',
+  'login.trust1': 'Aucun mot de passe', 'login.trust2': 'Code unique envoyé sur WhatsApp',
+  'chats.emptyTitle': 'Aucune discussion', 'ord.toCollect': 'À encaisser', 'ord.emptyTitle': 'Aucune commande', 'stock.emptyTitle': 'Aucun produit',
+  'ins.activity': 'Activité', 'ins.total': 'Ventes du mois', 'ins.totalNote': (p) => (p.orders <= 1 ? `${p.orders} commande payée` : `${p.orders} commandes payées`),
 
   'setup.sub': 'Vos boutiques', 'setup.choose': 'Choisissez une boutique', 'setup.addAnother': 'Ou ajoutez une autre boutique', 'setup.add': 'Ajoutez votre boutique',
   'shop.name': 'Nom de la boutique', 'shop.namePh': 'Douala Hair Plug',
