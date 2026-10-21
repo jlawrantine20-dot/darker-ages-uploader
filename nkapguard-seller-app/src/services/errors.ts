@@ -88,6 +88,8 @@ const MESSAGES = {
   zone_required: { en: () => 'An area needs a name and a fee (0 for free).', fr: () => 'Une zone doit avoir un nom et un tarif (0 si gratuit).' },
   photo_invalid: { en: () => 'That file is not a photo. Use a JPEG, PNG or WebP image.', fr: () => "Ce fichier n'est pas une photo. Utilisez une image JPEG, PNG ou WebP." },
   photo_too_big: { en: () => 'That photo is too large. Try a smaller one.', fr: () => 'Cette photo est trop lourde. Essayez-en une plus petite.' },
+  reserve_short: { en: (p: P) => `Only ${p.n} in reserve. Put at most that many on sale.`, fr: (p: P) => `Il n'en reste que ${p.n} en réserve. Mettez-en au plus autant en vente.` },
+  batch_range: { en: () => 'A batch needs at least 1 unit.', fr: () => 'Un lot doit contenir au moins 1 unité.' },
   pay_methods_invalid: { en: () => 'These payment details could not be read. Try again.', fr: () => 'Ces moyens de paiement sont illisibles. Réessayez.' },
   pay_methods_too_many: { en: (p: P) => `Add at most ${p.max} ways to pay.`, fr: (p: P) => `Ajoutez au plus ${p.max} moyens de paiement.` },
   pay_method_incomplete: { en: () => 'Each way to pay needs a name (like MTN MoMo) and a number or account.', fr: () => 'Chaque moyen de paiement doit avoir un nom (comme MTN MoMo) et un numéro ou un compte.' },

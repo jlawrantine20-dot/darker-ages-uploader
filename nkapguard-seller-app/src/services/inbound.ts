@@ -9,7 +9,7 @@ import { appBase } from './channels.js';
 import { dispatch, socialAccount, socialFor } from './outbound.js';
 import { photoUrl } from './photos.js';
 import { messageNotice, notifyShop, orderNotice } from './push.js';
-import { HELD_BY_ORDERS_SQL, createOrder, heldOrder } from './orders.js';
+import { HELD_BY_ORDERS_SQL, SHELF_SQL, createOrder, heldOrder } from './orders.js';
 import { claimFromChat, methodsOf, notifyClaim, payMode, shortRef } from './directpay.js';
 import { fmt, type Seller } from './sellers.js';
 
@@ -55,12 +55,13 @@ interface ProductRow {
   price_minor: number;
   stock: number;
   photo_version: string | null;
+  batch_left: number | null;
 }
 
 /** Units on the shelf not already held for someone: a waitlister's restock hold or an unpaid chat order. */
 export async function freeStock(q: Q, productId: string): Promise<number> {
   const [row] = await q.query<{ free: number }>(
-    `select p.stock - coalesce((select count(*)::int from offers o join restocks r on r.id = o.restock_id
+    `select ${SHELF_SQL} - coalesce((select count(*)::int from offers o join restocks r on r.id = o.restock_id
                                  where r.product_id = p.id and o.status = 'held'), 0)
                     - ${HELD_BY_ORDERS_SQL} as free
        from products p where p.id = $1`,
@@ -291,7 +292,7 @@ async function decide(
       // "To order, reply YES": remember what a yes would be for.
       await q.query('update contacts set awaiting_order_product_id = $2, awaiting_order_at = $3, awaiting_consent_product_id = null, awaiting_consent_at = null where id = $1', [contact.id, product.id, msg.at]);
       // With the product's photo when it has one: customers buy what they can see.
-      const outs = reply(say(lang, 'inStock', { name: contact.name, product, priceMinor: product.price_minor, stock: free, display: seller }, f));
+      const outs = reply(say(lang, 'inStock', { name: contact.name, product, priceMinor: product.price_minor, stock: free, display: seller, batch: product.batch_left !== null }, f));
       const photo = photoUrl(ctx, product);
       if (photo && outs[0]?.kind === 'text') outs[0].imageUrl = photo;
       return { action: 'in_stock' as const, outs };

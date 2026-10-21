@@ -82,7 +82,7 @@ export async function runFollowUps(ctx: Ctx, now: Date): Promise<DispatchResult[
     for (const r of rows) {
       const [seller] = await ctx.db.query<Seller>('select * from sellers where id = $1', [r.seller_id]);
       if (!daytime(now, seller.timezone)) continue;
-      const [product] = await ctx.db.query<{ id: string; name: string; variant: string; price_minor: number; photo_version: string | null }>('select * from products where id = $1', [r.product_id]);
+      const [product] = await ctx.db.query<{ id: string; name: string; variant: string; price_minor: number; photo_version: string | null; batch_left: number | null }>('select * from products where id = $1', [r.product_id]);
       if (!product) continue;
       const free = await freeStock(ctx.db, product.id);
       if (free <= 0) continue;
@@ -93,7 +93,7 @@ export async function runFollowUps(ctx: Ctx, now: Date): Promise<DispatchResult[
         sellerId: seller.id, from: whatsapp ? seller.wa_phone_number_id : r.channel_account_id!, contactId: r.contact_id, to: r.wa_id,
         channel: r.channel as Recipient['channel'], lastInboundAt: r.last_inbound_at, country: seller.country, language: lang,
       };
-      const facts = { name: r.name, product, priceMinor: Number(product.price_minor), stock: free, display: seller };
+      const facts = { name: r.name, product, priceMinor: Number(product.price_minor), stock: free, display: seller, batch: product.batch_left !== null };
       outs.push({ ...to, kind: 'text', body: say(lang, kind === 'quiet' ? 'followUp' : 'orderExpired', facts, fmt(seller)), imageUrl: photoUrl(ctx, product) ?? undefined });
       await ctx.db.query('insert into follow_ups (seller_id, contact_id, product_id, kind, sent_at) values ($1, $2, $3, $4, $5)', [seller.id, r.contact_id, product.id, kind, now]);
       // A YES to the reminder places the order, like a YES to the first answer.

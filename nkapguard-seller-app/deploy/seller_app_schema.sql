@@ -320,6 +320,8 @@ alter table seller_app.offers add column if not exists claim_note text;
 alter table seller_app.sellers add column if not exists stock_display text not null default 'exact' check (stock_display in ('exact', 'low', 'hidden'));
 alter table seller_app.sellers add column if not exists low_stock_at integer not null default 5 check (low_stock_at between 1 and 50);
 
+alter table seller_app.products add column if not exists batch_left integer check (batch_left >= 0);
+
 -- Defence in depth: row-level security on, with no policies, so even if the schema were
 -- exposed later, the anon and authenticated roles would see nothing.
 do $$

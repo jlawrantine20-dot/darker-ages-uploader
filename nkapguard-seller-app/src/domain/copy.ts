@@ -40,6 +40,8 @@ export interface Facts {
   ref?: string;
   /** How much stock the shop tells customers (see stockShown). Without it, the exact count. */
   display?: StockDisplay;
+  /** The product is sold in batches: counts are what's left of this batch. */
+  batch?: boolean;
 }
 
 export interface StockDisplay {
@@ -93,6 +95,7 @@ interface Args {
   ref: string;
   /** What to say about the stock count: see stockShown. */
   stockNote: 'count' | 'low' | 'none';
+  batch: boolean;
 }
 
 export type Key =
@@ -119,7 +122,7 @@ const en: Sentences = {
   offerAlert: (a) =>
     `Hi ${a.first}, the ${a.label} is sold out at the moment. Want us to message you here as soon as it's back? Just reply YES. (Reply STOP anytime to opt out.)`,
   inStock: (a) =>
-    `Hi ${a.first}, yes, we have the ${a.label} in stock at ${a.price}. ${a.stockNote === 'none' ? '' : a.stock === 1 ? "It's the last one! " : a.stockNote === 'low' ? `Only ${a.stock} left! ` : `We've got ${a.stock} left. `}To order, just reply YES.`,
+    `Hi ${a.first}, yes, we have the ${a.label} in stock at ${a.price}. ${a.stockNote === 'none' ? '' : a.batch ? (a.stock === 1 ? "It's the last one in this batch! " : a.stockNote === 'low' ? `Only ${a.stock} left in this batch! ` : `We've got ${a.stock} left in this batch. `) : a.stock === 1 ? "It's the last one! " : a.stockNote === 'low' ? `Only ${a.stock} left! ` : `We've got ${a.stock} left. `}To order, just reply YES.`,
   orderLink: (a) =>
     `Great, ${a.quantity > 1 ? `${a.quantity} × ${a.label} are` : `the ${a.label} is`} yours! We're holding ${a.quantity > 1 ? 'them' : 'it'} for you until ${a.until}. Pay ${a.price}${a.delivery} here to confirm your order:\n${a.url}`,
   orderManual: (a) =>
@@ -141,7 +144,7 @@ const en: Sentences = {
   askZone: (a) => `Great! Where should we deliver to? ${a.zonesOr}.`,
   orderShort: (a) => `We only have ${a.stock} left of the ${a.label}. How many would you like?`,
   followUp: (a) =>
-    `Hi ${a.first}, still interested in the ${a.label}? ${a.stockNote === 'none' ? `It's still available at ${a.price}.` : a.stock === 1 ? `It's the last one, at ${a.price}.` : a.stockNote === 'low' ? `Only ${a.stock} left, at ${a.price}.` : `We've got ${a.stock} left at ${a.price}.`} Just reply YES and it's yours.`,
+    `Hi ${a.first}, still interested in the ${a.label}? ${a.stockNote === 'none' ? `It's still available at ${a.price}.` : a.stock === 1 ? `It's the last one${a.batch ? ' in this batch' : ''}, at ${a.price}.` : a.stockNote === 'low' ? `Only ${a.stock} left${a.batch ? ' in this batch' : ''}, at ${a.price}.` : `We've got ${a.stock} left${a.batch ? ' in this batch' : ''} at ${a.price}.`} Just reply YES and it's yours.`,
   orderExpired: (a) => `Your hold on the ${a.label} has ended, but it's still available at ${a.price}. Reply YES if you'd still like it.`,
   orderRefund: (a) =>
     `We received your payment, but the ${a.label} sold out after your hold ended. We're refunding you in full. Sorry about that!`,
@@ -170,7 +173,7 @@ const fr: Sentences = {
   offerAlert: (a) =>
     `Bonjour ${a.first} ! Le modèle ${a.label} est momentanément en rupture de stock. Souhaitez-vous que nous vous prévenions ici dès son retour ? Répondez simplement OUI. (Répondez STOP à tout moment pour ne plus recevoir de messages.)`,
   inStock: (a) =>
-    `Bonjour ${a.first} ! Oui, le modèle ${a.label} est disponible au prix de ${a.price}. ${a.stockNote === 'none' ? '' : a.stock === 1 ? "C'est le dernier ! " : a.stockNote === 'low' ? `Plus que ${a.stock} en stock ! ` : `Il nous en reste ${a.stock}. `}Pour le commander, répondez simplement OUI.`,
+    `Bonjour ${a.first} ! Oui, le modèle ${a.label} est disponible au prix de ${a.price}. ${a.stockNote === 'none' ? '' : a.batch ? (a.stock === 1 ? "C'est le dernier de ce lot ! " : a.stockNote === 'low' ? `Plus que ${a.stock} dans ce lot ! ` : `Il nous en reste ${a.stock} dans ce lot. `) : a.stock === 1 ? "C'est le dernier ! " : a.stockNote === 'low' ? `Plus que ${a.stock} en stock ! ` : `Il nous en reste ${a.stock}. `}Pour le commander, répondez simplement OUI.`,
   orderLink: (a) =>
     `Parfait, ${a.quantity > 1 ? `c'est noté pour ${a.quantity} × ${a.label}` : `le modèle ${a.label} est à vous`} ! Nous vous ${a.quantity > 1 ? 'les' : 'le'} réservons jusqu'à ${a.until}. Réglez ${a.price}${a.delivery} ici pour confirmer votre commande :\n${a.url}`,
   orderManual: (a) =>
@@ -193,7 +196,7 @@ const fr: Sentences = {
   askZone: (a) => `Parfait ! Où faut-il vous livrer ? ${a.zonesOr}.`,
   orderShort: (a) => `Il ne nous en reste que ${a.stock} pour le modèle ${a.label}. Combien en voulez-vous ?`,
   followUp: (a) =>
-    `Bonjour ${a.first}, le modèle ${a.label} vous intéresse toujours ? ${a.stockNote === 'none' ? `Il est toujours disponible, à ${a.price}.` : a.stock === 1 ? `C'est le dernier, à ${a.price}.` : a.stockNote === 'low' ? `Plus que ${a.stock} en stock, à ${a.price}.` : `Il nous en reste ${a.stock}, à ${a.price}.`} Répondez simplement OUI pour le commander.`,
+    `Bonjour ${a.first}, le modèle ${a.label} vous intéresse toujours ? ${a.stockNote === 'none' ? `Il est toujours disponible, à ${a.price}.` : a.stock === 1 ? `C'est le dernier${a.batch ? ' de ce lot' : ''}, à ${a.price}.` : a.stockNote === 'low' ? `Plus que ${a.stock} ${a.batch ? 'dans ce lot' : 'en stock'}, à ${a.price}.` : `Il nous en reste ${a.stock}${a.batch ? ' dans ce lot' : ''}, à ${a.price}.`} Répondez simplement OUI pour le commander.`,
   orderExpired: (a) => `La réservation du modèle ${a.label} a expiré, mais il est encore disponible à ${a.price}. Répondez OUI si vous le voulez toujours.`,
   orderRefund: (a) =>
     `Nous avons bien reçu votre paiement, mais le modèle ${a.label} a été vendu après la fin de votre réservation. Nous vous remboursons intégralement. Toutes nos excuses !`,
@@ -285,6 +288,7 @@ function args(l: Base, f: Facts, fmt: Fmt): Args {
     position: f.position ?? 0,
     stock: f.stock ?? 0,
     stockNote: stockShown(f.display, f.stock ?? 0),
+    batch: !!f.batch,
     seller: f.seller ?? '',
     options: options(l, f.options ?? [], f.display),
     quantity: f.quantity ?? 1,

@@ -38,6 +38,12 @@ export interface OrderRow {
 export const isOrderRef = (ref: string) => ref.startsWith('ord_');
 
 /** Units of a product kept aside by unpaid orders. */
+/** What's on the shelf for sale: all the stock, or only what's left of the current batch. */
+export const SHELF_SQL = 'least(p.stock, coalesce(p.batch_left, p.stock))';
+
+/** A sale takes units out of the stock and out of the current batch. */
+export const SOLD_SQL = (n: string) => `stock = greatest(0, stock - ${n}), batch_left = case when batch_left is null then null else greatest(0, batch_left - ${n}) end`;
+
 export const HELD_BY_ORDERS_SQL = `coalesce((select sum(quantity)::int from orders o where o.product_id = p.id and o.status = 'held'), 0)`;
 
 export async function createOrder(
@@ -97,7 +103,7 @@ function recipientFor(c: OrderContext): Recipient {
 /** Units free to sell now: stock minus restock holds and unpaid orders. */
 async function free(q: Q, productId: string): Promise<number> {
   const [row] = await q.query<{ free: number }>(
-    `select p.stock
+    `select ${SHELF_SQL}
             - coalesce((select count(*)::int from offers o join restocks r on r.id = o.restock_id where r.product_id = p.id and o.status = 'held'), 0)
             - ${HELD_BY_ORDERS_SQL} as free
        from products p where p.id = $1`,
@@ -126,7 +132,7 @@ async function settle(q: Q, c: OrderContext, via: 'online' | 'manual', now: Date
     return { outcome: 'refund_due', outs: [{ ...to, kind: 'text', body: say(to.language, 'orderRefund', { product }, fmt(c.seller)) }] };
   }
   await q.query(`update orders set status = 'paid', paid_at = $2, paid_via = $3 where id = $1`, [order.id, now, via]);
-  await q.query('update products set stock = greatest(0, stock - $2) where id = $1', [product.id, order.quantity]);
+  await q.query(`update products set ${SOLD_SQL('$2')} where id = $1`, [product.id, order.quantity]);
   return { outcome: 'paid', outs: [paidMessage(c)] };
 }
 

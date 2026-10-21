@@ -23,7 +23,7 @@ import { previewPriceDrop, sendPriceDrop } from './services/pricedrop.js';
 import { deletePhoto, loadPhoto, photoUrl, savePhoto } from './services/photos.js';
 import { pushEnabled, removeSubscription, saveSubscription } from './services/push.js';
 import { sendWebPush } from './channels/webpush.js';
-import { HELD_BY_ORDERS_SQL, cancelOrder, expireOrders, handleOrderPayment, isOrderRef, markOrderPaid, orderForCheckout } from './services/orders.js';
+import { HELD_BY_ORDERS_SQL, SHELF_SQL, cancelOrder, expireOrders, handleOrderPayment, isOrderRef, markOrderPaid, orderForCheckout } from './services/orders.js';
 import { baseRef, handlePayment, previewRestock, startRestock, tick } from './services/restock.js';
 import { DEFAULT_PAY_WITH, PAY_WITH, claimFromPage, confirmOffer, directCheckout, payMode, rejectClaim, setPayMethods } from './services/directpay.js';
 import { escapeHtml, page, pageText, directHtml } from './pages.js';
@@ -275,7 +275,7 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     if (!seller) return c.json({ error: 'No shop with that link.' }, 404);
     const products = await db.query<{ id: string; photo_version: string | null; name: string; variant: string; price_minor: number; free: number }>(
       `select p.id, p.photo_version, p.name, p.variant, p.price_minor,
-              p.stock - coalesce((select count(*)::int from offers o join restocks r on r.id = o.restock_id
+              ${SHELF_SQL} - coalesce((select count(*)::int from offers o join restocks r on r.id = o.restock_id
                                    where r.product_id = p.id and o.status = 'held'), 0) - ${HELD_BY_ORDERS_SQL} as free
          from products p where p.seller_id = $1 order by p.name, p.variant`,
       [seller.id],
@@ -539,7 +539,8 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
 
   app.patch('/api/products/:id', async (c) => {
     await guardOf(c, 'product', c.req.param('id'));
-    const b = await c.req.json<{ stock?: number; price?: number; aliases?: string[]; name?: string; variant?: string }>();
+    const b = await c.req.json<{ stock?: number; price?: number; aliases?: string[]; name?: string; variant?: string; batch?: number | null }>();
+    if (b.batch !== undefined && b.batch !== null && !(Number.isInteger(b.batch) && b.batch >= 1)) throw new InputError('batch_range');
     if (b.stock !== undefined && !(Number.isInteger(b.stock) && b.stock >= 0)) throw new InputError('stock_whole');
     if (b.price !== undefined && !(b.price >= 0)) throw new InputError('price_min');
     const [owner] = await db.query<{ currency: string; price_minor: string }>(
@@ -549,9 +550,15 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
     if (!owner) return c.json({ error: 'No product with that id.' }, 404);
     const [row] = await db.query(
       `update products set stock = coalesce($2, stock), price_minor = coalesce($3, price_minor), aliases = coalesce($4, aliases),
-              name = coalesce($5, name), variant = coalesce($6, variant)
+              name = coalesce($5, name), variant = coalesce($6, variant),
+              -- Batches: turned off, set to a size, or kept within the stock when the stock is corrected.
+              batch_left = case when $7 then null
+                                when $8::int is not null then least($8::int, coalesce($2, stock))
+                                when batch_left is null then null
+                                else least(batch_left, coalesce($2, stock)) end
         where id = $1 returning *`,
-      [c.req.param('id'), b.stock ?? null, b.price === undefined ? null : toMinor(b.price, owner.currency), b.aliases ?? null, b.name ?? null, b.variant ?? null],
+      [c.req.param('id'), b.stock ?? null, b.price === undefined ? null : toMinor(b.price, owner.currency), b.aliases ?? null, b.name ?? null, b.variant ?? null,
+        b.batch === null, typeof b.batch === 'number' ? b.batch : null],
     );
     // A price cut: remember the real old price (the "was" in alerts), and say how many customers
     // asked to hear about it. A rise clears it, so an old cut can't be announced later.
@@ -591,13 +598,13 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
 
   app.post('/api/products/:id/restocks/preview', async (c) => {
     await guardOf(c, 'product', c.req.param('id'));
-    const b = await c.req.json<{ units: number; mode: 'hold' | 'race'; holdMinutes?: number; perUnit?: number }>();
+    const b = await c.req.json<{ units: number; mode: 'hold' | 'race'; holdMinutes?: number; perUnit?: number; fromReserve?: boolean }>();
     return c.json(await previewRestock(ctx, { productId: c.req.param('id'), ...b }, clock()));
   });
 
   app.post('/api/products/:id/restocks', async (c) => {
     await guardOf(c, 'product', c.req.param('id'));
-    const b = await c.req.json<{ units: number; mode: 'hold' | 'race'; holdMinutes?: number; perUnit?: number }>();
+    const b = await c.req.json<{ units: number; mode: 'hold' | 'race'; holdMinutes?: number; perUnit?: number; fromReserve?: boolean }>();
     return c.json(await startRestock(ctx, { productId: c.req.param('id'), ...b }, clock()), 201);
   });
 

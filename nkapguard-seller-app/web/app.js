@@ -491,7 +491,7 @@ views.products = async () => {
   setNav('stock');
   const row = (p) => `<a class="row" href="#/product/${esc(p.id)}">${thumb(p)}
     <span style="min-width:0"><span class="name"><span class="n">${esc(p.name)}</span></span><span class="last">${esc(variantText(p.variant) || t('stock.noVariant'))} · ${money(p.price_minor)}</span>
-      <span class="tagline">${p.stock > 0 ? `<span class="tag">${t('stock.inStockN', { n: p.stock })}</span>` : `<span class="tag hold">${t('stock.soldOut')}</span>`}</span></span>
+      <span class="tagline">${p.stock > 0 ? `<span class="tag">${t('stock.inStockN', { n: p.stock })}</span>` : `<span class="tag hold">${t('stock.soldOut')}</span>`}${p.batch_left !== null && p.batch_left !== undefined && p.stock > 0 ? `<span class="tag ${p.batch_left > 0 ? 'muted' : 'hold'}">${t('bt.tag', { left: p.batch_left })}</span>` : ''}</span></span>
     <span class="r"><b class="${p.waiting ? '' : 'zero'}">${p.waiting}</b>${t('stock.waitingLabel')}</span></a>`;
   const out = products.filter((p) => p.stock === 0);
   const inStock = products.filter((p) => p.stock > 0);
@@ -529,6 +529,12 @@ views.product = async ([id]) => {
   const [{ product: p, restocks }, waitlist, drop] = await Promise.all([api(`/api/products/${id}`), api(`/api/products/${id}/waitlist`), api(`/api/products/${id}/price-drop`).catch(() => null)]);
   if (!S.restockForm || S.restockForm.id !== id) S.restockForm = { id, units: 3, mode: 'hold', holdMinutes: 120, perUnit: 5 };
   const f = S.restockForm;
+  // Batches: what's on sale now, what's kept back, and whether this restock comes from the reserve.
+  const batchOn = p.batch_left !== null && p.batch_left !== undefined;
+  const reserve = batchOn ? Math.max(0, p.stock - p.batch_left) : 0;
+  if (!batchOn || reserve <= 0) f.fromReserve = false;
+  f.max = f.fromReserve ? reserve : 500;
+  if (f.units > f.max) f.units = Math.max(1, f.max);
   const past = restocks.filter((r) => r.messaged > 0);
   const bought = past.length ? Math.round((100 * past.reduce((a, r) => a + r.sold, 0)) / past.reduce((a, r) => a + r.messaged, 0)) : null;
   const running = restocks.find((r) => !r.closed_at);
@@ -551,13 +557,23 @@ views.product = async ([id]) => {
       <div class="cost"><span class="tot">${t('restock.feesTotal')}</span><b class="tot num">${fee(drop.costUsdMicros)}</b></div>
       <div class="btns split"><button class="btn primary" data-act="price-drop">${t('pd.send', { n: drop.watchers })}</button><button class="btn" data-act="price-drop-later">${t('pd.later')}</button></div></div>`
       : drop?.watchers ? banner(t('pd.waiting', { n: drop.watchers }), 'info') : ''}
-    <div class="card"><div class="head"><span class="ico">${ICON.box}</span><h2>${p.waiting ? t('restock.logTitle') : t('restock.addStock')}</h2></div>
-      <div class="field"><label>${t('restock.units')}</label>${stepper('units')}</div>
+    <div class="card"><div class="head"><span class="ico">${ICON.box}</span><h2>${f.fromReserve ? t('bt.nextTitle') : p.waiting ? t('restock.logTitle') : t('restock.addStock')}</h2></div>
+      ${batchOn && reserve > 0 ? `<div class="field"><div class="seg"><button type="button" data-source="new" class="${f.fromReserve ? '' : 'on'}">${t('bt.fromNew')}</button><button type="button" data-source="reserve" class="${f.fromReserve ? 'on' : ''}">${t('bt.fromReserve', { n: reserve })}</button></div></div>` : ''}
+      <div class="field"><label>${f.fromReserve ? t('bt.units') : t('restock.units')}</label>${stepper('units')}</div>
       ${p.waiting ? `<div class="field"><div class="seg"><button type="button" data-mode="hold" class="${f.mode === 'hold' ? 'on' : ''}">${t('restock.hold')}</button><button type="button" data-mode="race" class="${f.mode === 'race' ? 'on' : ''}">${t('restock.race')}</button></div></div>
       ${f.mode === 'hold'
         ? `<div class="field"><label>${t('restock.holdLength')}</label><div class="seg" style="width:auto;min-width:230px">${[60, 120, 240, 1440].map((m) => `<button type="button" data-hold="${m}" class="${f.holdMinutes === m ? 'on' : ''}">${mins(m)}</button>`).join('')}</div></div>`
         : `<div class="field"><label>${t('restock.perUnit')}<span class="hint">${t('restock.perUnitHint')}</span></label>${stepper('perUnit')}</div>`}` : ''}
       <div id="plan"><p class="note">${t('restock.working')}</p></div>
+    </div>
+    <div class="card"><div class="head"><span class="ico gold">${ICON.tag}</span><h2>${t('bt.title')}</h2></div>
+      ${batchOn
+        ? `<p>${t('bt.status', { left: p.batch_left, reserve })}</p>
+           <p class="note" style="margin:0">${reserve > 0 ? t('bt.howNext') : t('bt.noReserve')}</p>
+           <div class="btns"><button class="btn sm" data-batch-off="${esc(p.id)}">${t('bt.stop')}</button></div>`
+        : `<p>${t('bt.intro')}</p>
+           ${p.stock > 1 ? `<div class="field"><label for="b-size">${t('bt.size')}</label><input id="b-size" class="mini" type="number" inputmode="numeric" min="1" max="${p.stock}" value="${Math.max(1, Math.min(20, Math.floor(p.stock / 4) || 1))}"></div>
+           <div class="btns" style="margin-top:4px"><button class="btn primary block" data-batch-on="${esc(p.id)}">${t('bt.start')}</button></div>` : `<p class="note" style="margin:0">${t('bt.needStock')}</p>`}`}
     </div>
     ${waitlist.length ? `${sect(t('waitlist.title'), waitlist.length)}<div class="group">${waitlist.map((w) => `<div class="line"><span class="pos">${w.position}</span>
       <span>${esc(w.name ?? phone(w.wa_id))}<span class="q">${q(esc(w.consent_quote))} · ${t('waitlist.since', { when: when(w.joined_at) })}</span></span>${chip('whatsapp')}</div>`).join('')}</div>` : ''}
@@ -580,10 +596,10 @@ async function loadPlan(id, p) {
   const plan = $('#plan');
   if (!plan) return;
   try {
-    const pv = await api(`/api/products/${id}/restocks/preview`, { method: 'POST', body: { units: f.units, mode: f.mode, holdMinutes: f.holdMinutes, perUnit: f.perUnit } });
+    const pv = await api(`/api/products/${id}/restocks/preview`, { method: 'POST', body: { units: f.units, mode: f.mode, holdMinutes: f.holdMinutes, perUnit: f.perUnit, fromReserve: !!f.fromReserve } });
     if ($('#plan') !== plan) return;
     const what = pv.toMessage === 0
-      ? t('restock.nobody', { n: f.units })
+      ? t(f.fromReserve ? 'bt.nobody' : 'restock.nobody', { n: f.units })
       : f.mode === 'hold'
         ? t('restock.planHold', { n: pv.toMessage, len: mins(f.holdMinutes) })
         : t('restock.planRace', { n: pv.toMessage, units: f.units });
@@ -596,7 +612,7 @@ async function loadPlan(id, p) {
       ${S.seller?.currency !== 'USD' ? `<p class="note">${t('restock.feesNote', { usd: usd(pv.costUsdMicros.total) })}</p>` : ''}` : ''}
       <div class="btns">${S.confirm
         ? `<div class="btns split" style="margin:0;width:100%"><button class="btn primary" data-act="restock-go">${t('restock.confirm', { n: pv.toMessage })}</button><button class="btn" data-act="restock-cancel">${t('restock.cancel')}</button></div>`
-        : `<button class="btn primary block" data-act="restock-ask" ${pv.running ? 'disabled' : ''}>${pv.running ? t('restock.wait') : t('restock.go', { units: f.units, n: pv.toMessage })}</button>`}</div>`;
+        : `<button class="btn primary block" data-act="restock-ask" ${pv.running ? 'disabled' : ''}>${pv.running ? t('restock.wait') : t(f.fromReserve ? 'bt.go' : 'restock.go', { units: f.units, n: pv.toMessage })}</button>`}</div>`;
   } catch (e) {
     plan.innerHTML = `<p class="err">${esc(e.message)}</p>`;
   }
@@ -981,8 +997,14 @@ document.addEventListener('click', (e) => {
 });
 
 document.addEventListener('click', async (e) => {
-  const el = e.target.closest('[data-order-unclaim],[data-offer-paid],[data-offer-unclaim],[data-method-remove],[data-photo-remove],[data-zone-remove],[data-pick],[data-filter],[data-ofilter],[data-order-paid],[data-order-cancel],[data-cfg],[data-mode],[data-hold],[data-act],[data-pay],[data-remove-member]');
+  const el = e.target.closest('[data-batch-on],[data-batch-off],[data-source],[data-order-unclaim],[data-offer-paid],[data-offer-unclaim],[data-method-remove],[data-photo-remove],[data-zone-remove],[data-pick],[data-filter],[data-ofilter],[data-order-paid],[data-order-cancel],[data-cfg],[data-mode],[data-hold],[data-act],[data-pay],[data-remove-member]');
   if (!el) return;
+  if (el.dataset.batchOn || el.dataset.batchOff) {
+    const body = el.dataset.batchOn ? { batch: Math.max(1, Math.trunc(Number($('#b-size')?.value) || 1)) } : { batch: null };
+    try { await api(`/api/products/${el.dataset.batchOn ?? el.dataset.batchOff}`, { method: 'PATCH', body }); toast(el.dataset.batchOn ? t('bt.on') : t('bt.off')); } catch (err) { toast(err.message); }
+    return route(true);
+  }
+  if (el.dataset.source) { S.restockForm.fromReserve = el.dataset.source === 'reserve'; S.confirm = false; return route(true); }
   if (el.dataset.orderUnclaim || el.dataset.offerUnclaim) {
     if (!confirm(t('ord.notReceivedAsk', { name: el.dataset.name }))) return;
     try { await api(el.dataset.orderUnclaim ? `/api/orders/${el.dataset.orderUnclaim}/unclaim` : `/api/offers/${el.dataset.offerUnclaim}/unclaim`, { method: 'POST' }); toast(t('ord.notReceivedDone')); } catch (err) { toast(err.message); }
@@ -1026,7 +1048,7 @@ document.addEventListener('click', async (e) => {
   const f = S.restockForm;
   if (el.dataset.cfg) {
     const [k, d] = el.dataset.cfg.split(':');
-    const max = { units: 500, perUnit: 20 }[k];
+    const max = { units: f.max ?? 500, perUnit: 20 }[k];
     f[k] = Math.max(1, Math.min(max, f[k] + Number(d)));
     el.parentElement.querySelector('output').textContent = f[k];
     S.confirm = false;
@@ -1048,7 +1070,7 @@ document.addEventListener('click', async (e) => {
     if (act === 'restock-cancel') { S.confirm = false; return loadPlan(f.id); }
     if (act === 'restock-go') {
       el.disabled = true;
-      const r = await api(`/api/products/${f.id}/restocks`, { method: 'POST', body: { units: f.units, mode: f.mode, holdMinutes: f.holdMinutes, perUnit: f.perUnit } });
+      const r = await api(`/api/products/${f.id}/restocks`, { method: 'POST', body: { units: f.units, mode: f.mode, holdMinutes: f.holdMinutes, perUnit: f.perUnit, fromReserve: !!f.fromReserve } });
       S.confirm = false;
       toast(r.offered ? t('restock.sent', { n: r.offered }) : t('restock.added'));
       location.hash = r.offered ? `#/restock/${r.restockId}` : `#/product/${f.id}`;

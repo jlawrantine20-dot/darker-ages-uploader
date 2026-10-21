@@ -455,3 +455,5 @@ main.quiet > *{animation:none!important}
 .claim svg{width:17px;height:17px}
 .line > .btn{max-width:44%;white-space:normal;line-height:1.25}
 @media (max-width:420px){ .line:has(> .btn:not(.ghost)){grid-template-columns:36px minmax(0,1fr)} .line:has(> .btn:not(.ghost)) > .btn{grid-column:2;justify-self:start;max-width:none} }
+input.mini{width:96px;min-height:44px;padding:10px 12px;border:1px solid var(--line-2);border-radius:12px;background:var(--surface);color:var(--ink);font:700 16px var(--font);text-align:center}
+input.mini:focus{outline:none;border-color:var(--accent);box-shadow:var(--ring)}

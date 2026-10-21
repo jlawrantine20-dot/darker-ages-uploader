@@ -5,7 +5,7 @@ import type { PaymentEvent } from '../payments/providers.js';
 import type { Ctx, DispatchResult, Outbound, Recipient } from './context.js';
 import { InputError } from './errors.js';
 import { freeStock } from './inbound.js';
-import { handleOrderPayment, isOrderRef } from './orders.js';
+import { SOLD_SQL, handleOrderPayment, isOrderRef } from './orders.js';
 import { dispatch, messageCost } from './outbound.js';
 import { notifyShop, paymentNotice } from './push.js';
 import { fmt, type Seller } from './sellers.js';
@@ -18,6 +18,8 @@ export interface RestockInput {
   mode: 'hold' | 'race';
   holdMinutes?: number;
   perUnit?: number;
+  /** Put units from the reserve on sale as the next batch, instead of adding new stock. */
+  fromReserve?: boolean;
 }
 
 /** A race stays open this long; after that, unanswered alerts lapse quietly. */
@@ -210,7 +212,16 @@ export async function startRestock(ctx: Ctx, input: RestockInput, now: Date) {
     if (await openRestockFor(q, input.productId)) {
       throw new InputError('restock_running');
     }
-    await q.query('update products set stock = stock + $2 where id = $1', [input.productId, units]);
+    // New stock goes on the shelf; with batches, it joins the current batch. A batch from the
+    // reserve only puts units already in stock on sale.
+    const [p] = await q.query<{ stock: number; batch_left: number | null }>('select stock, batch_left from products where id = $1', [input.productId]);
+    if (input.fromReserve) {
+      const reserve = p.batch_left === null ? 0 : p.stock - p.batch_left;
+      if (units > reserve) throw new InputError('reserve_short', { n: Math.max(0, reserve) });
+      await q.query('update products set batch_left = batch_left + $2 where id = $1', [input.productId, units]);
+    } else {
+      await q.query('update products set stock = stock + $2, batch_left = case when batch_left is null then null else batch_left + $2 end where id = $1', [input.productId, units]);
+    }
     const [r] = await q.query<{ id: string }>(
       `insert into restocks (product_id, units, mode, hold_minutes, per_unit, created_at) values ($1, $2, $3, $4, $5, $6) returning id`,
       [input.productId, units, input.mode, holdMinutes, perUnit, now],
@@ -307,7 +318,7 @@ export async function handlePayment(ctx: Ctx, rawEvent: PaymentEvent, now: Date,
 
     await q.query(`update offers set status = 'paid', paid_at = $2, amount_minor = $3 where id = $1`, [offer.id, now, product.price_minor]);
     await q.query(`update interests set status = 'bought' where id = $1`, [offer.interest_id]);
-    await q.query('update products set stock = stock - 1 where id = $1', [product.id]);
+    await q.query(`update products set ${SOLD_SQL('1')} where id = $1`, [product.id]);
     const outs: Outbound[] = [{
       ...to, kind: 'text', body: say(to.language, 'paid', { product }, f),
       fallback: { template: 'paid', category: 'utility', params: slots(to.language, 'paid', { product }, f), preview: say(to.language, 'paid', { product }, f) },
