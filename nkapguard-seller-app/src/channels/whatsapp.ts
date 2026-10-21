@@ -50,12 +50,17 @@ export class DryRunChannel implements Channel {
   }
 }
 
-export function whatsappCloud(opts: { token: string; apiVersion: string; fetchFn?: typeof fetch }): Channel {
+/**
+ * The Cloud API. Each number sends with its own shop's key when it has one (Embedded Signup),
+ * otherwise with NKAPGUARD's.
+ */
+export function whatsappCloud(opts: { token: string; apiVersion: string; fetchFn?: typeof fetch; tokenFor?: (phoneNumberId: string) => Promise<string | null> }): Channel {
   const f = opts.fetchFn ?? fetch;
   async function post(from: string, payload: unknown): Promise<SendResult> {
+    const token = (await opts.tokenFor?.(from).catch(() => null)) ?? opts.token;
     const res = await f(`https://graph.facebook.com/${opts.apiVersion}/${from}/messages`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${opts.token}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
     const json = (await res.json()) as { messages?: { id: string }[]; error?: { message: string; code: number } };

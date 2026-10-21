@@ -68,8 +68,9 @@ export interface TemplateStatus {
   error?: string;
 }
 
-async function graph(ctx: Ctx, path: string, init?: RequestInit) {
-  const { token, apiVersion } = ctx.config.whatsapp;
+async function graph(ctx: Ctx, path: string, init?: RequestInit, as?: string) {
+  const { apiVersion } = ctx.config.whatsapp;
+  const token = as ?? ctx.config.whatsapp.token;
   const res = await (ctx.fetch ?? fetch)(`https://graph.facebook.com/${apiVersion}/${path}`, {
     ...init,
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -80,11 +81,11 @@ async function graph(ctx: Ctx, path: string, init?: RequestInit) {
 }
 
 /** What Meta has on file for this WhatsApp Business Account: approved, pending, rejected. */
-export async function listTemplates(ctx: Ctx, wabaId: string): Promise<TemplateStatus[]> {
+export async function listTemplates(ctx: Ctx, wabaId: string, token?: string): Promise<TemplateStatus[]> {
   const out: TemplateStatus[] = [];
   let path: string | null = `${wabaId}/message_templates?fields=name,language,status,rejected_reason&limit=100`;
   while (path) {
-    const page = (await graph(ctx, path)) as { data: { name: string; language: string; status: string; rejected_reason?: string }[]; paging?: { next?: string } };
+    const page = (await graph(ctx, path, undefined, token)) as { data: { name: string; language: string; status: string; rejected_reason?: string }[]; paging?: { next?: string } };
     for (const t of page.data) out.push({ name: t.name, language: t.language, status: t.status, ...(t.rejected_reason && t.rejected_reason !== 'NONE' ? { error: t.rejected_reason } : {}) });
     const next = page.paging?.next;
     path = next ? next.slice(next.indexOf(wabaId)) : null;
@@ -92,19 +93,23 @@ export async function listTemplates(ctx: Ctx, wabaId: string): Promise<TemplateS
   return out;
 }
 
-/** Submits every template Meta doesn't have yet; returns the state of all of them. */
-export async function submitTemplates(ctx: Ctx, wabaId: string): Promise<TemplateStatus[]> {
-  const existing = await listTemplates(ctx, wabaId);
+/**
+ * Submits every template Meta doesn't have yet; returns the state of all of them. With a
+ * seller's own key, it's their account: the shop templates only, since sign-in codes come
+ * from NKAPGUARD's own number.
+ */
+export async function submitTemplates(ctx: Ctx, wabaId: string, token?: string): Promise<TemplateStatus[]> {
+  const existing = await listTemplates(ctx, wabaId, token);
   const has = (s: TemplateSpec) => existing.find((t) => t.name === s.name && t.language === s.language);
   const results: TemplateStatus[] = [];
-  for (const spec of templateSpecs(ctx)) {
+  for (const spec of templateSpecs(ctx).filter((s) => !token || s.category !== 'AUTHENTICATION')) {
     const found = has(spec);
     if (found) {
       results.push(found);
       continue;
     }
     try {
-      const r = (await graph(ctx, `${wabaId}/message_templates`, { method: 'POST', body: JSON.stringify(spec) })) as { status?: string };
+      const r = (await graph(ctx, `${wabaId}/message_templates`, { method: 'POST', body: JSON.stringify(spec) }, token)) as { status?: string };
       results.push({ name: spec.name, language: spec.language, status: r.status ?? 'PENDING' });
     } catch (err) {
       results.push({ name: spec.name, language: spec.language, status: 'NOT_SUBMITTED', error: (err as Error).message });

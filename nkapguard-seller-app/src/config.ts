@@ -18,6 +18,7 @@ export interface Config {
     appSecret: string;
     verifyToken: string;
     apiVersion: string;
+    signupConfigId: string;
     templates: { hold: string; race: string; soldOut: string; paid: string; refund: string; priceDrop: string };
   };
   /**
@@ -58,6 +59,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       appSecret: env.WA_APP_SECRET ?? '',
       verifyToken: env.WA_VERIFY_TOKEN ?? '',
       apiVersion: env.WA_API_VERSION ?? 'v21.0',
+      /** Embedded Signup configuration id (Meta app > Facebook Login for Business > Configurations). */
+      signupConfigId: env.WA_ES_CONFIG_ID ?? '',
       templates: {
         hold: env.WA_TEMPLATE_HOLD ?? 'restock_hold_v1',
         race: env.WA_TEMPLATE_RACE ?? 'restock_race_v1',

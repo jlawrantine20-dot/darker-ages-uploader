@@ -457,3 +457,11 @@ main.quiet > *{animation:none!important}
 @media (max-width:420px){ .line:has(> .btn:not(.ghost)){grid-template-columns:36px minmax(0,1fr)} .line:has(> .btn:not(.ghost)) > .btn{grid-column:2;justify-self:start;max-width:none} }
 input.mini{width:96px;min-height:44px;padding:10px 12px;border:1px solid var(--line-2);border-radius:12px;background:var(--surface);color:var(--ink);font:700 16px var(--font);text-align:center}
 input.mini:focus{outline:none;border-color:var(--accent);box-shadow:var(--ring)}
+/* WhatsApp signup */
+.wa-connect{display:grid;gap:12px;padding:14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2)}
+.wa-connect .head{display:flex;gap:12px;align-items:flex-start}
+.wa-connect .head b{display:block;color:var(--ink);font-size:15px}
+.wa-connect.done{border-color:color-mix(in srgb,var(--good) 35%,transparent);background:var(--good-soft)}
+details.manual{border:1px dashed var(--line-2);border-radius:var(--r);padding:0 14px}
+details.manual summary{padding:12px 0;font:650 13.5px var(--font);color:var(--muted);cursor:pointer}
+details.manual[open]{padding-bottom:14px}

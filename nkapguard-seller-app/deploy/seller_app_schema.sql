@@ -322,6 +322,12 @@ alter table seller_app.sellers add column if not exists low_stock_at integer not
 
 alter table seller_app.products add column if not exists batch_left integer check (batch_left >= 0);
 
+alter table seller_app.sellers add column if not exists waba_id text;
+alter table seller_app.sellers add column if not exists wa_token_enc text;
+alter table seller_app.sellers add column if not exists wa_pin_enc text;
+alter table seller_app.sellers add column if not exists wa_verified_name text;
+alter table seller_app.sellers add column if not exists wa_connected_at timestamptz;
+
 -- Defence in depth: row-level security on, with no policies, so even if the schema were
 -- exposed later, the anon and authenticated roles would see nothing.
 do $$

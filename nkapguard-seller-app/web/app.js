@@ -307,8 +307,14 @@ views.setup = async () => {
     <div class="group"><form class="form" data-form="seller">
       <label>${t('shop.name')}<input id="s-name" required placeholder="${t('shop.namePh')}"></label>
       ${shopFields(mk, { country: def })}
-      <label>${t('shop.phoneId')}<input id="s-phone" required placeholder="${t('shop.phoneIdPh')}" value="${S.dryRun ? 'demo-' + Math.floor(Math.random() * 1e6) : ''}">
+      ${S.waSignupCfg ? `<div class="wa-connect${S.waSignup ? ' done' : ''}">
+        <div class="head">${brandIco('whatsapp')}<div><b>${t('wa.title')}</b><span class="hint">${S.waSignup ? t('wa.ready') : t('wa.intro')}</span></div></div>
+        <button type="button" class="btn ${S.waSignup ? '' : 'primary'} block" data-act="wa-connect">${S.waSignup ? `${ICON.check}${t('wa.chosen')}` : t('wa.connect')}</button>
+      </div>
+      <details class="manual"><summary>${t('wa.manual')}</summary>` : ''}
+      <label>${t('shop.phoneId')}<input id="s-phone" ${S.waSignupCfg ? '' : 'required'} placeholder="${t('shop.phoneIdPh')}" value="${S.dryRun ? 'demo-' + Math.floor(Math.random() * 1e6) : ''}">
         <span class="hint">${t('shop.phoneIdHint')}</span></label>
+      ${S.waSignupCfg ? '</details>' : ''}
       <p class="err" hidden></p>
       <button class="btn primary block">${t('shop.addBtn')}</button>
     </form></div>`;
@@ -710,6 +716,15 @@ views.settings = async () => {
     } else pagePicker = pending.pages;
   }
   const channels = await api(`/api/channels?sellerId=${s.id}`);
+  // A shop on its own WhatsApp account: how many of its message templates Meta has approved.
+  let waTemplates = '';
+  if (s.wa_own_account) {
+    const tp = await api(`/api/sellers/${s.id}/whatsapp/templates`).catch(() => null);
+    if (tp?.templates?.length) {
+      const ok = tp.templates.filter((x) => x.status === 'APPROVED').length;
+      waTemplates = `${t('wa.templates', { ok, total: tp.templates.length })}${ok < tp.templates.length ? `. ${t('wa.templatesWait')}` : ''}`;
+    }
+  }
   const team = `${sect(t('team.title'), members.length)}
     <div class="group">${members.map((mb) => `<div class="line"><span class="pos ${mb.role === 'owner' ? 'accent' : ''}">${mb.role === 'owner' ? ICON.crown : ICON.user}</span>
       <span>${me.user?.id === mb.user_id ? t('you') : esc(mb.name ?? '+' + mb.wa_id)}<span class="q">${mb.name || me.user?.id === mb.user_id ? `+${esc(mb.wa_id)} · ` : ''}${mb.role === 'owner' ? t('team.owner') : t('team.staff')}</span></span>
@@ -754,7 +769,7 @@ views.settings = async () => {
     <div class="group">
     ${S.dryRun
       ? `<div class="line">${brandIco('whatsapp')}<span>WhatsApp<span class="q">${t('ch.testWa')}</span></span><span class="pill held">${t('ch.testPill')}</span></div>`
-      : chRow('whatsapp', 'WhatsApp', t('ch.numberId', { id: esc(s.wa_phone_number_id) }), true)}
+      : `<div class="line">${brandIco('whatsapp')}<span>WhatsApp${s.wa_display_phone ? ` · +${esc(s.wa_display_phone)}` : ''}<span class="q">${s.wa_verified_name ? `${esc(s.wa_verified_name)} · ` : ''}${t('ch.numberId', { id: esc(s.wa_phone_number_id) })}${waTemplates ? ` · ${waTemplates}` : ''}</span></span>${S.waSignupCfg && owner ? `<button class="btn sm" data-act="wa-change">${s.wa_own_account ? t('wa.change') : t('wa.connectOwn')}</button>` : connected(true)}</div>`}
     ${['instagram', 'facebook'].map((ch) => channelCard(ch, channels, s, owner)).join('')}
     <div class="line">${brandIco('tiktok')}<span>TikTok<span class="q">${t('ch.tiktok')}</span></span>${s.slug ? `<button class="btn sm" data-act="copy-shop">${ICON.copy}${t('ch.copyLink')}</button>` : '<span></span>'}</div>
     </div>
@@ -772,6 +787,50 @@ document.addEventListener('input', (e) => {
   $('#s-low-wrap', form).hidden = mode !== 'low';
   $('#s-stock-hint', form).textContent = stockHint(mode, Number($('#s-low', form).value) || 5);
 });
+
+// ---------- WhatsApp Embedded Signup ----------
+/** Load Meta's JavaScript SDK once, in the app's language. */
+let fbReady = null;
+function loadFacebook(cfg) {
+  fbReady ??= new Promise((ok, fail) => {
+    window.fbAsyncInit = () => { window.FB.init({ appId: cfg.appId, autoLogAppEvents: true, xfbml: false, version: cfg.graphVersion }); ok(window.FB); };
+    const s = document.createElement('script');
+    s.src = `https://connect.facebook.net/${lang() === 'fr' ? 'fr_FR' : 'en_US'}/sdk.js`;
+    s.async = true; s.defer = true; s.crossOrigin = 'anonymous';
+    s.onerror = () => { fbReady = null; fail(new Error(t('wa.failed', { why: 'Facebook' }))); };
+    document.head.appendChild(s);
+  });
+  return fbReady;
+}
+/**
+ * Open Meta's signup window. Meta reports the number and account chosen in a window message
+ * (WA_EMBEDDED_SIGNUP) and returns a one-time code; the server turns the code into the shop's key.
+ */
+async function connectWhatsApp(cfg) {
+  const FB = await loadFacebook(cfg);
+  let session = null;
+  const onMessage = (e) => {
+    try { if (!/(^|\.)facebook\.com$/.test(new URL(e.origin).hostname)) return; } catch { return; }
+    let d; try { d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; } catch { return; }
+    if (d?.type !== 'WA_EMBEDDED_SIGNUP') return;
+    if (String(d.event).startsWith('FINISH')) session = { phoneNumberId: d.data?.phone_number_id, wabaId: d.data?.waba_id };
+    else if (d.event === 'CANCEL') session = { cancelled: true };
+    else if (d.event === 'ERROR') session = { error: d.data?.error_message };
+  };
+  window.addEventListener('message', onMessage);
+  try {
+    const code = await new Promise((ok) => FB.login((res) => ok(res?.authResponse?.code ?? null), {
+      config_id: cfg.configId, response_type: 'code', override_default_response_type: true, extras: { setup: {}, sessionInfoVersion: '3' },
+    }));
+    // The window message can arrive just after the login callback.
+    for (let i = 0; i < 20 && !session?.phoneNumberId && !session?.error && !session?.cancelled; i++) await new Promise((r) => setTimeout(r, 150));
+    if (session?.error) throw new Error(t('wa.failed', { why: session.error }));
+    if (!code || !session?.phoneNumberId || !session?.wabaId) throw new Error(t('wa.cancelled'));
+    return { code, phoneNumberId: session.phoneNumberId, wabaId: session.wabaId };
+  } finally {
+    window.removeEventListener('message', onMessage);
+  }
+}
 
 /** Direct payment: the seller's own mobile money numbers or bank accounts (owner only). */
 function directPaySection(s, m) {
@@ -1140,6 +1199,31 @@ document.addEventListener('click', async (e) => {
       set('nkg.token', null); set('nkg.seller', null); setSeller(null); S.login = null; location.hash = '#/login'; return route();
     }
     if (act === 'login-back') { S.login = { country: S.login?.country, phone: S.login?.phone }; return views.login(); }
+    if (act === 'wa-connect' || act === 'wa-change') {
+      el.disabled = true;
+      const label = el.innerHTML;
+      el.textContent = t('wa.loading');
+      try {
+        const r = await connectWhatsApp(S.waSignupCfg);
+        if (act === 'wa-connect') {
+          // Update the block in place, so what the seller already typed stays.
+          S.waSignup = r;
+          const box = el.closest('.wa-connect');
+          box.classList.add('done');
+          $('.hint', box).textContent = t('wa.ready');
+          el.disabled = false; el.classList.remove('primary'); el.innerHTML = `${ICON.check}${t('wa.chosen')}`;
+          return;
+        }
+        const s = await api(`/api/sellers/${sellerId()}/whatsapp`, { method: 'PUT', body: r });
+        setSeller({ ...S.seller, ...s });
+        toast(s.warnings?.length ? t('wa.warn') : t('wa.changed'));
+        return route(true);
+      } catch (err) {
+        el.disabled = false; el.innerHTML = label;
+        toast(err.message);
+        return;
+      }
+    }
     if (act === 'demo') { el.disabled = true; el.textContent = t('loading'); await loadDemo(); return; }
   } catch (err) {
     toast(err.message);
@@ -1173,7 +1257,10 @@ document.addEventListener('submit', async (e) => {
         toast(t('team.added'));
         return route(true);
       case 'seller': {
-        const s = await api('/api/sellers', { method: 'POST', body: { name: val('s-name'), waPhoneNumberId: val('s-phone'), ...shopValues(form) } });
+        if (S.waSignupCfg && !S.waSignup && !val('s-phone')) throw new Error(t('wa.needConnect'));
+        const s = await api('/api/sellers', { method: 'POST', body: { name: val('s-name'), ...(S.waSignup ? { whatsapp: S.waSignup } : { waPhoneNumberId: val('s-phone') }), ...shopValues(form) } });
+        S.waSignup = null;
+        if (s.warnings?.length) toast(t('wa.warn'));
         set('nkg.seller', s.id); setSeller(s);
         location.hash = '#/products';
         return;
@@ -1321,7 +1408,7 @@ function openFrom(url, shop) {
   route();
 }
 navigator.serviceWorker?.addEventListener('message', (e) => { if (e.data?.type === 'open') openFrom(e.data.url, e.data.sellerId); });
-try { S.dryRun = (await api('/health')).dryRun; } catch { /* server down: views will show the error */ }
+try { const h = await api('/health'); S.dryRun = h.dryRun; S.waSignupCfg = h.whatsappSignup ?? null; } catch { /* server down: views will show the error */ }
 // Coming back from Instagram or Facebook sign-in: say what happened, then tidy the address.
 {
   const q = new URLSearchParams(location.search);

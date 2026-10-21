@@ -30,13 +30,19 @@ export interface Seller {
   /** How much stock customers are told: 'exact', 'low' (only at or below low_stock_at), or 'hidden'. */
   stock_display: 'exact' | 'low' | 'hidden';
   low_stock_at: number;
+  waba_id: string | null;
+  wa_token_enc: string | null;
+  wa_pin_enc: string | null;
+  wa_verified_name: string | null;
+  wa_connected_at: Date | null;
 }
 
 
 /** A seller as the API shows it: never includes secrets. */
 export function publicSeller(s: Seller) {
-  const { payment_secret_enc, payment_webhook_secret_enc, ...rest } = s;
-  return { ...rest, payments_connected: s.payment_provider === 'test' || !!payment_secret_enc };
+  const { payment_secret_enc, payment_webhook_secret_enc, wa_token_enc, wa_pin_enc, ...rest } = s;
+  void payment_webhook_secret_enc; void wa_pin_enc;
+  return { ...rest, payments_connected: s.payment_provider === 'test' || !!payment_secret_enc, wa_own_account: !!wa_token_enc };
 }
 
 export async function getSeller(q: Q, id: string): Promise<Seller | null> {

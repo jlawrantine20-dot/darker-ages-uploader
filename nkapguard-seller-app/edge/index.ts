@@ -18,6 +18,7 @@ import { createApp } from '../src/app.ts';
 import { DryRunChannel, whatsappCloud } from '../src/channels/whatsapp.ts';
 import { loadConfig } from '../src/config.ts';
 import { tick } from '../src/services/restock.ts';
+import { tokenLookup } from '../src/services/whatsappSignup.ts';
 
 const FUNCTION = 'seller-app';
 const env = Deno.env.toObject();
@@ -86,7 +87,7 @@ const db = {
 
 const channel = config.dryRun
   ? new DryRunChannel((m) => console.log(`[test mode] to ${m.to}: ${m.body ?? `${m.template?.name} ${JSON.stringify(m.template?.params)}`}`))
-  : whatsappCloud({ token: config.whatsapp.token, apiVersion: config.whatsapp.apiVersion });
+  : whatsappCloud({ token: config.whatsapp.token, apiVersion: config.whatsapp.apiVersion, tokenFor: tokenLookup(db, config.appSecret) });
 const ctx = { db, channel, config };
 
 const root = new Hono();

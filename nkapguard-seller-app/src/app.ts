@@ -25,6 +25,8 @@ import { pushEnabled, removeSubscription, saveSubscription } from './services/pu
 import { sendWebPush } from './channels/webpush.js';
 import { HELD_BY_ORDERS_SQL, SHELF_SQL, cancelOrder, expireOrders, handleOrderPayment, isOrderRef, markOrderPaid, orderForCheckout } from './services/orders.js';
 import { baseRef, handlePayment, previewRestock, startRestock, tick } from './services/restock.js';
+import { connectNumber, saveNumber, signupConfig, submitShopTemplates, type ConnectedNumber, type SignupResult } from './services/whatsappSignup.js';
+import { decryptSecret } from './crypto.js';
 import { DEFAULT_PAY_WITH, PAY_WITH, claimFromPage, confirmOffer, directCheckout, payMode, rejectClaim, setPayMethods } from './services/directpay.js';
 import { escapeHtml, page, pageText, directHtml } from './pages.js';
 import { normalizePhone, phoneCountry } from './domain/phone.js';
@@ -54,7 +56,8 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
   // The seller app may live on a different host from the API, so allow it to call in.
   app.use('*', cors({ origin: config.allowedOrigins.includes('*') ? '*' : config.allowedOrigins, allowHeaders: ['Authorization', 'Content-Type', 'X-Lang'], allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'] }));
 
-  app.get('/health', (c) => c.json({ ok: true, dryRun: config.dryRun }));
+  // whatsappSignup: what the app needs to open Meta's "Connect WhatsApp" window, when it's set up.
+  app.get('/health', (c) => c.json({ ok: true, dryRun: config.dryRun, whatsappSignup: signupConfig(ctx) }));
 
   /**
    * Show a customer a short page. When the seller app is hosted elsewhere (APP_URL), the page
@@ -424,21 +427,50 @@ export function createApp(ctx: Ctx, clock: () => Date = () => new Date(), opts: 
   });
 
   app.post('/api/sellers', async (c) => {
-    const b = await c.req.json<{ name: string; waPhoneNumberId: string; country: string; currency?: string; language?: string; timezone?: string }>();
+    const b = await c.req.json<{ name: string; waPhoneNumberId?: string; whatsapp?: SignupResult; country: string; currency?: string; language?: string; timezone?: string }>();
+    // A number connected through Meta's signup window, or (set up by hand) a phone number id.
+    const connected: ConnectedNumber | null = b.whatsapp ? await connectNumber(ctx, b.whatsapp) : null;
+    if (connected) b.waPhoneNumberId = connected.phoneNumberId;
     if (!b.waPhoneNumberId?.trim()) throw new InputError('wa_phone_id');
     const v = resolveSellerInput(b);
     const viewer = c.get('viewer');
     const row = await db.tx(async (q) => {
+      if (connected) {
+        const [taken] = await q.query('select 1 from sellers where wa_phone_number_id = $1', [connected.phoneNumberId]);
+        if (taken) throw new InputError('wa_number_taken');
+      }
       const [s] = await q.query<Seller>(
         `insert into sellers (name, wa_phone_number_id, country, currency, language, timezone, slug, wa_display_phone)
          values ($1, $2, $3, $4, $5, $6, $7, $8) returning *`,
-        [v.name, b.waPhoneNumberId.trim(), v.country, v.currency, v.language, v.timezone, v.slug ?? (await uniqueSlug(q, v.name)), v.waDisplayPhone],
+        [v.name, b.waPhoneNumberId!.trim(), v.country, v.currency, v.language, v.timezone, v.slug ?? (await uniqueSlug(q, v.name)), v.waDisplayPhone],
       );
       // Whoever creates a shop owns it.
       if (viewer.kind === 'user') await q.query(`insert into shop_members (seller_id, user_id, role) values ($1, $2, 'owner')`, [s.id, viewer.userId]);
+      if (connected) await saveNumber(q, s.id, connected);
       return s;
     });
-    return c.json({ ...publicSeller(row), role: 'owner' }, 201);
+    if (connected) await submitShopTemplates(ctx, connected);
+    const saved = (await getSeller(db, row.id))!;
+    return c.json({ ...publicSeller(saved), role: 'owner', ...(connected?.warnings.length ? { warnings: connected.warnings } : {}) }, 201);
+  });
+
+  /** Connect (or change) the shop's WhatsApp number through Meta's signup window. */
+  app.put('/api/sellers/:id/whatsapp', async (c) => {
+    await guard(c, c.req.param('id'), 'owner');
+    const s = await sellerOr404(c.req.param('id'));
+    const connected = await connectNumber(ctx, await c.req.json<SignupResult>());
+    await db.tx((q) => saveNumber(q, s.id, connected));
+    await submitShopTemplates(ctx, connected);
+    return c.json({ ...publicSeller((await getSeller(db, s.id))!), ...(connected.warnings.length ? { warnings: connected.warnings } : {}) });
+  });
+
+  /** Where the shop's message templates stand with Meta: approved, pending, rejected. */
+  app.get('/api/sellers/:id/whatsapp/templates', async (c) => {
+    await guard(c, c.req.param('id'));
+    const s = await sellerOr404(c.req.param('id'));
+    if (!s.waba_id || !s.wa_token_enc) return c.json({ own: false, templates: [] });
+    const templates = await listTemplates(ctx, s.waba_id, decryptSecret(s.wa_token_enc, config.appSecret)).catch(() => null);
+    return c.json({ own: true, templates: templates ?? [], error: templates ? undefined : 'unavailable' });
   });
 
   app.patch('/api/sellers/:id', async (c) => {

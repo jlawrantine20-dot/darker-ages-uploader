@@ -5,6 +5,7 @@ import { DryRunChannel, whatsappCloud } from './channels/whatsapp.js';
 import { loadConfig } from './config.js';
 import { embeddedDb, migrate, postgresDb } from './db.js';
 import { tick } from './services/restock.js';
+import { tokenLookup } from './services/whatsappSignup.js';
 
 const config = loadConfig();
 const db = config.databaseUrl ? await postgresDb(config.databaseUrl) : await embeddedDb(config.dataDir ?? './.data');
@@ -12,7 +13,7 @@ await migrate(db);
 
 const channel = config.dryRun
   ? new DryRunChannel((m) => console.log(`[test mode] to ${m.to}: ${m.body ?? `${m.template?.name} (${m.template?.language}) ${JSON.stringify(m.template?.params)}`}`))
-  : whatsappCloud({ token: config.whatsapp.token, apiVersion: config.whatsapp.apiVersion });
+  : whatsappCloud({ token: config.whatsapp.token, apiVersion: config.whatsapp.apiVersion, tokenFor: tokenLookup(db, config.appSecret) });
 
 const ctx = { db, channel, config };
 const webFiles = nodeWebFiles();
